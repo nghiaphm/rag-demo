@@ -1,0 +1,27 @@
+# --- Web framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12          # bắt buộc để FastAPI nhận file upload
+
+# --- Config / env ---
+python-dotenv>=1.0.1
+pydantic-settings>=2.5.0
+
+# --- RAG framework: LangChain ---
+# Chỉ dùng langchain-core + các integration package.
+# KHÔNG cài package meta `langchain` (bản 1.x kéo theo langgraph — ngoài scope V1).
+langchain-core>=1.2.0
+
+# --- LLM: OpenRouter qua LangChain integration (ChatOpenRouter) ---
+langchain-openrouter>=0.1.0
+
+# --- Embedding: provider API qua LangChain Embeddings integration ---
+langchain-openai>=1.0.0
+
+# --- Chunking baseline (RecursiveCharacterTextSplitter) ---
+langchain-text-splitters>=1.0.0
+
+# --- Vector database: PostgreSQL + pgvector qua LangChain integration ---
+langchain-postgres>=0.0.14
+pgvector>=0.3.0
+psycopg[binary]>=3.2.0
