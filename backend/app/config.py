@@ -21,12 +21,13 @@ class Settings(BaseSettings):
     # ----- LLM (OpenRouter) -----
     openrouter_api_key: str
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    llm_model: str = "anthropic/claude-sonnet-4.5"
+    llm_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
 
     # ----- Embedding provider (độc lập với LLM) -----
-    embedding_provider: str = "openai"
+    # Baseline: Google Gemini embedding (free tier, gọi qua API — không self-host).
+    embedding_provider: str = "google"
     embedding_api_key: str
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = "gemini-embedding-001"
 
     # ----- Chunking -----
     chunk_size: int = 500

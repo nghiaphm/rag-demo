@@ -195,12 +195,12 @@ rag-demo/
 
 | Phase | Nội dung | Status |
 |---|---|---|
-| 0 | Foundation & configuration theo architecture mới | 🔲 TODO |
-| 1 | Document ingestion: loader + splitter | 🔲 TODO |
-| 2 | Embedding + PostgreSQL/pgvector vector store | 🔲 TODO |
-| 3 | Retrieval + prompt + LLM generation | 🔲 TODO |
-| 4 | Ghép thành RAG pipeline + source metadata | 🔲 TODO |
-| 5 | FastAPI endpoints + terminal testing | 🔲 TODO |
+| 0 | Foundation & configuration theo architecture mới | ✅ DONE |
+| 1 | Document ingestion: loader + splitter | ✅ DONE |
+| 2 | Embedding + PostgreSQL/pgvector vector store | ✅ DONE |
+| 3 | Retrieval + prompt + LLM generation | ✅ DONE |
+| 4 | Ghép thành RAG pipeline + source metadata | ✅ DONE |
+| 5 | FastAPI endpoints + terminal testing | ✅ DONE |
 | 6 | Evaluation với golden set | 🔲 TODO |
 | 7 | Benchmark nhiều LLM / embedding model | 🔲 TODO |
 
@@ -211,7 +211,7 @@ rag-demo/
 
 # Phase 0 — Foundation & Configuration
 
-**Status: 🔲 TODO**
+**Status: ✅ DONE**
 
 ### Mục tiêu
 
@@ -266,8 +266,29 @@ Yêu cầu test:
 ### Đã hoàn thành
 
 ```text
-[Điền sau khi test xong]
-- ...
+- backend/requirements.txt: stack LangChain + FastAPI + PostgreSQL/pgvector.
+  LangChain: langchain-core, langchain-openrouter, langchain-openai,
+  langchain-text-splitters, langchain-postgres. DB: pgvector, psycopg[binary].
+  Đã bỏ chromadb/openai SDK thô/tiktoken của kiến trúc cũ.
+- backend/app/config.py: export `settings` (pydantic-settings), field:
+  openrouter_api_key, openrouter_base_url, llm_model, embedding_provider,
+  embedding_api_key, embedding_model, chunk_size, chunk_overlap, top_k,
+  database_url, documents_dir. Đọc .env theo project root; extra="ignore".
+- backend/app/main.py: FastAPI app + GET /health (version 0.0.1, chưa có endpoint RAG).
+- docker-compose.yml: service `db` image pgvector/pgvector:pg16, healthcheck, volume;
+  map host 5433 -> container 5432.
+- .env.example / .env: config mới (EMBEDDING_*, DATABASE_URL PostgreSQL), chỉ placeholder.
+- .gitignore: chặn commit .env + cache Python.
+- Đã xóa placeholder kiến trúc cũ (rỗng): app/rag/llm_client.py, app/rag/memory.py;
+  thư mục data/vectorstore (Chroma).
+
+Test đã pass:
+- `from app.config import settings` OK.
+- FastAPI khởi động; GET /health -> 200 {"status": "ok", "llm_model": "..."}.
+- Kết nối PostgreSQL qua chính settings.database_url OK (PostgreSQL 16.15; pgvector 0.8.6 available).
+- `docker compose config` hợp lệ; container rag-demo-postgres chạy healthy.
+- LangChain stack import OK; xác nhận KHÔNG có package meta `langchain` và KHÔNG có `langgraph`.
+- Repo chưa init git; .env chỉ chứa placeholder, không có secret thật.
 ```
 
 ### Ghi chú/Quyết định
@@ -275,15 +296,25 @@ Yêu cầu test:
 ```text
 - Architecture cũ LlamaIndex + Chroma đã được thay bằng LangChain + PostgreSQL/pgvector.
 - Project API-first, không self-host model.
-- LLM: OpenRouter.
-- Embedding: provider có thể thay đổi bằng config.
+- LLM: OpenRouter qua `langchain-openrouter` (ChatOpenRouter).
+- Embedding: provider độc lập với LLM, cấu hình qua EMBEDDING_PROVIDER/MODEL/API_KEY.
+- KHÔNG dùng package meta `langchain`: bản 1.x kéo theo `langgraph` (vi phạm non-goal V1).
+  Chỉ dùng `langchain-core` + các integration package rời.
+- PostgreSQL container map host port 5433 vì host 5432 đã bị một PostgreSQL native chiếm.
+  => DATABASE_URL dùng port 5433; các phase sau phải giữ đúng port này.
+- config.py resolve .env theo project root (Path(__file__).parents[2] / ".env"),
+  không phụ thuộc CWD khi chạy uvicorn/script.
+- Docker Compose Phase 0 chỉ có service `db`; service backend + Dockerfile để phase sau.
+- Đã bật Docker Desktop để test; container rag-demo-postgres đang chạy (dừng bằng `docker compose down`).
+- `frontend/` tồn tại sẵn nhưng rỗng; không tạo code frontend (ngoài scope V1).
+- Dependency resolver hạ pydantic xuống 2.12.5 theo yêu cầu của langchain-core.
 ```
 
 ---
 
 # Phase 1 — Document Ingestion
 
-**Status: 🔲 TODO**
+**Status: ✅ DONE**
 
 ### Prompt
 
@@ -318,23 +349,45 @@ Test:
 ### Đã hoàn thành
 
 ```text
-[Điền sau khi test xong]
-- rag/loader.py: ...
-- rag/splitter.py: ...
-- scripts/try_step.py: ...
+- rag/loader.py: `load_document(file_path) -> list[Document]` — dispatch theo đuôi file:
+  PDF dùng PyPDFLoader(mode="page"); MD/TXT dùng TextLoader(autodetect_encoding=True).
+  Chuẩn hóa metadata `file_name` + `source`; giữ `page` khi loader cung cấp.
+  Raise FileNotFoundError nếu file không tồn tại; ValueError nếu đuôi không hỗ trợ.
+- rag/splitter.py: `split_documents(documents, chunk_size=None, chunk_overlap=None) -> list[Document]`
+  dùng RecursiveCharacterTextSplitter; mặc định lấy settings.chunk_size / settings.chunk_overlap;
+  giữ nguyên metadata trên từng chunk; raise ValueError nếu chunk_size <= chunk_overlap.
+- scripts/try_step.py: script test load + split; tự tạo file mẫu data/documents/sample_rag.md
+  nếu không truyền đường dẫn; in số document, số chunk và metadata chunk[0].
+- requirements.txt: thêm langchain-community (PyPDFLoader/TextLoader), pypdf, chardet (pin <6).
+
+Test đã pass:
+- try_step.py (file mẫu .md): 1 document -> 7 chunk; metadata chunk[0] có file_name + source.
+- TXT (UTF-8 tiếng Việt): 1 doc -> 6 chunk. PDF: 1 doc, metadata page=0, trích đúng text.
+- Markdown (.markdown): 1 doc -> 5 chunk.
+- Override chunk_size=100/overlap=10 -> 27 chunk (so với 6 mặc định).
+- .csv -> ValueError; file thiếu -> FileNotFoundError; chunk_size <= overlap -> ValueError.
 ```
 
 ### Ghi chú/Quyết định
 
 ```text
-[Điền nếu có thay đổi]
+- Loader dùng langchain-community (PyPDFLoader/TextLoader). Package này đã ở trạng thái
+  "sunset" (in cảnh báo deprecation khi import) nhưng vẫn là nơi chứa loader chuẩn của
+  LangChain; chưa có package standalone thay thế, và không kéo theo langgraph.
+- Markdown xử lý như plain text bằng TextLoader để tránh dependency nặng `unstructured`.
+- TextLoader autodetect_encoding=True cần `chardet`; pin `chardet>=5,<6` vì chardet 7.x
+  phá API của langchain-community (FileEncoding ... mime_type).
+- PDF dùng mode="page" để giữ metadata page (0-based).
+- KHÔNG thêm chunk_index/document_id vào metadata ở phase này (thuộc Phase 2).
+- try_step.py tự thêm backend vào sys.path (chạy trực tiếp được) và reconfigure stdout
+  UTF-8 cho console Windows cp1252; documents_dir tương đối resolve từ project root.
 ```
 
 ---
 
 # Phase 2 — Embedding + Vector Store
 
-**Status: 🔲 TODO**
+**Status: ✅ DONE**
 
 ### Prompt
 
@@ -376,24 +429,58 @@ Test:
 ### Đã hoàn thành
 
 ```text
-[Điền sau khi test xong]
-- rag/embeddings.py: ...
-- rag/vectorstore.py: ...
-- db.py: ...
-- docker-compose.yml: ...
+- rag/embeddings.py: `get_embeddings() -> Embeddings` — chọn provider theo
+  `settings.embedding_provider`; `google`/`google-genai`/`gemini` dùng
+  GoogleGenerativeAIEmbeddings(model, google_api_key); provider khác -> ValueError.
+- rag/vectorstore.py:
+  + `table_name_for_embedding_model(model) -> str` (vd rag_chunks_gemini_embedding_001)
+  + `get_embedding_dimension(embeddings) -> int` (probe 1 lần lúc tạo table)
+  + `get_vectorstore(embeddings=None, table_name=None, *, overwrite=False) -> PGVectorStore`
+  + `add_document(chunks, *, document_id=None, embeddings=None, table_name=None) -> str`
+    gán metadata document_id/chunk_index, giữ file_name/page; dùng id uuid5 deterministic
+    nên add lại cùng document_id là update; raise ValueError nếu chunks rỗng.
+- db.py: `get_engine()` (PGEngine), `get_sync_engine()` (SQLAlchemy sync),
+  `table_exists(table_name, schema_name)`; set WindowsSelectorEventLoopPolicy trên Windows
+  (psycopg async mà langchain-postgres dùng không chạy trên ProactorEventLoop).
+- scripts/try_vectorstore.py: test load -> split -> embedding -> pgvector -> query trực tiếp;
+  cờ `--fake` dùng DeterministicFakeEmbedding để test riêng vector store khi chưa có key.
+- config.py: embedding_provider="google", embedding_model="gemini-embedding-001".
+- requirements.txt: thêm langchain-google-genai>=4.0.0; bỏ langchain-openai.
+- .env / .env.example: EMBEDDING_PROVIDER=google, EMBEDDING_MODEL=gemini-embedding-001,
+  EMBEDDING_API_KEY dạng AIza... (Google AI Studio free tier).
+
+Test đã pass:
+- Real API (Google, gemini-embedding-001): try_vectorstore.py lưu 14 chunk vào table
+  rag_chunks_gemini_embedding_001; DB xác nhận cột embedding = vector(3072), 14 row;
+  similarity_search trả top-1 kèm metadata đúng; chạy lại vẫn 14 row (upsert idempotent).
+- Offline (--fake, pgvector thật): metadata contract (document_id/file_name/chunk_index/page);
+  PDF giữ page=0; upsert không nhân đôi row; chunks rỗng -> ValueError; provider lạ -> ValueError.
+- Gọi API thật với key placeholder trả 400 "API key not valid" -> xác nhận wiring LangChain đúng.
 ```
 
 ### Ghi chú/Quyết định
 
 ```text
-[Điền nếu có thay đổi]
+- Baseline embedding = Google Gemini free tier (`gemini-embedding-001`, 3072 chiều);
+  thêm `langchain-google-genai`, bỏ `langchain-openai` (tránh tích hợp provider thừa).
+- Dùng API hiện hành của langchain-postgres: PGEngine + PGVectorStore (không dùng lớp
+  `PGVector` deprecated).
+- Mỗi embedding model có table riêng `rag_chunks_<model>` để không trộn vector giữa các model.
+- Số chiều vector lấy bằng probe `embed_query` lúc tạo table; không hard-code.
+- ID chunk = uuid5(document_id:chunk_index) -> add lại cùng document_id là update.
+- Windows: bắt buộc WindowsSelectorEventLoopPolicy vì psycopg async (langchain-postgres)
+  không chạy trên ProactorEventLoop.
+- Chưa tạo ANN index (đang quét tuần tự). gemini-embedding-001 3072 chiều vượt giới hạn
+  2000 chiều của HNSW/IVFFlat -> nếu cần index ở Phase 7 phải giảm output_dimensionality.
+- Update chỉ ghi đè theo chunk_index; nếu số chunk giảm, chunk dư cần xử lý ở Phase 5 (DELETE).
+- Giữ table rag_chunks_gemini_embedding_001 và data/documents/sample_rag.md để Phase 3 dùng.
 ```
 
 ---
 
 # Phase 3 — Retrieval + Prompt + LLM
 
-**Status: 🔲 TODO**
+**Status: ✅ DONE**
 
 ### Prompt
 
@@ -436,24 +523,46 @@ Test:
 ### Đã hoàn thành
 
 ```text
-[Điền sau khi test xong]
-- rag/retriever.py: ...
-- rag/prompt.py: ...
-- rag/llm.py: ...
-- rag/chain.py: ...
+- rag/llm.py: `get_llm() -> BaseChatModel` (lru_cache) — ChatOpenRouter(model=settings.llm_model,
+  api_key=settings.openrouter_api_key, base_url=settings.openrouter_base_url).
+- rag/prompt.py: `get_rag_prompt() -> ChatPromptTemplate` (system instruction + human chứa
+  context và question); `format_context(documents) -> str` ghép chunk kèm file/page.
+- rag/retriever.py: `get_retriever(embeddings=None, table_name=None, *, top_k=None) -> BaseRetriever`
+  — dùng vector store Phase 2 qua `as_retriever(search_kwargs={"k": settings.top_k})`.
+- rag/chain.py: `build_rag_chain(retriever=None, llm=None, prompt=None) -> Runnable` (LCEL);
+  input `str`, output `{question, documents, answer}`; `_to_prompt_inputs(payload) -> dict`.
+- scripts/try_rag.py: script test question -> retrieve top-k -> prompt -> LLM -> answer + sources.
+- config.py + .env/.env.example: LLM baseline dùng free model qua OpenRouter.
+
+Test đã pass (test thực tế bằng free model `nvidia/nemotron-3-super-120b-a12b:free`):
+- TEST 1 (câu hỏi có trong tài liệu): retriever trả đúng 5 chunk; LLM trả lời dựa trên context;
+  output có `documents`. PASS.
+- TEST 2 (câu hỏi không có trong tài liệu): LLM trả đúng fallback
+  "Không tìm thấy thông tin trong tài liệu." (không suy đoán). PASS.
+- TEST 3 (source metadata): output chain gồm `answer` + `documents` + `question`; 5 document,
+  mỗi document đủ `source`, `file_name`, `document_id`, `chunk_index`. PASS.
 ```
 
 ### Ghi chú/Quyết định
 
 ```text
-[Điền nếu có thay đổi]
+- Chain dùng LCEL, input là câu hỏi dạng str, output là dict gồm answer + documents
+  (documents để Phase 4 lấy sources).
+- Prompt bắt buộc: chỉ dùng Context; nếu thiếu thông tin phải trả lời
+  "Không tìm thấy thông tin trong tài liệu"; không bịa nguồn.
+- Retriever dùng đúng abstraction `as_retriever` của LangChain, không tự viết logic similarity.
+- Trong lúc test, model `qwen/qwen3.8-27b:free` bị 429 (TooManyRequests) liên tục từ provider;
+  đã test thành công bằng `nvidia/nemotron-3-super-120b-a12b:free`.
+  => Chốt LLM baseline = `nvidia/nemotron-3-super-120b-a12b:free` (free tier), cập nhật ở
+  config.py + .env/.env.example; đổi model chỉ cần sửa `LLM_MODEL`.
+- Không thêm memory/chat history, Agent, tool calling, reranker, hybrid search, query rewriting.
 ```
 
 ---
 
 # Phase 4 — Ghép RAG Pipeline + Sources
 
-**Status: 🔲 TODO**
+**Status: ✅ DONE**
 
 ### Prompt
 
@@ -485,21 +594,42 @@ Test:
 ### Đã hoàn thành
 
 ```text
-[Điền sau khi test xong]
-- ...
+- rag/pipeline.py: service/use-case layer ghép các component Phase 1–3:
+  + `index_document(file_path, *, document_id=None, table_name=None) -> dict`
+    = load_document -> split_documents -> add_document (pgvector);
+    trả {document_id, file_name, num_chunks}.
+  + `answer_question(question, *, table_name=None) -> dict`
+    = get_retriever -> build_rag_chain -> {answer, sources}.
+  + `_to_source(document) -> dict` trích metadata file_name/source/document_id/chunk_index/page.
+- scripts/try_pipeline.py: chạy end-to-end index -> hỏi -> answer + sources.
+- config.py + .env.example: chốt LLM baseline = nvidia/nemotron-3-super-120b-a12b:free
+  (.env đã set sẵn). Embedding giữ google / gemini-embedding-001.
+
+Test đã pass (end-to-end với API thật):
+- Index sample_pipeline.md (document_id=sample-pipeline-doc): num_chunks=2.
+- Hỏi "Chunk size và chunk overlap mặc định là bao nhiêu?" -> trả 500/50 đúng context; sources=5.
+- Hỏi "Hệ thống dùng vector database nào?" -> PostgreSQL 16 + pgvector 0.8.6; sources=5.
+- Hỏi ngoài tài liệu -> fallback "Không tìm thấy thông tin trong tài liệu."
+- Mỗi source đủ file_name/source/document_id/chunk_index (page=None với Markdown).
+- DB: sample-doc=14 chunk, sample-pipeline-doc=2 chunk.
 ```
 
 ### Ghi chú/Quyết định
 
 ```text
-[Điền nếu có thay đổi]
+- pipeline.py là service/use-case layer; đặt trong rag/ để không tạo package mới.
+- `answer_question` trả `sources` dạng dict lấy từ metadata của Document đã retrieve;
+  Phase 5 sẽ map sang Pydantic schema.
+- Phase 4 KHÔNG có DELETE; add_document ghi đè theo chunk_index nên chunk dư khi số chunk
+  giảm chưa được dọn -> xử lý ở Phase 5 (delete theo document_id + re-index an toàn).
+- Không thêm memory/chat history, reranker, hybrid search, query rewriting, Agent/LangGraph/MCP.
 ```
 
 ---
 
 # Phase 5 — FastAPI + Terminal Testing
 
-**Status: 🔲 TODO**
+**Status: ✅ DONE**
 
 ### Prompt
 
@@ -546,17 +676,36 @@ Yêu cầu:
 ### Đã hoàn thành
 
 ```text
-[Điền sau khi test xong]
-- schemas.py: ...
-- api/documents.py: ...
-- api/chat.py: ...
-- main.py: ...
+- app/schemas.py: Source, ChatRequest, ChatResponse, DocumentIndexInfo, DocumentInfo,
+  DeleteDocumentResponse (Pydantic).
+- app/api/documents.py: POST /documents/upload, GET /documents, DELETE /documents/{document_id}.
+- app/api/chat.py: POST /chat -> pipeline.answer_question.
+- app/main.py: include routers documents + chat; giữ GET /health.
+- app/rag/pipeline.py: index_document delete-then-add; thêm list_documents(), delete_document().
+- app/rag/vectorstore.py: thêm delete_document(document_id), list_documents()
+  (SQL parameterized trên cột JSON langchain_metadata).
+
+Test đã pass (FastAPI TestClient, API thật):
+- Upload hợp lệ -> 201; num_chunks=7; DB đúng 7 row; file lưu trong data/documents.
+- GET /documents -> chứa document vừa upload (chunk_count đúng).
+- POST /chat có thông tin -> 200; answer bám context; sources=5; mỗi source đủ
+  file_name/source/document_id/chunk_index.
+- POST /chat ngoài tài liệu -> 200; fallback "Không tìm thấy thông tin trong tài liệu."
+- DELETE /documents/{id} -> 200; deleted_chunks=7; DB còn 0 row; GET không còn document.
+- Lỗi: .csv -> 400; delete id lạ -> 404; question "" / "   " / thiếu field -> 422.
+- Re-index shrink: upload dài 17 chunk rồi ngắn 1 chunk cùng tên -> chunk_count=1, hết chunk cũ.
 ```
 
 ### Ghi chú/Quyết định
 
 ```text
-[Điền nếu có thay đổi]
+- document_id khi upload là deterministic theo tên file: upload-<uuid5(tên_file)>;
+  upload lại cùng tên = replace/re-index (đồng thời xử lý trường hợp số chunk giảm).
+- delete/list dùng SQL parameterized trên cột JSON `langchain_metadata` vì
+  `PGVectorStore.delete(filter=...)` chỉ hỗ trợ `metadata_columns` (document_id nằm trong JSON).
+- Lỗi chat -> 502, chỉ trả tên loại exception (không lộ message/API key).
+- API layer không chứa logic RAG; chỉ validate và gọi service pipeline.
+- Không auth, streaming, frontend, memory, reranker, hybrid search, Agent/LangGraph/MCP.
 ```
 
 ---
@@ -728,11 +877,14 @@ vì đây là chiến lược baseline được LangChain khuyến nghị bắt 
 ## 6. Cost control
 
 Project ưu tiên:
-- free/low-cost model ở baseline;
-- dataset nhỏ;
-- không gọi API dư thừa;
-- benchmark riêng;
-- chỉ re-index khi đổi embedding model.
+
+- Dùng **free model/free tier** cho LLM và Embedding ở baseline, hướng tới chi phí gần $0 trong giai đoạn xây dựng và test RAG cơ bản.
+- Không self-host LLM hoặc Embedding model.
+- Dataset nhỏ.
+- Không gọi API dư thừa.
+- Benchmark riêng, chỉ sử dụng model trả phí khi thực sự cần so sánh.
+- Khi đổi embedding model phải re-index dữ liệu tương ứng.
+- Khi sử dụng model trả phí, ghi nhận provider, model và usage/cost của experiment.
 
 ---
 

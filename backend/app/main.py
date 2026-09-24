@@ -1,15 +1,16 @@
-"""
-FastAPI entrypoint.
+"""FastAPI entrypoint.
 
-Phase 0 chỉ dựng app ở mức foundation: khởi động được và có health check.
-Chưa có endpoint RAG (`/documents`, `/chat`) — các phase sau mới thêm.
+Expose RAG pipeline (Phase 4) qua HTTP API. API layer chỉ validate và gọi service.
 """
 
 from fastapi import FastAPI
 
+from app.api import chat, documents
 from app.config import settings
 
-app = FastAPI(title="RAG Demo API", version="0.0.1")
+app = FastAPI(title="RAG Demo API", version="0.1.0")
+app.include_router(documents.router)
+app.include_router(chat.router)
 
 
 @app.get("/health", tags=["system"])

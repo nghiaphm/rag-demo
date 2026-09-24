@@ -15,11 +15,16 @@ langchain-core>=1.2.0
 # --- LLM: OpenRouter qua LangChain integration (ChatOpenRouter) ---
 langchain-openrouter>=0.1.0
 
-# --- Embedding: provider API qua LangChain Embeddings integration ---
-langchain-openai>=1.0.0
+# --- Embedding: Google Gemini (free tier) qua LangChain Embeddings integration ---
+langchain-google-genai>=4.0.0
 
 # --- Chunking baseline (RecursiveCharacterTextSplitter) ---
 langchain-text-splitters>=1.0.0
+
+# --- Document loaders (Phase 1: PDF, Markdown, TXT) ---
+langchain-community>=0.4.0         # PyPDFLoader, TextLoader
+pypdf>=5.0.0                       # backend đọc PDF cho PyPDFLoader
+chardet>=5.0.0,<6.0.0               # TextLoader autodetect_encoding cho TXT/MD
 
 # --- Vector database: PostgreSQL + pgvector qua LangChain integration ---
 langchain-postgres>=0.0.14

@@ -1,0 +1,69 @@
+{
+  "name": "rag-demo-golden-set-v1",
+  "description": "Golden set nhỏ cho RAG Demo V1; metric deterministic (không LLM judge).",
+  "cases": [
+    {
+      "id": "pg-version",
+      "question": "Hệ thống dùng PostgreSQL phiên bản nào?",
+      "expected_sources": ["postgresql.md"],
+      "expected_facts": ["16"],
+      "expect_fallback": false
+    },
+    {
+      "id": "pgvector-version",
+      "question": "pgvector phiên bản nào được cài đặt?",
+      "expected_sources": ["postgresql.md"],
+      "expected_facts": ["0.8.6"],
+      "expect_fallback": false
+    },
+    {
+      "id": "pg-port",
+      "question": "Cổng PostgreSQL của container được map ra host là bao nhiêu?",
+      "expected_sources": ["postgresql.md"],
+      "expected_facts": ["5433"],
+      "expect_fallback": false
+    },
+    {
+      "id": "chunk-size",
+      "question": "chunk_size mặc định là bao nhiêu ký tự?",
+      "expected_sources": ["chunking.md"],
+      "expected_facts": ["500"],
+      "expect_fallback": false
+    },
+    {
+      "id": "chunk-overlap",
+      "question": "chunk_overlap mặc định là bao nhiêu ký tự?",
+      "expected_sources": ["chunking.md"],
+      "expected_facts": ["50"],
+      "expect_fallback": false
+    },
+    {
+      "id": "embedding-dim",
+      "question": "Vector của gemini-embedding-001 có bao nhiêu chiều?",
+      "expected_sources": ["llm-embedding.md"],
+      "expected_facts": ["3072"],
+      "expect_fallback": false
+    },
+    {
+      "id": "embedding-change",
+      "question": "Khi đổi embedding model thì phải làm gì với dữ liệu?",
+      "expected_sources": ["llm-embedding.md"],
+      "expected_facts": ["re-index"],
+      "expect_fallback": false
+    },
+    {
+      "id": "oob-capital",
+      "question": "Thủ đô của Nhật Bản là gì?",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_fallback": true
+    },
+    {
+      "id": "oob-gold",
+      "question": "Giá vàng thế giới hôm nay là bao nhiêu?",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_fallback": true
+    }
+  ]
+}
