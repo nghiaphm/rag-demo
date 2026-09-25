@@ -3,16 +3,16 @@
 Cách chạy (khuyến nghị chạy từ project root):
     python backend/scripts/try_step.py [duong_dan_file]
 
-Nếu không truyền đường dẫn, script tự tạo file mẫu `sample_rag.md` trong
-`data/documents/`, sau đó load và split để in ra số document, số chunk và
-metadata của chunk đầu tiên.
+Nếu không truyền đường dẫn, script tự tạo fixture `sample_rag.md` trong
+`backend/fixtures/` (không dùng thư mục runtime `data/documents/`), sau đó load
+và split để in ra số document, số chunk và metadata của chunk đầu tiên.
 """
 
 import sys
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = BACKEND_DIR.parent
+FIXTURES_DIR = BACKEND_DIR / "fixtures"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
@@ -75,19 +75,14 @@ Tài liệu mẫu này chỉ dùng để kiểm thử pipeline load và split. N
 """
 
 
-def _resolve_documents_dir() -> Path:
-    """Trả về thư mục documents dạng absolute, tính từ project root nếu là path tương đối."""
-    documents_dir = Path(settings.documents_dir)
-    if not documents_dir.is_absolute():
-        documents_dir = PROJECT_ROOT / documents_dir
-    return documents_dir
-
-
 def _ensure_sample_file() -> Path:
-    """Tạo file mẫu trong documents_dir nếu chưa tồn tại và trả về đường dẫn."""
-    documents_dir = _resolve_documents_dir()
-    documents_dir.mkdir(parents=True, exist_ok=True)
-    sample_path = documents_dir / SAMPLE_FILE_NAME
+    """Tạo fixture trong `backend/fixtures/` nếu chưa tồn tại và trả về đường dẫn.
+
+    Fixture được tách khỏi thư mục runtime `data/documents/` để không lẫn với
+    dữ liệu demo/upload.
+    """
+    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
+    sample_path = FIXTURES_DIR / SAMPLE_FILE_NAME
     if not sample_path.exists():
         sample_path.write_text(SAMPLE_CONTENT, encoding="utf-8")
     return sample_path

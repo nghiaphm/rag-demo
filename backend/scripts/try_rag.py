@@ -1,7 +1,12 @@
 """Script test Phase 3: question -> retrieve top-k -> prompt -> LLM -> answer + sources.
 
-Chạy từ project root (cần OPENROUTER_API_KEY hợp lệ và dữ liệu đã index ở Phase 2):
+Chạy từ project root (cần OPENROUTER_API_KEY hợp lệ):
     python backend/scripts/try_rag.py "câu hỏi của bạn"
+
+Script không tạo/index dữ liệu. Nó chạy trên **fixture table riêng**
+`{table}_fixtures`, nên cần chạy một trong các script sau trước để có fixture:
+    python backend/scripts/try_vectorstore.py
+    python backend/scripts/try_pipeline.py
 
 Không truyền câu hỏi thì script dùng câu hỏi mẫu.
 """
@@ -19,18 +24,21 @@ if hasattr(sys.stdout, "reconfigure"):
 from app.config import settings
 from app.rag.chain import build_rag_chain
 from app.rag.retriever import get_retriever
+from app.rag.vectorstore import table_name_for_embedding_model
 
+FIXTURE_TABLE = f"{table_name_for_embedding_model(settings.embedding_model)}_fixtures"
 DEFAULT_QUESTION = "Tài liệu nói gì về chunk_size và chunk_overlap?"
 
 
 def main() -> None:
-    """Chạy RAG chain với câu hỏi truyền vào (hoặc câu hỏi mặc định)."""
+    """Chạy RAG chain trên fixture table với câu hỏi truyền vào (hoặc mặc định)."""
     question = " ".join(sys.argv[1:]).strip() or DEFAULT_QUESTION
 
-    retriever = get_retriever()
+    retriever = get_retriever(table_name=FIXTURE_TABLE)
     documents = retriever.invoke(question)
     print(f"Provider/model : {settings.embedding_provider} / {settings.embedding_model}")
     print(f"LLM model      : {settings.llm_model}")
+    print(f"Fixture table  : {FIXTURE_TABLE}")
     print(f"top_k          : {settings.top_k} (retriever trả {len(documents)} chunk)")
 
     result = build_rag_chain(retriever=retriever).invoke(question)

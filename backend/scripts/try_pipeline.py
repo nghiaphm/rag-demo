@@ -2,13 +2,16 @@
 
 Chạy từ project root (cần OPENROUTER_API_KEY và EMBEDDING_API_KEY hợp lệ):
     python backend/scripts/try_pipeline.py
+
+Fixture (`sample_pipeline.md`) được tạo trong `backend/fixtures/` và index vào
+**fixture table riêng** `{table}_fixtures` (không đụng table demo/runtime).
 """
 
 import sys
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = BACKEND_DIR.parent
+FIXTURES_DIR = BACKEND_DIR / "fixtures"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
@@ -17,9 +20,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from app.config import settings
 from app.rag.pipeline import answer_question, index_document
+from app.rag.vectorstore import table_name_for_embedding_model
 
-SAMPLE_FILE = PROJECT_ROOT / "data" / "documents" / "sample_pipeline.md"
+SAMPLE_FILE = FIXTURES_DIR / "sample_pipeline.md"
 SAMPLE_DOCUMENT_ID = "sample-pipeline-doc"
+FIXTURE_TABLE = f"{table_name_for_embedding_model(settings.embedding_model)}_fixtures"
 
 SAMPLE_CONTENT = """# RAG Demo V1 - Ghi chú kỹ thuật
 
@@ -51,8 +56,8 @@ QUESTION_OUT_OF_DOCUMENT = "Giá cổ phiếu của Vinamilk hôm nay là bao nh
 
 
 def _ensure_sample_file() -> Path:
-    """Tạo file mẫu trong data/documents nếu chưa tồn tại."""
-    SAMPLE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    """Tạo fixture trong `backend/fixtures/` nếu chưa tồn tại."""
+    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     if not SAMPLE_FILE.exists():
         SAMPLE_FILE.write_text(SAMPLE_CONTENT, encoding="utf-8")
     return SAMPLE_FILE
@@ -68,26 +73,31 @@ def _print_sources(sources: list[dict]) -> None:
 
 
 def main() -> None:
-    """Index một document rồi chạy các câu hỏi in-document và out-of-document."""
+    """Index fixture rồi chạy các câu hỏi in-document và out-of-document trên fixture table."""
     print(f"Embedding : {settings.embedding_provider} / {settings.embedding_model}")
     print(f"LLM       : {settings.llm_model}")
     print(f"top_k     : {settings.top_k}")
+    print(f"Table     : {FIXTURE_TABLE}")
 
     sample_path = _ensure_sample_file()
-    index_result = index_document(sample_path, document_id=SAMPLE_DOCUMENT_ID)
+    index_result = index_document(
+        sample_path,
+        document_id=SAMPLE_DOCUMENT_ID,
+        table_name=FIXTURE_TABLE,
+    )
     print("\n[INDEX]")
     print(f"  document_id = {index_result['document_id']}")
     print(f"  file_name   = {index_result['file_name']}")
     print(f"  num_chunks  = {index_result['num_chunks']}")
 
     for question in QUESTIONS_IN_DOCUMENT:
-        result = answer_question(question)
+        result = answer_question(question, table_name=FIXTURE_TABLE)
         print(f"\n[CÂU HỎI - có trong tài liệu] {question}")
         print(f"  ANSWER  : {result['answer']}")
         print(f"  SOURCES : {len(result['sources'])}")
         _print_sources(result["sources"])
 
-    result = answer_question(QUESTION_OUT_OF_DOCUMENT)
+    result = answer_question(QUESTION_OUT_OF_DOCUMENT, table_name=FIXTURE_TABLE)
     print(f"\n[CÂU HỎI - không có trong tài liệu] {QUESTION_OUT_OF_DOCUMENT}")
     print(f"  ANSWER  : {result['answer']}")
     print(f"  SOURCES : {len(result['sources'])}")

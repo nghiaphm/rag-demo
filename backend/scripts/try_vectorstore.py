@@ -5,15 +5,17 @@ Chạy từ project root:
     python backend/scripts/try_vectorstore.py --fake
 
 Mặc định dùng embedding API (Google Gemini) theo `settings`.
+Fixture mặc định (`sample_rag.md`) được tạo trong `backend/fixtures/` và index vào
+**fixture table riêng** `{table}_fixtures` (không đụng table demo/runtime).
 `--fake` dùng `DeterministicFakeEmbedding` của langchain-core để kiểm tra riêng
-phần vector store khi chưa có API key; khi đó dùng table riêng có hậu tố `_fake`.
+phần vector store khi chưa có API key; khi đó dùng table `..._fixtures_fake`.
 """
 
 import sys
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = BACKEND_DIR.parent
+FIXTURES_DIR = BACKEND_DIR / "fixtures"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
@@ -29,7 +31,8 @@ from app.rag.loader import load_document
 from app.rag.splitter import split_documents
 from app.rag.vectorstore import add_document, get_vectorstore, table_name_for_embedding_model
 
-SAMPLE_FILE = PROJECT_ROOT / "data" / "documents" / "sample_rag.md"
+SAMPLE_FILE = FIXTURES_DIR / "sample_rag.md"
+FIXTURE_TABLE = f"{table_name_for_embedding_model(settings.embedding_model)}_fixtures"
 FAKE_EMBEDDING_SIZE = 768
 SAMPLE_CONTENT = (
     "Retrieval-Augmented Generation (RAG) kết hợp truy hồi tài liệu với mô hình "
@@ -39,7 +42,8 @@ SAMPLE_CONTENT = (
 
 
 def _ensure_sample_file() -> Path:
-    SAMPLE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    """Tạo fixture trong `backend/fixtures/` (không dùng `data/documents/`)."""
+    FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     if not SAMPLE_FILE.exists():
         SAMPLE_FILE.write_text(SAMPLE_CONTENT, encoding="utf-8")
     return SAMPLE_FILE
@@ -52,7 +56,7 @@ def _count_rows(table_name: str) -> int:
 
 
 def main() -> None:
-    """Load + split file, lưu vào pgvector và xác nhận dữ liệu tồn tại."""
+    """Load + split fixture, lưu vào fixture table và xác nhận dữ liệu tồn tại."""
     positional = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
     use_fake = "--fake" in sys.argv[1:]
 
@@ -65,14 +69,12 @@ def main() -> None:
 
         embeddings = DeterministicFakeEmbedding(size=FAKE_EMBEDDING_SIZE)
         print("Embedding          : fake (DeterministicFakeEmbedding, offline)")
+        table_name = f"{FIXTURE_TABLE}_fake"
     else:
         embeddings = get_embeddings()
         print(f"Embedding provider : {settings.embedding_provider}")
         print(f"Embedding model    : {settings.embedding_model}")
-
-    table_name = table_name_for_embedding_model(settings.embedding_model)
-    if use_fake:
-        table_name = f"{table_name}_fake"
+        table_name = FIXTURE_TABLE
 
     documents = load_document(file_path)
     chunks = split_documents(documents)
@@ -83,7 +85,7 @@ def main() -> None:
         table_name=table_name,
     )
 
-    print(f"Table              : {table_name}")
+    print(f"Fixture table      : {table_name}")
     print(f"Số chunk đã lưu    : {len(chunks)}")
     print(f"document_id        : {document_id}")
     print(f"Số row trong table : {_count_rows(table_name)}")
