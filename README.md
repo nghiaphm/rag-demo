@@ -127,7 +127,7 @@ Copy-Item .env.example .env
 Các biến (giá trị mặc định lấy từ `backend/app/config.py`):
 
 | Biến | Mặc định | Ghi chú |
-|---|---|---|
+| --- | --- | --- |
 | `OPENROUTER_API_KEY` | (bắt buộc) | Key OpenRouter, dùng cho LLM |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL OpenRouter |
 | `LLM_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Model free; đổi = sửa biến này |
@@ -141,6 +141,7 @@ Các biến (giá trị mặc định lấy từ `backend/app/config.py`):
 | `DOCUMENTS_DIR` | `./data/documents` | Nơi lưu file upload (tính từ project root) |
 
 Lưu ý:
+
 - **Không commit `.env`** (đã được `.gitignore` chặn).
 - `.env` luôn được đọc theo project root, không phụ thuộc thư mục chạy.
 
@@ -238,7 +239,7 @@ uvicorn app.main:app --reload --port 8000
 Endpoints:
 
 | Method | Path | Mô tả |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/health` | Health check, trả `{"status": "ok", "llm_model": "..."}` |
 | POST | `/documents/upload` | Upload + index tài liệu (multipart form, field `file`) |
 | GET | `/documents` | Danh sách document đã index |
@@ -352,6 +353,7 @@ Response mẫu:
 ```
 
 Lưu ý:
+
 - DELETE xoá **vector/chunk** theo `document_id`; **không xoá file** trong `data/documents`.
 - Nếu `document_id` không tồn tại → HTTP `404`.
 

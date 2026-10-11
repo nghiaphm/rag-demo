@@ -6,10 +6,10 @@ Phase 1 chỉ load text; KHÔNG embedding và KHÔNG lưu database.
 
 from pathlib import Path
 
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredExcelLoader
 from langchain_core.documents import Document
-
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".md", ".markdown", ".txt"})
+import networkx as nx
+SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".md", ".markdown", ".txt", ".xlsx"})
 
 
 def load_document(file_path: str | Path) -> list[Document]:
@@ -40,6 +40,8 @@ def _load(path: Path) -> list[Document]:
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return PyPDFLoader(str(path), mode="page").load()
+    if suffix == ".xlsx":
+        return UnstructuredExcelLoader(str(path), mode="elements").load()
     if suffix in {".md", ".markdown", ".txt"}:
         return _load_text(path)
 

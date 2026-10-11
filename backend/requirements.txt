@@ -13,3 +13,6 @@ chardet>=5.0.0,<6.0.0
 langchain-postgres>=0.0.14
 pgvector>=0.3.0
 psycopg[binary]>=3.2.0
+unstructured
+networkx
+pandas
