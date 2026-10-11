@@ -1,6 +1,10 @@
 """Pydantic schemas cho request/response của FastAPI."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field, field_validator
+
+from app.document_models import DocumentStatus
 
 
 class Source(BaseModel):
@@ -36,23 +40,56 @@ class ChatResponse(BaseModel):
 
 
 class DocumentIndexInfo(BaseModel):
-    """Kết quả index một document."""
+    """Kết quả tạo/index một document version."""
 
     document_id: str
+    version_id: str
+    job_id: str
     file_name: str
     num_chunks: int
+    status: DocumentStatus = DocumentStatus.INDEXED
+    activated: bool
+
+
+class DocumentVersionInfo(BaseModel):
+    version_id: str
+    version: int
+    file_name: str
+    status: DocumentStatus
+    checksum_sha256: str
+    size_bytes: int
+    chunk_count: int
+    embedding_model: str | None = None
+    created_at: datetime
+    indexed_at: datetime | None = None
 
 
 class DocumentInfo(BaseModel):
-    """Thông tin một document đã index."""
+    """Thông tin identity và active version của document."""
 
     document_id: str
-    file_name: str | None = None
+    file_name: str
+    status: DocumentStatus
+    active_version_id: str | None = None
     chunk_count: int
+    version_count: int
+    cleanup_pending: bool
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None = None
+
+
+class DocumentDetail(DocumentInfo):
+    versions: list[DocumentVersionInfo]
 
 
 class DeleteDocumentResponse(BaseModel):
-    """Kết quả xóa một document."""
+    """Kết quả unpublish và cleanup retrieval data."""
 
     document_id: str
+    status: DocumentStatus = DocumentStatus.DELETED
     deleted_chunks: int
+    raw_file_policy: str = "retained"
+    retained_files: int
+    cleanup_pending: bool
+    retrieval_eligible: bool = False

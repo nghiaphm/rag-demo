@@ -55,10 +55,10 @@
 | Giai đoạn 5 — History-aware RAG | PLANNED | Test multi-turn và evaluation retrieval/generation đạt tiêu chí |
 | M — Migration pgvector → Qdrant Cloud | IN PROGRESS | Qdrant là retrieval backend sau kiểm thử cutover |
 
-- **Giai đoạn hiện tại:** Giai đoạn 1 (IN PROGRESS; audit baseline đã hoàn thành, chưa triển khai V2)
-- **Task vừa hoàn thành:** `P1-01 / M-01` — đã audit repository, dependencies và toàn bộ coupling PostgreSQL/pgvector; không thay đổi source code.
-- **Task tiếp theo:** `P1-02 / M-02` — kết nối MongoDB Atlas và Qdrant Cloud (**chưa bắt đầu**).
-- **Blockers:** Python trong `.venv` trỏ tới interpreter không còn tồn tại; Docker daemon không chạy; `.env` chưa có cấu hình MongoDB. Qdrant credentials hiện diện nhưng chưa được settings/source sử dụng và chưa kiểm tra kết nối cloud.
+- **Giai đoạn hiện tại:** Giai đoạn 1 (IN PROGRESS; cloud connection layer đã triển khai, chưa migration/cutover)
+- **Task vừa hoàn thành:** `P1-07` — verification V2 và regression/eval V1 đều PASS; toàn bộ checklist P1-01…P1-07 đã hoàn thành.
+- **Task tiếp theo:** `M-03` (**chưa bắt đầu; chờ giao việc**); chưa chuyển sang Giai đoạn 2.
+- **Blockers:** Không có blocker cho P1-07. Tồn đọng đúng phạm vi: `/chat` vẫn dùng PostgreSQL/pgvector; M-03 chưa có query adapter/cutover retrieval đầy đủ; MongoDB user có role quản trị rộng cần thu hẹp trước dữ liệu thật.
 - **Chi tiết nhật ký:** [`CURRENT_CHANGE.md`](./CURRENT_CHANGE.md).
 
 ## 3. Quy ước kỹ thuật chung
@@ -91,12 +91,12 @@
 **Mục tiêu:** quản lý document lifecycle bằng **MongoDB Atlas (cloud)**, file gốc trên local qua abstraction; index bằng **Qdrant Cloud**. Không triển khai MongoDB hoặc Qdrant local/Compose. Trạng thái cluster đã tạo và `0.0.0.0/0` do người dùng cung cấp; kết nối thực tế vẫn cần được Agent kiểm thử an toàn. Làm các prerequisite M-series song song theo dependency.
 
 - [x] **P1-01 — Audit baseline:** kiểm tra source/requirements, routes, file upload/index/delete, scripts, eval, config và coupling pgvector; ghi nhận smoke tests. Phối hợp `M-01`.
-- [ ] **P1-02 — Kết nối MongoDB Atlas:** kiểm tra dependency/driver phù hợp và cấu hình `MONGODB_URI`, `MONGODB_DB_NAME` qua settings/`.env.example` (chỉ placeholder); tạo client lifecycle khi FastAPI startup/shutdown, ping/readiness có timeout và báo lỗi an toàn; xây repository/adapter; xác minh quyền DB tối thiểu, TLS/URI `mongodb+srv://` nếu cluster cung cấp, không log URI/secret; **không thêm MongoDB vào Docker Compose, không tạo cluster mới và không tự thay đổi IP Access List**.
-- [ ] **P1-03 — Document models/indexes trên MongoDB Atlas:** `documents`, `document_versions`, `ingestion_jobs`; ID độc lập filename, checksum, unique/indexes, status và active version.
-- [ ] **P1-04 — File storage abstraction:** local adapter (save/read/exists/delete); opaque versioned storage key, validation, download/read có kiểm soát; không xây S3 adapter bây giờ.
-- [ ] **P1-05 — Ingestion tích hợp:** upload raw file → metadata `UPLOADED/PROCESSING` → parse/chunk/embed → upsert Qdrant → verify → `INDEXED` hoặc `FAILED`; xử lý retry/reconciliation, không phá active version khi fail.
-- [ ] **P1-06 — Document APIs:** upload/list/get/delete/update/re-index và response rõ ràng; delete/unpublish loại ngay khỏi retrieval, cleanup theo chính sách đã chốt; ghi nhận giữ hay xóa file.
-- [ ] **P1-07 — Verification:** kiểm tra upload, file gốc, metadata/page, số chunk, Qdrant retrieval, version switching, failed re-index, delete không còn retrieve, regression/eval; cập nhật README.
+- [x] **P1-02 — Kết nối MongoDB Atlas:** kiểm tra dependency/driver phù hợp và cấu hình `MONGODB_URI`, `MONGODB_DB_NAME` qua settings/`.env.example` (chỉ placeholder); tạo client lifecycle khi FastAPI startup/shutdown, ping/readiness có timeout và báo lỗi an toàn; xây repository/adapter; xác minh quyền DB tối thiểu, TLS/URI `mongodb+srv://` nếu cluster cung cấp, không log URI/secret; **không thêm MongoDB vào Docker Compose, không tạo cluster mới và không tự thay đổi IP Access List**.
+- [x] **P1-03 — Document models/indexes trên MongoDB Atlas:** `documents`, `document_versions`, `ingestion_jobs`; ID độc lập filename, checksum, unique/indexes, status và active version.
+- [x] **P1-04 — File storage abstraction:** local adapter (save/read/exists/delete); opaque versioned storage key, validation, download/read có kiểm soát; không xây S3 adapter bây giờ.
+- [x] **P1-05 — Ingestion tích hợp:** upload raw file → metadata `UPLOADED/PROCESSING` → parse/chunk/embed → upsert Qdrant → verify → `INDEXED` hoặc `FAILED`; xử lý retry/reconciliation, không phá active version khi fail.
+- [x] **P1-06 — Document APIs:** upload/list/get/delete/update/re-index và response rõ ràng; delete/unpublish loại ngay khỏi retrieval, cleanup theo chính sách đã chốt; ghi nhận giữ hay xóa file.
+- [x] **P1-07 — Verification:** kiểm tra upload, file gốc, metadata/page, số chunk, Qdrant retrieval, version switching, failed re-index, delete không còn retrieve, regression/eval; cập nhật README.
 
 **Điều kiện kết thúc:** Luồng document end-to-end có test; lỗi re-index không làm mất active version; document bị xóa không còn được tìm thấy; Qdrant hoạt động thay pgvector.
 
@@ -153,7 +153,7 @@
 > Làm `M-01…M-05` trong Giai đoạn 1; chạy lại `M-06` ở các Giai đoạn 3–5. Không gỡ PostgreSQL trước khi cutover được xác minh.
 
 - [x] **M-01 — Kiểm kê phụ thuộc:** tìm pgvector trong db, vectorstore, retriever, pipeline, scripts, tests, eval, compose, requirements, settings; lưu kết quả retrieval baseline.
-- [ ] **M-02 — Qdrant Cloud connection:** xác minh `.env` có `QDRANT_URL` và `QDRANT_API_KEY` (không in giá trị), cập nhật `.env.example` bằng placeholder, kết nối Qdrant Cloud qua HTTPS/SDK và health check; xử lý timeout/credential/TLS an toàn; kiểm tra collection naming, embedding dimension/distance và payload indexes. **Không thêm Qdrant vào Docker Compose; không tạo cluster mới.**
+- [x] **M-02 — Qdrant Cloud connection:** xác minh `.env` có `QDRANT_URL` và `QDRANT_API_KEY` (không in giá trị), cập nhật `.env.example` bằng placeholder, kết nối Qdrant Cloud qua HTTPS/SDK và health check; xử lý timeout/credential/TLS an toàn; kiểm tra collection naming, embedding dimension/distance và payload indexes. **Không thêm Qdrant vào Docker Compose; không tạo cluster mới.**
 - [ ] **M-03 — Vector adapter:** add/upsert/query/delete/filter với ID hợp lệ, metadata/chunk text; cô lập sau interface để đổi backend.
 - [ ] **M-04 — Data migration:** re-parse/re-embed raw demo corpus vào Qdrant Cloud; quản lý per-version/status; không nhận đã migrate nếu chưa kiểm chứng.
 - [ ] **M-05 — Cutover:** so sánh document/chunk counts, retrieval Q&A, delete, page metadata, active-version filter và eval isolation; rồi mới gỡ runtime path/dependencies pgvector, cập nhật compose/config/docs; ghi rollback.
@@ -184,6 +184,6 @@ Không tự chuyển task/phase. Không commit secrets; giữ API đang hoạt �
 
 ## 12. Quyết định và những vấn đề cần chốt khi triển khai
 
-**Đã chốt:** MongoDB Atlas (cloud, cluster người dùng đã tạo) quản lý application data; IP Access List hiện là `0.0.0.0/0` chỉ nên là tạm thời và cần thu hẹp khi có thể; **Qdrant Cloud (cluster đã tạo; kiểm tra `QDRANT_URL`, `QDRANT_API_KEY` từ `.env`)** thay pgvector; local file storage trong development, abstraction sẵn sàng đổi S3-compatible sau này; external LLM/embedding APIs; Modular Monolith; SSE; 5 giai đoạn + M xuyên suốt.
+**Đã chốt:** MongoDB Atlas (cloud, cluster người dùng đã tạo) quản lý application data; IP Access List hiện là `0.0.0.0/0` chỉ nên là tạm thời và cần thu hẹp khi có thể; **Qdrant Cloud (cluster đã tạo; kiểm tra `QDRANT_URL`, `QDRANT_API_KEY` từ `.env`)** thay pgvector; local file storage trong development qua `FileStorage`, key chỉ sinh từ `document_id/version_id` và không cho ghi đè để giữ version immutable, abstraction sẵn sàng đổi S3-compatible sau này; upload P1-05 chạy đồng bộ để giữ API baseline, chỉ activate version sau Qdrant verify và giữ active version cũ khi candidate fail; P1-06 dùng soft-delete/unpublish metadata trước, xóa toàn bộ Qdrant points và verify trong request, giữ raw files cùng version/job history; lỗi Qdrant để `cleanup_pending=true` và DELETE lặp lại sẽ retry idempotent; external LLM/embedding APIs; Modular Monolith; SSE; 5 giai đoạn + M xuyên suốt.
 
-**Chốt trước khi thay đổi hành vi liên quan:** `/chat` stateless hay tự tạo session; upload/index sync hay background job; chính sách giữ/xóa file, soft/hard delete và citation cũ; Qdrant collection/dimension/distance phải xác minh; mapping client cancel/disconnect sang message status; authentication/ACL nếu dùng dữ liệu nội bộ thật/đa người dùng. Ghi quyết định mới ngắn gọn tại đây; diễn biến triển khai để ở `CURRENT_CHANGE.md`.
+**Chốt trước khi thay đổi hành vi liên quan:** `/chat` stateless hay tự tạo session; upload/index sync hay background job; retention dài hạn/garbage collection cho raw file và audit history sau soft-delete; Qdrant collection/dimension/distance phải xác minh; mapping client cancel/disconnect sang message status; authentication/ACL nếu dùng dữ liệu nội bộ thật/đa người dùng. Ghi quyết định mới ngắn gọn tại đây; diễn biến triển khai để ở `CURRENT_CHANGE.md`.

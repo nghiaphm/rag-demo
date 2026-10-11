@@ -1,0 +1,42 @@
+"""Tạo/xác minh document indexes trên MongoDB Atlas; không ghi document dữ liệu."""
+
+import sys
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+from app.cloud_connections import MongoDBConnection
+from app.document_indexes import INDEX_DEFINITIONS, initialize_document_indexes
+
+
+def main() -> int:
+    connection = MongoDBConnection()
+    try:
+        status = connection.connect()
+        if not status.ok:
+            print(f"mongodb: ok=False; code={status.code}; message={status.message}")
+            return 1
+
+        first = initialize_document_indexes(connection.database)
+        second = initialize_document_indexes(connection.database)
+        verified = True
+        for collection_name, expected_indexes in INDEX_DEFINITIONS.items():
+            actual_names = set(connection.database[collection_name].index_information())
+            expected_names = {index.document["name"] for index in expected_indexes}
+            collection_ok = expected_names.issubset(actual_names)
+            verified = verified and collection_ok
+            print(
+                f"{collection_name}: expected={len(expected_names)}; "
+                f"verified={collection_ok}; idempotent={first[collection_name] == second[collection_name]}"
+            )
+        return 0 if verified else 1
+    finally:
+        connection.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

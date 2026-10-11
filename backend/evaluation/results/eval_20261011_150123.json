@@ -1,0 +1,282 @@
+{
+  "golden_set": "rag-demo-golden-set-v1",
+  "timestamp": "2026-10-11T15:01:23.214315+00:00",
+  "config": {
+    "llm_model": "nvidia/nemotron-3-super-120b-a12b:free",
+    "embedding_provider": "google",
+    "embedding_model": "gemini-embedding-001",
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "top_k": 5,
+    "table": "rag_eval_gemini_embedding_001"
+  },
+  "cases": [
+    {
+      "id": "pg-version",
+      "question": "Hệ thống dùng PostgreSQL phiên bản nào?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "PostgreSQL phiên bản 16.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 2165.6,
+      "tokens": {
+        "input": 433,
+        "output": 65,
+        "total": 498,
+        "available": true
+      }
+    },
+    {
+      "id": "pgvector-version",
+      "question": "pgvector phiên bản nào được cài đặt?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "pgvector phiên bản được cài đặt là 0.8.6.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 3974.3,
+      "tokens": {
+        "input": 433,
+        "output": 75,
+        "total": 508,
+        "available": true
+      }
+    },
+    {
+      "id": "pg-port",
+      "question": "Cổng PostgreSQL của container được map ra host là bao nhiêu?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Cổng PostgreSQL của container được map ra host là **5433**.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 2666.0,
+      "tokens": {
+        "input": 439,
+        "output": 92,
+        "total": 531,
+        "available": true
+      }
+    },
+    {
+      "id": "chunk-size",
+      "question": "chunk_size mặc định là bao nhiêu ký tự?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "chunk_size mặc định là 500 ký tự.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 2159.9,
+      "tokens": {
+        "input": 435,
+        "output": 77,
+        "total": 512,
+        "available": true
+      }
+    },
+    {
+      "id": "chunk-overlap",
+      "question": "chunk_overlap mặc định là bao nhiêu ký tự?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Giá trị mặc định của chunk_overlap là 50 ký tự.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 1936.9,
+      "tokens": {
+        "input": 436,
+        "output": 78,
+        "total": 514,
+        "available": true
+      }
+    },
+    {
+      "id": "embedding-dim",
+      "question": "Vector của gemini-embedding-001 có bao nhiêu chiều?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Vector của gemini-embedding-001 có 3072 chiều.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 2368.4,
+      "tokens": {
+        "input": 441,
+        "output": 62,
+        "total": 503,
+        "available": true
+      }
+    },
+    {
+      "id": "embedding-change",
+      "question": "Khi đổi embedding model thì phải làm gì với dữ liệu?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Khi thay đổi embedding model, cần re-index toàn bộ dữ liệu.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 0.833,
+      "faithful": true,
+      "latency_ms": 1820.9,
+      "tokens": {
+        "input": 435,
+        "output": 42,
+        "total": 477,
+        "available": true
+      }
+    },
+    {
+      "id": "oob-capital",
+      "question": "Thủ đô của Nhật Bản là gì?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": null,
+      "retrieval_recall": null,
+      "answer": "Không tìm thấy thông tin trong tài liệu.",
+      "answer_fact_coverage": null,
+      "answer_relevant": null,
+      "expect_fallback": true,
+      "fallback_correct": true,
+      "faithfulness_ratio": 0.667,
+      "faithful": true,
+      "latency_ms": 1683.0,
+      "tokens": {
+        "input": 431,
+        "output": 60,
+        "total": 491,
+        "available": true
+      }
+    },
+    {
+      "id": "oob-gold",
+      "question": "Giá vàng thế giới hôm nay là bao nhiêu?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "postgresql.md"
+      ],
+      "retrieval_hit": null,
+      "retrieval_recall": null,
+      "answer": "Không tìm thấy thông tin trong tài liệu.",
+      "answer_fact_coverage": null,
+      "answer_relevant": null,
+      "expect_fallback": true,
+      "fallback_correct": true,
+      "faithfulness_ratio": 0.667,
+      "faithful": true,
+      "latency_ms": 1281.2,
+      "tokens": {
+        "input": 437,
+        "output": 49,
+        "total": 486,
+        "available": true
+      }
+    }
+  ],
+  "summary": {
+    "n_cases": 9,
+    "n_ok": 9,
+    "n_errors": 0,
+    "error_ids": [],
+    "n_in_document": 7,
+    "n_out_of_document": 2,
+    "retrieval_hit_rate": 1.0,
+    "mean_retrieval_recall": 1.0,
+    "answer_relevance_rate": 1.0,
+    "mean_answer_fact_coverage": 1.0,
+    "faithfulness_rate": 1.0,
+    "fallback_accuracy": 1.0,
+    "latency_ms": {
+      "mean": 2228.5,
+      "max": 3974.3
+    },
+    "tokens": {
+      "available": true,
+      "input": 3920,
+      "output": 600,
+      "total": 4520
+    }
+  }
+}
