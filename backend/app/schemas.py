@@ -1,6 +1,7 @@
 """Pydantic schemas cho request/response của FastAPI."""
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -13,6 +14,8 @@ class Source(BaseModel):
     file_name: str | None = None
     source: str | None = None
     document_id: str | None = None
+    version_id: str | None = None
+    chunk_id: str | None = None
     chunk_index: int | None = None
     page: int | None = None
 
@@ -21,6 +24,10 @@ class ChatRequest(BaseModel):
     """Request cho POST /chat."""
 
     question: str = Field(..., min_length=1, description="Câu hỏi của người dùng")
+    session_id: UUID | None = Field(
+        default=None,
+        description="Có giá trị thì persist turn; bỏ trống giữ hành vi stateless cũ",
+    )
 
     @field_validator("question")
     @classmethod

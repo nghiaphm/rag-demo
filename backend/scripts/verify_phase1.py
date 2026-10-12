@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from langchain_core.embeddings import Embeddings
-from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -27,9 +26,10 @@ from app.document_repository import MongoDocumentRepository
 from app.document_service import DocumentService
 from app.ingestion import IngestionError, IngestionService
 from app.main import app
-from app.qdrant_ingestion import QdrantIngestionIndex, VectorIndexError
+from app.qdrant_ingestion import QdrantVectorIndex, VectorIndexError
 from app.rag.embeddings import get_embeddings
 from app.storage import StorageError, create_file_storage
+from app.vector_index import VectorFilter
 
 _TEST_NAME_PATTERN = r"^p1-07-verify-[0-9a-f-]{36}\.md$"
 
@@ -40,17 +40,6 @@ class FailingEmbeddings(Embeddings):
 
     def embed_query(self, text):
         raise TimeoutError("simulated verification failure")
-
-
-def _filter(document_id: str, version_id: str | None = None) -> Filter:
-    conditions = [
-        FieldCondition(key="document_id", match=MatchValue(value=document_id))
-    ]
-    if version_id is not None:
-        conditions.append(
-            FieldCondition(key="version_id", match=MatchValue(value=version_id))
-        )
-    return Filter(must=conditions)
 
 
 def _cleanup(database, vector_index, storage, query: dict) -> bool:
@@ -65,7 +54,7 @@ def _cleanup(database, vector_index, storage, query: dict) -> bool:
         )
         version_ids = [version["_id"] for version in versions]
         try:
-            vector_index.delete_document(document_id)
+            vector_index.delete(VectorFilter(document_id=document_id))
         except VectorIndexError:
             ok = False
         for version in versions:
@@ -106,7 +95,7 @@ def main() -> int:
         if database is None or cloud.qdrant.client is None:
             print("BLOCKED: cloud dependencies chưa sẵn sàng; credentials không được in.")
             return 2
-        vector_index = QdrantIngestionIndex(
+        vector_index = QdrantVectorIndex(
             cloud.qdrant.client, settings.qdrant_collection
         )
         storage = create_file_storage(settings)
@@ -142,7 +131,8 @@ def main() -> int:
             and first_version.get("checksum_sha256")
             == hashlib.sha256(first_content).hexdigest()
             and first_version.get("chunk_count") == upload_data["num_chunks"]
-            and vector_index.count_version(first_version_id) == upload_data["num_chunks"]
+            and vector_index.count(VectorFilter(version_id=first_version_id))
+            == upload_data["num_chunks"]
         )
         if not raw_checks:
             raise RuntimeError("raw/metadata/chunk mismatch")
@@ -150,27 +140,22 @@ def main() -> int:
         stage = "qdrant_retrieval_v1"
         embeddings = get_embeddings()
         query_vector = embeddings.embed_query("What is the active codename?")
-        first_hits = cloud.qdrant.client.query_points(
-            collection_name=settings.qdrant_collection,
-            query=query_vector,
-            query_filter=_filter(document_id, first_version_id),
+        first_hits = vector_index.query(
+            query_vector,
             limit=settings.top_k,
-            with_payload=True,
-        ).points
-        required_payload = {
-            "document_id",
-            "version_id",
-            "chunk_id",
-            "chunk_index",
-            "file_name",
-            "page",
-            "chunk_text",
-        }
+            filters=VectorFilter(
+                document_id=document_id, version_id=first_version_id
+            ),
+        )
         if (
             not first_hits
-            or not required_payload.issubset(first_hits[0].payload)
-            or first_hits[0].payload["version_id"] != first_version_id
-            or first_hits[0].payload["page"] is not None
+            or first_hits[0].document_id != document_id
+            or first_hits[0].version_id != first_version_id
+            or first_hits[0].point_id == ""
+            or first_hits[0].chunk_index < 0
+            or first_hits[0].file_name != marker
+            or first_hits[0].page is not None
+            or not first_hits[0].chunk_text
         ):
             raise RuntimeError("retrieval/payload mismatch")
 
@@ -186,14 +171,14 @@ def main() -> int:
         document = database[DOCUMENTS_COLLECTION].find_one({"_id": document_id})
         if document is None or document.get("active_version_id") != second_version_id:
             raise RuntimeError("active version did not switch")
-        second_hits = cloud.qdrant.client.query_points(
-            collection_name=settings.qdrant_collection,
-            query=query_vector,
-            query_filter=_filter(document_id, second_version_id),
+        second_hits = vector_index.query(
+            query_vector,
             limit=settings.top_k,
-            with_payload=True,
-        ).points
-        if not second_hits or second_hits[0].payload["version_id"] != second_version_id:
+            filters=VectorFilter(
+                document_id=document_id, version_id=second_version_id
+            ),
+        )
+        if not second_hits or second_hits[0].version_id != second_version_id:
             raise RuntimeError("active version retrieval failed")
 
         stage = "failed_reindex"
@@ -226,7 +211,7 @@ def main() -> int:
             document is None
             or document.get("active_version_id") != second_version_id
             or failed_version is None
-            or vector_index.count_version(failed_version["_id"]) != 0
+            or vector_index.count(VectorFilter(version_id=failed_version["_id"])) != 0
         ):
             raise RuntimeError("failed re-index changed active version")
 
@@ -235,13 +220,11 @@ def main() -> int:
         http_status = deleted.status_code
         if deleted.status_code != 200 or deleted.json().get("cleanup_pending"):
             raise RuntimeError("delete failed")
-        after_delete = cloud.qdrant.client.query_points(
-            collection_name=settings.qdrant_collection,
-            query=query_vector,
-            query_filter=_filter(document_id),
+        after_delete = vector_index.query(
+            query_vector,
             limit=settings.top_k,
-            with_payload=True,
-        ).points
+            filters=VectorFilter(document_id=document_id),
+        )
         document = database[DOCUMENTS_COLLECTION].find_one({"_id": document_id})
         if (
             after_delete

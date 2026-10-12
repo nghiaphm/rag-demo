@@ -4,11 +4,11 @@
 
 ## 1. Trạng thái gần nhất
 
-- **Giai đoạn:** Giai đoạn 1 — IN PROGRESS; connection layer đã triển khai, chưa migration/cutover
-- **Task vừa hoàn thành:** `P1-07` — Phase 1 verification
-- **Task tiếp theo:** `M-03` (**chưa bắt đầu; chờ giao việc**)
-- **Blocker:** Không có blocker cho P1-07; `/chat` chưa cutover khỏi PostgreSQL/pgvector và MongoDB user còn role rộng
-- **Lần cập nhật:** P1-07 unit/live verification và regression/eval V1 đều PASS; checklist P1-07 đã hoàn thành
+- **Giai đoạn:** Giai đoạn 2 — COMPLETED; `P2-01`…`P2-05` đã nghiệm thu
+- **Task vừa hoàn thành:** `P2-05` — Verification
+- **Task tiếp theo:** `P3-01` (**chưa bắt đầu; chờ giao việc**); `M-06` IN PROGRESS và chờ các gate P3–P5
+- **Blocker:** Không có blocker cho P2-05; stale guard sau hard process crash chưa có automatic recovery; M-06 vẫn chờ response/SSE/history-aware
+- **Lần cập nhật:** P2-05 live Atlas restart/history/failure/delete + concurrency + 76-test regression PASS
 
 > **Quyết định hạ tầng:** MongoDB Atlas cloud, không dùng MongoDB container; Qdrant Cloud (người dùng đã tạo cluster), không dùng Qdrant Docker; raw files lưu local. IP Access List Atlas hiện `0.0.0.0/0` theo xác nhận người dùng — chỉ phù hợp tạm cho development, cần thu hẹp khi có thể. Agent cần kiểm tra `QDRANT_URL` và `QDRANT_API_KEY` đã có trong `.env`, không in/copy giá trị vào log; `.env.example` chỉ dùng placeholder. Không lưu MongoDB URI/Qdrant URL thực/credentials trong file này. Đây là cập nhật tài liệu, **không phải bằng chứng P1-02 hoặc M-02 đã triển khai**.
 
@@ -24,6 +24,87 @@
 ## 3. Nhật ký thay đổi (mới nhất ở trên)
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
+
+### [2026-10-12] P2-05 — Verification
+
+- **Trạng thái:** COMPLETED; Giai đoạn 2 đạt điều kiện kết thúc.
+- **Đã thực hiện:** Thêm live verification dùng ba FastAPI lifespan liên tiếp và một session UUID riêng trên MongoDB Atlas. Xác minh session/title cùng 8 messages còn nguyên sau restart; thứ tự `1…8`, pagination `3 + 5`, request linkage, citations, ba turn thành công và một assistant `FAILED/RAG_PIPELINE_ERROR`; kiểm tra guard đã release, UUID sai 422, session thiếu 404, tombstone 410 sau restart, default list loại session đã xóa và DELETE lặp lại idempotent. Generation trong script được mock deterministic để test persistence không phụ thuộc quota provider; cloud clients/routes/indexes/lifecycle vẫn là thật. Exact cleanup PASS.
+- **Files thay đổi:** `backend/scripts/verify_phase2.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md` (archive 5 entry cũ theo quy tắc giới hạn nhật ký).
+- **Kiểm thử:** `python backend/scripts/verify_phase2.py` — PASS, MongoDB/Qdrant readiness + hai restart persistence/tombstone và cleanup; `python backend/scripts/smoke_session_concurrency.py` — PASS, concurrent reject/owner guard/completion-error-cancel và cleanup; `python -m unittest discover -s tests -v` từ `backend/` — PASS 76/76; Python 3.10.11 hiện tại và `pip check` — PASS.
+- **Tồn đọng / quyết định:** Clean restart sau terminal state đã PASS. Hard process kill giữa provider call vẫn có thể để lại stale guard vì chưa có lease/reconciliation tự động; đây là giới hạn vận hành đã ghi trong README, không làm sai acceptance P2-05. Không triển khai response contract, SSE hoặc history-aware trong task này.
+- **Tiếp theo:** `P3-01` — chưa bắt đầu; chờ giao việc riêng. `M-06` tiếp tục IN PROGRESS cho các gate P3–P5.
+
+### [2026-10-12] P2-04 — Concurrency
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Thêm persistent guard `active_generation_id/started_at` trên session. Mongo `find_one_and_update` atomically kiểm tra session active, nhận guard và cấp message sequence pair; request thứ hai cùng session trả 409 trước khi tạo messages. Guard chỉ release khi khớp owner `request_id` trong `finally`; assistant được terminal hóa và guard được release khi completion, provider/output error hoặc cancellation. DELETE session khi active trả 409. Stateless `/chat` không bị ảnh hưởng.
+- **Files thay đổi:** `backend/app/conversation_models.py`, `backend/app/conversation_repository.py`, `backend/app/conversation_service.py`, `backend/tests/test_conversation_models.py`, `backend/tests/test_chat_persistence.py`, `backend/tests/test_conversation_concurrency.py`, `backend/scripts/smoke_message_persistence.py`, `backend/scripts/smoke_session_concurrency.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử:** Focused concurrency/conversation PASS 25/25; toàn bộ unit/API/in-memory regression PASS 76/76. Live HTTP + Atlas test PASS: hai `POST /chat` đồng thời chỉ một generation chạy, request hai 409, non-owner không release được, DELETE active 409, guard release sau completion/error/cancel, terminal history đúng 6 messages và exact cleanup PASS. MongoDB/Qdrant connection, `compileall`, `pip check` PASS.
+- **Tồn đọng / quyết định:** Với sync provider call, transport disconnect không ngắt worker ngay; guard được giữ tới terminal thực tế. Process crash có thể để lại stale guard; automatic lease/reconciliation chưa triển khai, cần kiểm tra ở P2-05/operational recovery. Không triển khai streaming/P3–P5.
+- **Tiếp theo:** `P2-05` — chưa bắt đầu; chờ giao việc riêng.
+
+### [2026-10-12] P2-03 — Message persistence
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Mở rộng `/chat` nhận optional `session_id`; thiếu ID giữ nguyên stateless response `answer + sources`. Với session, cấp atomically hai sequence, ghi user `COMPLETED` và assistant `PENDING` trước generation, dùng chung `request_id`, rồi replace assistant sang `COMPLETED` kèm model/citations hoặc `FAILED` với mã an toàn. Usage để null vì pipeline hiện không trả metadata. Invalid/missing/deleted session lần lượt trả 422/404/410; chưa thêm one-generation guard của P2-04.
+- **Files thay đổi:** `backend/app/conversation_models.py`, `backend/app/conversation_repository.py`, `backend/app/conversation_service.py`, `backend/app/api/chat.py`, `backend/app/schemas.py`, `backend/tests/test_chat_persistence.py`, `backend/scripts/smoke_message_persistence.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử PASS:** Focused 21/21; toàn bộ unit/API/in-memory regression 72/72; live persistent `/chat` trên Atlas/Qdrant/provider xác minh user/PENDING-before-generation, assistant COMPLETED, citations, request linkage và stable order; forced provider failure và empty output xác minh FAILED/error code an toàn; exact cleanup PASS. MongoDB/Qdrant connection, FastAPI startup `/health/dependencies`, `compileall`, `pip check` PASS.
+- **Kiểm thử FAIL có nguyên nhân ngoài task:** `verify_cutover.py` retry 2 lần đều FAIL tại stateless `product_api_qa`, cleanup PASS; diagnostic an toàn xác nhận HTTP 502 `TooManyRequestsResponseError` từ OpenRouter. Nhánh stateless unit compatibility PASS và live persistent provider call trước đó PASS; không đổi hai lượt rate-limit thành PASS.
+- **Tồn đọng / quyết định:** Sequence allocation là atomic nhưng chưa chặn hai generation đồng thời trên cùng session; P2-04 xử lý guard. Response chưa thêm message/request IDs để giữ backward compatibility; thuộc P3.
+- **Tiếp theo:** `P2-04` — chưa bắt đầu; chờ giao việc riêng.
+
+### [2026-10-12] P2-02 — Session APIs
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Thêm Mongo repository/service và REST APIs create/list/get/PATCH title/delete cho session; list và message history trả pagination `offset/limit/total`, history sắp theo `(sequence, _id)`. UUID sai trả 422, session không tồn tại trả 404, tombstone trả 410. DELETE soft-delete session trước, hard-delete related messages, giữ tombstone và cho phép retry idempotent. Scope/user không nhận tùy ý từ client; create mặc định `ALL_ACTIVE`. `/chat` vẫn stateless đúng phạm vi.
+- **Files thay đổi:** `backend/app/conversation_repository.py`, `backend/app/conversation_service.py`, `backend/app/conversation_schemas.py`, `backend/app/api/sessions.py`, `backend/app/main.py`, `backend/tests/test_sessions_api.py`, `backend/scripts/smoke_session_api.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử:** Focused tests PASS 15/15; toàn bộ unit/API/in-memory regression PASS 66/66. Live Atlas Session API PASS create/list/get/update/history pagination, 404/410, list exclusion, message cleanup, repeated DELETE và exact cleanup. MongoDB/Qdrant connection PASS; FastAPI startup + `/health/dependencies` PASS HTTP 200. Live `verify_cutover.py` PASS 3 documents/68 chunks, retrieval, Q&A, page metadata, active-version filter, delete-no-retrieval và cleanup. `compileall`, `pip check` PASS.
+- **Tồn đọng / quyết định:** Xóa session giữ tombstone nhưng xóa hẳn messages; không có distributed transaction, nên tombstone được ghi trước và DELETE lặp lại tiếp tục cleanup. Chưa ghi messages từ `/chat`, chưa có atomic generation guard; thuộc P2-03/P2-04. M-06 vẫn IN PROGRESS.
+- **Tiếp theo:** `P2-03` — chưa bắt đầu; chờ giao việc riêng.
+
+### [2026-10-12] M-06 — Regression liên giai đoạn (P2 slice)
+
+- **Trạng thái:** IN PROGRESS; chưa đủ điều kiện đánh dấu hoàn thành.
+- **Đã thực hiện:** Xác minh lại active-version scope, Qdrant citation metadata, `/chat` JSON, page metadata và delete-no-retrieval sau khi thêm P2-01. Session scope/model validation và request linkage PASS; không phát hiện regression cần sửa.
+- **Kiểm thử:** Live `verify_cutover.py` PASS 3 documents/68 chunks, demo retrieval, product Q&A, PDF page, active-version filter, delete-no-retrieval và cleanup. Unit regression nằm trong lượt 62/62 PASS.
+- **Tồn đọng:** Session APIs/message persistence thuộc P2-02/P2-03, response contract thuộc P3, SSE thuộc P4 và history-aware thuộc P5 chưa tồn tại; vì vậy các gate còn lại là prerequisite pending, không phải PASS giả.
+- **Tiếp theo:** Chạy lại M-06 sau từng capability P3–P5; không tự động triển khai trong task này.
+
+### [2026-10-12] P2-01 — Session/message models và indexes
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Thêm Pydantic records cho session, retrieval scope, message role/lifecycle, citation, usage và request linkage với UUID/UTC validation. Thêm named indexes cho session listing và message stable order; unique `(session_id, sequence)` nhưng không unique `request_id`. Startup và index CLI khởi tạo cả document/conversation indexes idempotently. Thêm live smoke test dùng test IDs riêng và cleanup chính xác; không nối `/chat` vào persistence.
+- **Files thay đổi:** `backend/app/conversation_models.py`, `backend/app/conversation_indexes.py`, `backend/app/main.py`, `backend/scripts/init_mongodb_indexes.py`, `backend/scripts/smoke_conversation_models.py`, `backend/tests/test_conversation_models.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử:** Unit/API/in-memory regression PASS 62/62. MongoDB Atlas/Qdrant connection PASS. Live index verification PASS cho 5 collections; `sessions` 3 và `messages` 4 indexes, rerun idempotent. Live session/message insert/order/request linkage/unique sequence/cleanup PASS. FastAPI startup + GET `/health/dependencies` PASS HTTP 200. `compileall`, `pip check` và `git diff --check` PASS.
+- **Tồn đọng / quyết định:** Chưa có repository/session APIs, chưa ghi messages từ `/chat`, chưa có atomic generation guard; đúng phạm vi P2-02–P2-04. M-06 chỉ hoàn tất sau response/SSE/history-aware gates.
+- **Tiếp theo:** `P2-02` — chưa bắt đầu; chờ giao việc riêng.
+
+### [2026-10-12] M-05 — Qdrant cutover
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Chụp baseline pgvector trước cutover và đối chiếu đúng 3 demo documents với chunk counts `37/16/15` (68 tổng). Thêm Qdrant LangChain retriever lấy active-version scope từ MongoDB và filter bằng `MatchAny`; `/chat` dùng cloud clients chung và trả thêm `version_id/chunk_id`. Chuyển eval sang collection Qdrant riêng, cập nhật corpus/golden set hiện hành và chuẩn hóa Unicode dash trong deterministic fact metric. Chỉ sau khi live gates PASS mới gỡ `db.py`, pgvector vectorstore, V1 scripts, `DATABASE_URL`, ba package PostgreSQL và Compose. README ghi rollback; container/volume PostgreSQL cũ không bị xóa.
+- **Files thay đổi:** `backend/app/api/chat.py`, `backend/app/cloud_connections.py`, `backend/app/config.py`, `backend/app/document_repository.py`, `backend/app/main.py`, `backend/app/qdrant_ingestion.py`, `backend/app/vector_index.py`, `backend/app/rag/chain.py`, `backend/app/rag/pipeline.py`, `backend/app/rag/retriever.py`, `backend/app/schemas.py`, `backend/scripts/eval_cli.py`, `backend/scripts/verify_cutover.py`, `backend/evaluation/corpus/qdrant.md`, `backend/evaluation/golden_set.json`, `backend/evaluation/metrics.py`, `backend/evaluation/results/m05_qdrant_eval.json`, `backend/tests/test_retriever.py`, `backend/tests/test_evaluation_metrics.py`, `backend/tests/test_vector_index.py`, `backend/requirements.txt`, `.env.example`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`; xóa `backend/app/db.py`, `backend/app/rag/vectorstore.py`, `backend/scripts/try_vectorstore.py`, `backend/scripts/try_rag.py`, `backend/scripts/try_pipeline.py`, `backend/fixtures/sample_pipeline.md`, `backend/evaluation/corpus/postgresql.md`, `docker-compose.yml`.
+- **Kiểm thử:** Pre-cutover pgvector snapshot PASS 3 documents/68 chunks và khớp Qdrant. Unit/API/in-memory PASS 51/51. Live `verify_cutover.py` PASS document/chunk counts, retrieval ba demo sources, GET `/health/dependencies`, POST `/chat` Q&A, PDF page metadata, active-version exclusion, delete-no-retrieval và exact cleanup. Qdrant-isolated eval PASS 9/9, 0 errors; retrieval hit/recall, answer relevance/fact coverage, faithfulness và fallback accuracy đều `1.0`. `compileall`, `pip check`, runtime import/dependency grep và `git diff --check` PASS. Một lượt eval bị provider treo và timeout, retry hữu hạn sau đó PASS; không tính lượt timeout là PASS.
+- **Tồn đọng / rollback:** Không có dual-write hoặc runtime feature flag; rollback cần restore code/config/requirements/Compose từ Git ref trước M-05, đặt lại `DATABASE_URL`, dùng container/volume cũ đang được giữ và chạy V1 eval trước khi trả traffic. Không xóa MongoDB/Qdrant khi rollback. MongoDB role rộng vẫn cần thu hẹp; `.env` có thể còn biến `DATABASE_URL` cũ nhưng settings hiện bỏ qua và không dùng.
+- **Tiếp theo:** `P2-01` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai M-06.
+
+### [2026-10-12] M-04 — Data migration
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Khôi phục đúng Python 3.10.11 cho virtual environment hiện có, không đổi dependency. Thêm `source_key` tùy chọn với unique partial index để nhận diện corpus migration mà không áp unique lên filename/checksum; ingestion chỉ cho gán key khi tạo document. Thêm manifest cố định cho 3 raw demo files và migration service/CLI: re-parse, re-embed, tạo version/status qua lifecycle hiện có, verify raw checksum/size, Mongo active version, exact Qdrant chunk count, filtered retrieval và payload. Rerun cùng checksum chỉ verify read-only; source đổi tạo immutable version mới; lỗi không thay active version. Không cutover `/chat`, không xóa PostgreSQL/pgvector hay dữ liệu cloud cũ.
+- **Files thay đổi:** `backend/app/data_migration.py`, `backend/app/document_models.py`, `backend/app/document_indexes.py`, `backend/app/document_repository.py`, `backend/app/ingestion.py`, `backend/migration/demo_corpus.json`, `backend/scripts/migrate_demo_corpus.py`, `backend/tests/test_document_models.py`, `backend/tests/test_ingestion.py`, `backend/evaluation/results/m04_regression.json`, `.gitignore`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử:** Python 3.10.11 và `pip check` PASS. Unit/API/in-memory PASS 47/47. Cloud connection PASS. Live migration lần đầu PASS 3/3 documents, 68 chunks (37/16/15), 0 failed; rerun PASS 3/3 `VERIFIED`, 0 document/version mới. Live `verify_phase1.py` PASS raw/checksum, metadata/page, chunk count, retrieval, version switch, failed re-index, delete-no-retrieval và cleanup. Regression/eval PostgreSQL V1 PASS 9/9, 0 errors; retrieval/fact/fallback `1.0`, faithfulness `0.889`. `compileall`, Compose config và `git diff --check` PASS.
+- **Tồn đọng / quyết định:** Migration chỉ xử lý đúng manifest repository-owned, không scan toàn bộ `DOCUMENTS_DIR`. Same-checksum nhưng verify lỗi được báo FAILED và không tự sinh version; operator sửa dependency/dữ liệu rồi chạy lại. `/chat` vẫn dùng PostgreSQL/pgvector; so sánh/cutover và rollback thuộc M-05. MongoDB user role rộng vẫn cần thu hẹp trước dữ liệu thật.
+- **Tiếp theo:** `M-05` — chưa bắt đầu; chờ giao việc riêng. Dừng sau M-04.
+
+### [2026-10-11] M-03 — Vector adapter
+
+- **Trạng thái:** COMPLETED.
+- **Đã thực hiện:** Thêm backend-neutral `VectorIndex` contract cùng `VectorRecord`, `VectorFilter`, `VectorSearchResult`, UUID/dimension/finite-vector validation và deterministic chunk point ID. `QdrantVectorIndex` implement add có duplicate guard, idempotent upsert, similarity query, exact count, delete an toàn và filter kết hợp theo document/version/filename; mapping giữ chunk text cùng page metadata và bọc lỗi backend không lộ raw detail. Refactor ingestion/document service và smoke scripts chỉ dùng contract chung; Qdrant SDK chỉ còn trong adapter/composition root. Không migration dữ liệu và không cutover `/chat`.
+- **Files thay đổi:** `backend/app/vector_index.py`, `backend/app/qdrant_ingestion.py`, `backend/app/ingestion.py`, `backend/app/document_service.py`, `backend/tests/test_vector_index.py`, `backend/tests/test_ingestion.py`, `backend/scripts/smoke_vector_adapter.py`, `backend/scripts/smoke_qdrant_ingestion.py`, `backend/scripts/smoke_ingestion.py`, `backend/scripts/smoke_document_api.py`, `backend/scripts/verify_phase1.py`, `backend/evaluation/results/m03_regression.json`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử:** Unit/API/in-memory integration PASS 42/42. Live `smoke_vector_adapter.py` PASS add/upsert/query/filter/delete, duplicate guard và cleanup. Live `verify_phase1.py` PASS toàn bộ lifecycle/retrieval và cleanup sau refactor. Regression/eval V1 PASS 9/9, 0 errors; retrieval hit/recall, answer relevance, fact coverage và fallback accuracy `1.0`, faithfulness `0.889`. `compileall`, `pip check`, Compose config và `git diff --check` PASS.
+- **Tồn đọng / quyết định:** `add` dùng preflight duplicate check vì Qdrant không cung cấp create-only atomic primitive trong adapter hiện tại; ingestion dùng deterministic ID và `upsert` cho idempotency. Chưa migrate corpus/dữ liệu sang Qdrant và chưa thay retriever `/chat`; các việc đó thuộc M-04/M-05.
+- **Tiếp theo:** `M-04` — chưa bắt đầu; chờ giao việc riêng. Dừng sau M-03.
 
 ### [2026-10-11] P1-07 — Verification
 
@@ -79,51 +160,6 @@
 - **Tồn đọng / quyết định:** Local adapter cố ý cấm ghi đè mọi key, mạnh hơn chỉ bảo vệ active version và không cần phụ thuộc MongoDB state. S3 adapter chưa được xây; upload V1 vẫn ghi trực tiếp theo hành vi cũ cho đến P1-05/P1-06. Tests chỉ dùng temporary directory/fixture, không ghi hoặc xóa dữ liệu trong `data/documents`.
 - **Tiếp theo:** `P1-05 / M-03` — chưa bắt đầu; chờ giao việc riêng.
 
-### [2026-10-11 15:22 UTC+07:00] P1-03 — Document models & indexes
-
-- **Trạng thái:** COMPLETED
-- **Đã thực hiện:** Thêm Pydantic models `DocumentRecord`, `DocumentVersionRecord`, `IngestionJobRecord` với UUID v4 độc lập filename, Enum status, SHA-256 validation, UTC-aware datetime và `active_version_id=None`. Thêm initializer idempotent và gọi khi FastAPI startup nếu MongoDB connected; không nối models vào upload/pipeline hiện tại.
-- **Files thay đổi:** `backend/app/document_models.py`, `backend/app/document_indexes.py`, `backend/app/main.py`, `backend/scripts/init_mongodb_indexes.py`, `backend/tests/test_document_models.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
-- **Kiểm thử:** Unit tests — PASS 15/15 toàn suite. Live Atlas index init chạy hai lần — PASS/idempotent: `documents` 3, `document_versions` 4, `ingestion_jobs` 2 named indexes. Actual options — PASS: unique `(document_id, version)`, filename/checksum non-unique. Live namespace smoke — PASS: hai documents trùng filename được phép, duplicate document/version bị từ chối; cleanup chính xác 2 document + 1 version và xác minh không còn record test. `/health` và `/health/dependencies` — PASS HTTP 200, MongoDB/Qdrant connected. `try_step.py`, `pip check`, `docker compose config --quiet` — PASS.
-- **Tồn đọng / quyết định:** MongoDB user vẫn có role quản trị rộng; nên thu hẹp quyền trước dữ liệu thật. Chưa có MongoDB JSON schema validator; Pydantic chịu trách nhiệm validation ở application layer. Chưa tạo Qdrant collection, chưa migration và chưa thay đổi PostgreSQL/pgvector pipeline.
-- **Tiếp theo:** `P1-04 / M-03` — chưa bắt đầu; chờ giao việc riêng.
-
-### [2026-10-11 15:02 UTC+07:00] P1-02 — Hoàn tất MongoDB Atlas connection
-
-- **Trạng thái:** COMPLETED
-- **Đã thực hiện:** Xác nhận bốn biến MongoDB/Qdrant hiện diện mà không in giá trị; chạy cloud smoke chỉ-đọc và xác minh MongoDB Atlas `ping` cùng Qdrant authentication thành công. Kiểm tra readiness và phạm vi role dưới dạng boolean; không tạo collection/schema/document, không migrate dữ liệu và không thay đổi PostgreSQL/pgvector pipeline.
-- **Files thay đổi:** `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
-- **Kiểm thử:** `backend/scripts/check_cloud_connections.py` — PASS cho MongoDB và Qdrant. `/health/dependencies` — PASS HTTP 200, status `ok`, cả hai dependency `connected`; `/health` — PASS HTTP 200/contract cũ. Unit tests — PASS 6/6. `backend/scripts/try_step.py` — PASS, 1 document/7 chunks. `pip check` và `docker compose config --quiet` — PASS.
-- **Tồn đọng / quyết định:** MongoDB authentication/connection đã đạt, nhưng kiểm tra role cho thấy user có quyền quản trị rộng và chưa có role scope riêng cho application database; cần thu hẹp quyền trước khi dùng dữ liệu thật. Qdrant vẫn có 0 collection; việc tạo schema/adapter thuộc task sau.
-- **Tiếp theo:** `P1-03 / M-03` — chưa bắt đầu; chờ giao việc riêng.
-
-### [2026-10-11 14:46 UTC+07:00] P1-02 — Xác minh lại MongoDB Atlas
-
-- **Trạng thái:** BLOCKED
-- **Đã thực hiện:** Xác nhận `MONGODB_URI`/`MONGODB_DB_NAME` hiện diện và đúng định dạng mà không in giá trị; chạy ping Atlas, cloud smoke và FastAPI readiness. Bổ sung phân loại an toàn Atlas error code 8000 thành `authentication_failed`; không thay đổi PostgreSQL/pgvector pipeline và không ghi dữ liệu.
-- **Files thay đổi:** `backend/app/cloud_connections.py`, `backend/tests/test_cloud_connections.py`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
-- **Kiểm thử:** `backend/scripts/check_cloud_connections.py` — FAIL cho MongoDB (`authentication_failed`, code 8000/AtlasError), PASS cho Qdrant. `/health` — PASS HTTP 200/contract cũ; `/health/dependencies` — PASS về error handling, trả HTTP 503 `degraded` với MongoDB `authentication_failed` và Qdrant `connected`. Unit tests — PASS 6/6. `backend/scripts/try_step.py` — PASS, 1 document/7 chunks. `pip check` — PASS.
-- **Tồn đọng / quyết định:** Atlas đã nhận kết nối nên không phải thiếu biến hay lỗi DNS cơ bản; cần kiểm tra database username/password, URL-encoding ký tự đặc biệt và database user thuộc đúng Atlas project/cluster. Chưa thể xác minh quyền DB tối thiểu, vì authentication chưa thành công. P1-02 không được đánh dấu `[x]`.
-- **Tiếp theo:** Sửa credentials MongoDB trong `.env` rồi chạy lại cùng smoke test; không bắt đầu `P1-03` hoặc `M-03`.
-
-### [2026-10-11 14:31 UTC+07:00] P1-02 / M-02 — Cloud connections
-
-- **Trạng thái:** `P1-02` BLOCKED; `M-02` COMPLETED
-- **Đã thực hiện:** Khôi phục đúng Python 3.10.11 cho `.venv`; thêm PyMongo/Qdrant SDK, secret-safe settings validation, client lifecycle FastAPI, timeout/error mapping, readiness endpoint và smoke script chỉ-đọc. Giữ nguyên `/health`, document/chat APIs, PostgreSQL/pgvector pipeline và Docker Compose; không tạo collection, schema hay migrate dữ liệu.
-- **Files thay đổi:** `.env.example`, `backend/requirements.txt`, `backend/app/config.py`, `backend/app/cloud_connections.py`, `backend/app/main.py`, `backend/scripts/check_cloud_connections.py`, `backend/tests/test_cloud_connections.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`.
-- **Kiểm thử:** `python -m unittest discover -s tests -v` (từ `backend/`) — PASS, 6/6 test success/authentication/timeout. `python -m pip check` — PASS. `python backend/scripts/try_step.py` — PASS, 1 document/7 chunks. FastAPI smoke — PASS: `/health` giữ HTTP 200/contract cũ; readiness trả HTTP 503 an toàn khi MongoDB thiếu config và báo Qdrant connected. Cloud smoke chỉ-đọc — Qdrant PASS (HTTPS/auth/list collections); MongoDB BLOCKED (`not_configured`). Qdrant cluster có 0 collection, nên không có dimension/distance/payload index để xác minh ở bước này.
-- **Tồn đọng / quyết định:** `P1-02` không được đánh dấu hoàn thành cho tới khi có hai biến MongoDB thật và ping Atlas PASS; chưa xác minh quyền DB tối thiểu. Qdrant target collection/schema thuộc M-03, chưa tạo. Không thay đổi `docker-compose.yml`.
-- **Tiếp theo:** Bổ sung `MONGODB_URI`, `MONGODB_DB_NAME` vào `.env` rồi chạy lại `backend/scripts/check_cloud_connections.py`; không bắt đầu `P1-03` hoặc `M-03` trong phiên này.
-
-### [2026-10-11 13:41 UTC+07:00] P1-01 / M-01 — Audit baseline
-
-- **Trạng thái:** COMPLETED
-- **Đã thực hiện:** Đối chiếu README với toàn bộ backend, routes, upload/index/list/delete, retrieval/chain, scripts, evaluation, dependencies, config và Compose. Xác nhận runtime V1 coupling trực tiếp với PostgreSQL/pgvector; chưa có MongoDB/Qdrant adapter. Ghi nhận loader thực tế hỗ trợ thêm XLSX và các rủi ro baseline: upload ghi đè file trước khi index, re-index xóa vector cũ trước khi add, delete không xóa file, chưa có test suite.
-- **Files thay đổi:** `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md` (chỉ cập nhật trạng thái/nhật ký; không sửa source code).
-- **Kiểm thử:** `docker compose config --quiet` — PASS; cấu hình Compose hợp lệ. Kiểm tra `.env` không in giá trị — PASS; Qdrant URL/key hiện diện, URL HTTPS, MongoDB URI/database chưa có. Python AST, `/health`, `try_step.py` và retrieval/eval hiện tại — NOT RUN; interpreter gốc của `.venv` không còn tồn tại. `docker compose ps` — NOT RUN; Docker daemon không chạy. Hai artifact eval ngày 2026-09-24 là baseline lịch sử: mỗi run 9/9 case không lỗi, retrieval hit/recall 1.0; đây không phải kết quả chạy lại.
-- **Tồn đọng / quyết định:** `langchain-postgres`, `pgvector`, `psycopg`, `DATABASE_URL`, `app/db.py`, vectorstore/retriever/pipeline, API documents/chat, scripts, eval và Compose đều cần được thay thế hoặc tách khỏi PostgreSQL trong các task migration sau. `.env.example` và Settings chưa khai báo MongoDB/Qdrant; Qdrant credentials trong `.env` hiện bị `extra="ignore"`. Chưa xác minh kết nối cloud, collection/dimension hay dữ liệu.
-- **Tiếp theo:** `P1-02 / M-02` — chỉ bắt đầu khi được giao; sửa môi trường Python trước khi chạy smoke test.
-
 ## 4. Lưu trữ nhật ký cũ (archive)
 
-Chưa có. Khi archive, dùng ví dụ `docs/changelog/phase-01.md` và ghi đường dẫn thật tại đây.
+- [Phase 1 — P1-01 đến P1-03](./docs/changelog/phase-01.md)

@@ -9,21 +9,26 @@ from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from app.api import chat, documents
+from app.api import chat, documents, sessions
 from app.cloud_connections import CloudConnections
 from app.config import settings
+from app.conversation_indexes import initialize_conversation_indexes
 from app.document_indexes import initialize_document_indexes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Khởi tạo/đóng cloud clients mà không thay đổi PostgreSQL pipeline hiện tại."""
+    """Khởi tạo/đóng MongoDB Atlas và Qdrant Cloud clients dùng chung."""
     cloud_connections = CloudConnections(settings)
     app.state.cloud_connections = cloud_connections
     statuses = await run_in_threadpool(cloud_connections.connect_all)
     if statuses["mongodb"].ok:
         await run_in_threadpool(
             initialize_document_indexes,
+            cloud_connections.mongodb.database,
+        )
+        await run_in_threadpool(
+            initialize_conversation_indexes,
             cloud_connections.mongodb.database,
         )
     try:
@@ -35,6 +40,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="RAG Demo API", version="0.1.0", lifespan=lifespan)
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(sessions.router)
 
 
 @app.get("/health", tags=["system"])

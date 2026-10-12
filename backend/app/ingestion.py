@@ -23,7 +23,7 @@ from app.document_repository import (
     RepositoryError,
     RepositoryNotFoundError,
 )
-from app.qdrant_ingestion import QdrantIngestionIndex, VectorIndexError
+from app.qdrant_ingestion import QdrantVectorIndex
 from app.rag.embeddings import get_embeddings
 from app.rag.loader import SUPPORTED_EXTENSIONS, load_document
 from app.rag.splitter import split_documents
@@ -32,6 +32,13 @@ from app.storage import (
     StorageError,
     build_document_storage_key,
     create_file_storage,
+)
+from app.vector_index import (
+    VectorFilter,
+    VectorIndex,
+    VectorIndexError,
+    VectorRecord,
+    chunk_point_id,
 )
 
 
@@ -58,7 +65,7 @@ class IngestionService:
         *,
         repository: Any,
         storage: FileStorage,
-        vector_index: QdrantIngestionIndex,
+        vector_index: VectorIndex,
         embeddings: Embeddings | None = None,
         loader: Callable[[str | Path], list[Document]] = load_document,
         splitter: Callable[[list[Document]], list[Document]] = split_documents,
@@ -89,15 +96,21 @@ class IngestionService:
         file_name: str,
         content: bytes,
         document_id: str | None = None,
+        source_key: str | None = None,
     ) -> IngestionResult:
         safe_name = self._safe_file_name(file_name)
         if not content:
             raise IngestionError("empty_file", "File rỗng.")
 
         if document_id is None:
-            document = DocumentRecord(file_name=safe_name)
+            document = DocumentRecord(file_name=safe_name, source_key=source_key)
             version_number = 1
         else:
+            if source_key is not None:
+                raise IngestionError(
+                    "source_key_update_forbidden",
+                    "source_key chỉ được gán khi tạo document.",
+                )
             document = self.repository.get_document(document_id)
             if document.status == DocumentStatus.DELETED:
                 raise IngestionError("document_deleted", "Document đã bị xóa/unpublish.")
@@ -198,15 +211,29 @@ class IngestionService:
                 vector_collection=self.vector_index.collection_name,
             )
             # Version đang xử lý chưa active; cleanup này làm retry idempotent.
-            self.vector_index.delete_version(version.version_id)
-            self.vector_index.upsert_version(
-                document_id=version.document_id,
-                version_id=version.version_id,
-                file_name=version.file_name,
-                chunks=chunks,
-                vectors=vectors,
-            )
-            actual_count = self.vector_index.count_version(version.version_id)
+            version_filter = VectorFilter(version_id=version.version_id)
+            self.vector_index.delete(version_filter)
+            records = [
+                VectorRecord(
+                    point_id=chunk_point_id(version.version_id, chunk_index),
+                    document_id=version.document_id,
+                    version_id=version.version_id,
+                    chunk_index=chunk_index,
+                    file_name=version.file_name,
+                    chunk_text=chunk.page_content,
+                    page=(
+                        None
+                        if chunk.metadata.get("page") is None
+                        else int(chunk.metadata["page"])
+                    ),
+                    vector=tuple(vector),
+                )
+                for chunk_index, (chunk, vector) in enumerate(
+                    zip(chunks, vectors, strict=True)
+                )
+            ]
+            self.vector_index.upsert(records)
+            actual_count = self.vector_index.count(version_filter)
             if actual_count != len(chunks):
                 raise IngestionError("vector_verification_failed")
         except IngestionError as exc:
@@ -255,7 +282,7 @@ class IngestionService:
         error_code: str,
     ) -> None:
         try:
-            self.vector_index.delete_version(version.version_id)
+            self.vector_index.delete(VectorFilter(version_id=version.version_id))
         except VectorIndexError:
             pass
         try:
@@ -277,7 +304,7 @@ class IngestionService:
             try:
                 job = self.repository.latest_processing_job(version.version_id)
                 if self.repository.is_document_deleted(version.document_id):
-                    self.vector_index.delete_version(version.version_id)
+                    self.vector_index.delete(VectorFilter(version_id=version.version_id))
                     self.repository.mark_failed(
                         version.document_id,
                         version.version_id,
@@ -286,14 +313,16 @@ class IngestionService:
                     )
                     summary["failed"] += 1
                     continue
-                actual_count = self.vector_index.count_version(version.version_id)
+                actual_count = self.vector_index.count(
+                    VectorFilter(version_id=version.version_id)
+                )
                 if actual_count == version.chunk_count and actual_count > 0:
                     self.repository.complete_and_activate(version.version_id, job.job_id)
                     summary["completed"] += 1
                 elif self.repository.is_active_version(version.document_id, version.version_id):
                     summary["skipped"] += 1
                 else:
-                    self.vector_index.delete_version(version.version_id)
+                    self.vector_index.delete(VectorFilter(version_id=version.version_id))
                     self.repository.mark_failed(
                         version.document_id,
                         version.version_id,
@@ -317,7 +346,7 @@ def create_ingestion_service(
     return IngestionService(
         repository=MongoDocumentRepository(database),
         storage=storage if storage is not None else create_file_storage(settings),
-        vector_index=QdrantIngestionIndex(qdrant_client, settings.qdrant_collection),
+        vector_index=QdrantVectorIndex(qdrant_client, settings.qdrant_collection),
         embeddings=embeddings,
         embedding_model=settings.embedding_model,
     )

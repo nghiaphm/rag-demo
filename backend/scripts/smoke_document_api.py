@@ -21,8 +21,9 @@ from app.document_indexes import (
 )
 from app.document_models import DocumentStatus
 from app.main import app
-from app.qdrant_ingestion import QdrantIngestionIndex, VectorIndexError
+from app.qdrant_ingestion import QdrantVectorIndex, VectorIndexError
 from app.storage import StorageError, create_file_storage
+from app.vector_index import VectorFilter
 
 
 def main() -> int:
@@ -42,7 +43,7 @@ def main() -> int:
         if database is None or cloud.qdrant.client is None:
             print("BLOCKED: cloud dependencies chưa sẵn sàng; credentials không được in.")
             return 2
-        vector_index = QdrantIngestionIndex(
+        vector_index = QdrantVectorIndex(
             cloud.qdrant.client, settings.qdrant_collection
         )
         storage = create_file_storage(settings)
@@ -62,7 +63,7 @@ def main() -> int:
                 )
             )
             stale_version_ids = [item["_id"] for item in stale_versions]
-            vector_index.delete_document(stale_id)
+            vector_index.delete(VectorFilter(document_id=stale_id))
             for stale_version in stale_versions:
                 if stale_version.get("storage_key"):
                     storage.delete(stale_version["storage_key"])
@@ -146,7 +147,9 @@ def main() -> int:
             "deletion_timestamp_stable": document is not None
             and document.get("deleted_at") == first_deleted_at,
             "three_versions": len(versions) == 3,
-            "qdrant_empty": vector_index.count_document(document_id) == 0,
+            "qdrant_empty": vector_index.count(
+                VectorFilter(document_id=document_id)
+            ) == 0,
             "raw_retained": all(
                 version.get("storage_key") and storage.exists(version["storage_key"])
                 for version in versions
@@ -176,7 +179,7 @@ def main() -> int:
             version_ids = [item["_id"] for item in versions]
             try:
                 if vector_index is not None:
-                    vector_index.delete_document(document_id)
+                    vector_index.delete(VectorFilter(document_id=document_id))
             except VectorIndexError:
                 cleanup_ok = False
             for version in versions:

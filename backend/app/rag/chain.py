@@ -13,7 +13,6 @@ from langchain_core.runnables import (
 
 from app.rag.llm import get_llm
 from app.rag.prompt import format_context, get_rag_prompt
-from app.rag.retriever import get_retriever
 
 
 def _to_prompt_inputs(payload: dict) -> dict:
@@ -25,7 +24,7 @@ def _to_prompt_inputs(payload: dict) -> dict:
 
 
 def build_rag_chain(
-    retriever: BaseRetriever | None = None,
+    retriever: BaseRetriever,
     llm: BaseChatModel | None = None,
     prompt: ChatPromptTemplate | None = None,
 ) -> Runnable:
@@ -38,7 +37,6 @@ def build_rag_chain(
         - `documents`: danh sách `Document` đã retrieve (source cho Phase 4)
         - `answer`: câu trả lời của LLM
     """
-    resolved_retriever = retriever if retriever is not None else get_retriever()
     resolved_llm = llm if llm is not None else get_llm()
     resolved_prompt = prompt if prompt is not None else get_rag_prompt()
 
@@ -50,6 +48,6 @@ def build_rag_chain(
     )
 
     return RunnableParallel(
-        documents=resolved_retriever,
+        documents=retriever,
         question=RunnablePassthrough(),
     ) | RunnablePassthrough.assign(answer=answer_chain)

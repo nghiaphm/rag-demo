@@ -1,601 +1,306 @@
 # RAG Demo (API-first)
 
-RAG demo dùng **FastAPI + LangChain**, gọi **LLM qua OpenRouter** và **embedding qua Google Gemini API**. Document APIs dùng kiến trúc V2 với MongoDB Atlas, local raw-file storage và Qdrant Cloud; riêng query/chat vẫn giữ pipeline V1 PostgreSQL/pgvector cho tới khi migration/cutover được nghiệm thu. **Chưa có frontend**.
+RAG demo dùng FastAPI + LangChain, OpenRouter cho LLM, Google Gemini cho embedding,
+MongoDB Atlas cho document lifecycle, Qdrant Cloud cho vector retrieval và local filesystem
+cho raw documents. `/chat` đã cutover sang Qdrant; PostgreSQL/pgvector không còn nằm trong
+runtime hoặc dependency manifest.
 
-- API-first: **không self-host** LLM hoặc embedding model.
-- Baseline dùng **free model / free tier** để giữ chi phí gần $0 khi học và test.
-- LLM baseline: OpenRouter + `nvidia/nemotron-3-super-120b-a12b:free`.
-- Embedding baseline: Google Gemini + `gemini-embedding-001` (3072 chiều).
-- Vector store: Qdrant Cloud cho ingestion V2; PostgreSQL 16 + pgvector vẫn phục vụ retrieval V1.
-
----
-
-## 1. Overview
-
-Luồng chính:
-
-1. **Ingestion V2**: upload file → raw file local → metadata MongoDB (`UPLOADED/PROCESSING`) → loader/splitter → embedding API → upsert + verify Qdrant → activate version (`INDEXED`) hoặc ghi `FAILED`.
-2. **Query/Chat**: câu hỏi → retriever (top-k) → prompt (context + question) → LLM OpenRouter → trả `answer` + `sources`.
-3. **Evaluation**: golden set nhỏ → chạy qua đúng retriever/chain → metric retrieval / answer / faithfulness + latency / token usage.
-
-Nguyên tắc thiết kế: mọi cấu hình runtime (API key, provider, model, chunk size, top_k, database URL...) lấy từ `app.config.settings`; không hard-code trong code.
-
----
-
-## 2. Architecture
+## Kiến trúc hiện tại
 
 ```text
-Terminal / Client
-      │ HTTP
-      ▼
-FastAPI  (app/api/documents.py, app/api/chat.py)
-      │
-      ▼
-Application services
-      │
-      ├── Upload V2: MongoDB metadata ↔ LocalFileStorage ↔ loader/splitter/embedding ↔ Qdrant
-      └── Query V1 : retriever → prompt → chain → LLM
-      │
-      ▼
-MongoDB Atlas + Qdrant Cloud + local files    PostgreSQL/pgvector (V1 query)
+Client
+  │
+  ▼
+FastAPI
+  ├── Document APIs ── MongoDB metadata ── LocalFileStorage
+  │                         │
+  │                         └── parse/chunk/embed ── Qdrant Cloud
+  ├── Session/message models + indexes ── MongoDB Atlas
+  └── /chat ── Mongo active-version scope ── Qdrant retriever ── OpenRouter LLM
 ```
 
-- API layer chỉ validate request/response và gọi service; không chứa logic RAG.
-- LLM và embedding là hai provider độc lập, đổi model bằng config.
+- MongoDB là source of truth cho document identity, versions, status và `active_version_id`.
+- Qdrant là retrieval index có thể dựng lại từ raw files và MongoDB metadata.
+- Retriever lấy danh sách active versions từ MongoDB ở mỗi query và dùng server-side
+  Qdrant filter; inactive/failed/deleted versions không được đưa vào context.
+- Raw file key có dạng `documents/{document_id}/{version_id}/original`, không dùng filename
+  người dùng làm filesystem path.
+- Evaluation dùng Qdrant collection riêng, mặc định `rag_documents_eval`, không trộn với
+  collection ứng dụng `rag_documents`.
+- MongoDB có persistence contract cho `sessions` và `messages`: UUID, UTC timestamps,
+  retrieval scope, message lifecycle, citations/usage/request linkage và stable sequence.
+  Session CRUD, paginated history và optional `/chat` persistence đã được xác minh qua
+  nhiều lần khởi động lại FastAPI.
 
----
+## Yêu cầu
 
-## 3. Tech Stack
+- Python 3.10+; dự án đã được kiểm tra với Python 3.10.11.
+- MongoDB Atlas cluster và database user.
+- Qdrant Cloud cluster và database API key.
+- OpenRouter API key và Google AI Studio API key.
+- Không cần Docker hoặc PostgreSQL để chạy backend hiện tại.
 
-- Backend: Python 3.10+, FastAPI, Uvicorn.
-- RAG framework: LangChain (`langchain-core` + các integration package rời; **không** dùng package meta `langchain`/`langgraph`).
-- LLM: OpenRouter qua `langchain-openrouter` (`ChatOpenRouter`).
-- Embedding: Google Gemini qua `langchain-google-genai`.
-- Document loaders: `langchain-community` (+ `pypdf`, `chardet`).
-- Vector store: Qdrant Cloud qua `qdrant-client` cho upload/ingestion V2; PostgreSQL + pgvector qua `langchain-postgres` vẫn dùng cho retrieval V1.
-- Application database V2: MongoDB Atlas qua `pymongo`.
-- Config: `pydantic-settings` (đọc `.env`).
-- Infra: Docker Compose (chỉ service PostgreSQL).
+## Cấu hình
 
----
-
-## 4. Project Structure
-
-```text
-rag-demo/
-├── backend/
-│   ├── app/
-│   │   ├── main.py               # FastAPI app + GET /health
-│   │   ├── config.py             # settings (đọc .env ở project root)
-│   │   ├── db.py                 # PGEngine / sync engine / table_exists
-│   │   ├── cloud_connections.py  # MongoDB Atlas + Qdrant Cloud lifecycle/readiness
-│   │   ├── document_models.py    # MongoDB document/version/ingestion-job models
-│   │   ├── document_indexes.py   # Idempotent MongoDB index specifications
-│   │   ├── document_repository.py # MongoDB ingestion lifecycle repository
-│   │   ├── storage.py            # FileStorage contract + local filesystem adapter
-│   │   ├── ingestion.py          # P1-05 orchestration, retry và reconciliation
-│   │   ├── qdrant_ingestion.py   # Qdrant upsert/verify/cleanup cho ingestion
-│   │   ├── schemas.py            # Pydantic request/response
-│   │   ├── api/
-│   │   │   ├── documents.py      # upload / list / delete
-│   │   │   └── chat.py           # /chat
-│   │   └── rag/
-│   │       ├── loader.py         # PDF/Markdown/TXT -> Document
-│   │       ├── splitter.py       # RecursiveCharacterTextSplitter
-│   │       ├── embeddings.py     # get_embeddings()
-│   │       ├── llm.py            # get_llm() (ChatOpenRouter)
-│   │       ├── vectorstore.py    # pgvector add/list/delete
-│   │       ├── retriever.py      # as_retriever (top_k)
-│   │       ├── prompt.py         # system + context + question
-│   │       ├── chain.py          # LCEL RAG chain
-│   │       └── pipeline.py       # index_document / answer_question / list / delete
-│   ├── evaluation/
-│   │   ├── corpus/               # 3 tài liệu nhỏ cho eval
-│   │   ├── golden_set.json       # 9 test case
-│   │   ├── metrics.py            # metric deterministic
-│   │   └── results/              # output JSON của các lần chạy
-│   ├── scripts/
-│   │   ├── try_step.py           # load + split
-│   │   ├── try_vectorstore.py    # embed + lưu pgvector
-│   │   ├── try_rag.py            # retrieve + generate
-│   │   ├── try_pipeline.py       # end-to-end index + chat
-│   │   ├── eval_cli.py           # evaluation
-│   │   ├── check_cloud_connections.py # smoke test cloud chỉ-đọc
-│   │   ├── init_mongodb_indexes.py     # tạo/xác minh indexes P1-03
-│   │   ├── reconcile_ingestion.py      # reconcile job bị gián đoạn
-│   │   ├── smoke_qdrant_ingestion.py  # live Qdrant write/verify/cleanup
-│   │   └── smoke_ingestion.py          # live end-to-end smoke namespace riêng
-│   ├── requirements.txt
-│   └── Dockerfile                # (hiện đang rỗng, chưa dùng)
-├── data/
-│   └── documents/                # nơi lưu file upload + file mẫu
-├── docker-compose.yml            # PostgreSQL + pgvector
-├── .env.example
-├── .env                          # KHÔNG commit (đã có trong .gitignore)
-└── README.md
-```
-
-> Backend chạy **local** (không nằm trong Docker Compose). `backend/Dockerfile` hiện rỗng.
-
----
-
-## 5. Prerequisites
-
-- Python **3.10+** (đã test với 3.10.11).
-- Docker + Docker Compose (để chạy PostgreSQL/pgvector).
-- Tài khoản/khoá:
-  - **OpenRouter API key** (dùng free model): https://openrouter.ai/keys
-  - **Google AI Studio API key** (free tier) cho embedding: https://aistudio.google.com/apikey
-
----
-
-## 6. Environment Configuration
-
-Tạo file `.env` ở **project root** (ngang hàng `docker-compose.yml`) từ mẫu:
+Từ project root:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Các biến (giá trị mặc định lấy từ `backend/app/config.py`):
-
-| Biến | Mặc định | Ghi chú |
+| Biến | Mặc định | Mô tả |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | (bắt buộc) | Key OpenRouter, dùng cho LLM |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Base URL OpenRouter |
-| `LLM_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Model free; đổi = sửa biến này |
-| `EMBEDDING_PROVIDER` | `google` | Provider embedding |
-| `EMBEDDING_API_KEY` | (bắt buộc) | Key Google dạng `AIza...` |
-| `EMBEDDING_MODEL` | `gemini-embedding-001` | 3072 chiều |
-| `CHUNK_SIZE` | `500` | Số ký tự mỗi chunk |
-| `CHUNK_OVERLAP` | `50` | Overlap giữa 2 chunk |
-| `TOP_K` | `5` | Số chunk retrieve |
-| `DATABASE_URL` | `postgresql+psycopg://rag:rag_password@localhost:5433/rag` | Kết nối PostgreSQL |
-| `DOCUMENTS_DIR` | `./data/documents` | Nơi lưu file upload (tính từ project root) |
-| `STORAGE_BACKEND` | `local` | Backend raw-file storage; P1-04 hiện chỉ hỗ trợ `local` |
-| `MONGODB_URI` | (bắt buộc cho MongoDB) | URI Atlas; giữ bí mật, ưu tiên `mongodb+srv://` |
-| `MONGODB_DB_NAME` | (bắt buộc cho MongoDB) | Tên application database |
-| `MONGODB_TIMEOUT_MS` | `5000` | Timeout kết nối/ping MongoDB |
-| `QDRANT_URL` | (bắt buộc cho Qdrant) | Endpoint HTTPS của Qdrant Cloud; giữ bí mật |
-| `QDRANT_API_KEY` | (bắt buộc cho Qdrant) | Database API key; giữ bí mật |
-| `QDRANT_COLLECTION` | `rag_documents` | Collection dense vector cosine cho ingestion V2 |
-| `QDRANT_TIMEOUT_SECONDS` | `5.0` | Timeout kết nối/readiness Qdrant |
+| `OPENROUTER_API_KEY` | bắt buộc | OpenRouter credential |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
+| `LLM_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Chat model |
+| `EMBEDDING_PROVIDER` | `google` | Embedding provider |
+| `EMBEDDING_API_KEY` | bắt buộc | Google embedding credential |
+| `EMBEDDING_MODEL` | `gemini-embedding-001` | Embedding model |
+| `CHUNK_SIZE` | `500` | Chunk size |
+| `CHUNK_OVERLAP` | `50` | Chunk overlap |
+| `TOP_K` | `5` | Số chunks retrieve |
+| `DOCUMENTS_DIR` | `./data/documents` | Local raw-file root |
+| `STORAGE_BACKEND` | `local` | Hiện chỉ hỗ trợ local |
+| `MONGODB_URI` | bắt buộc | MongoDB Atlas URI; không commit |
+| `MONGODB_DB_NAME` | bắt buộc | Application database |
+| `MONGODB_TIMEOUT_MS` | `5000` | MongoDB timeout |
+| `QDRANT_URL` | bắt buộc | Qdrant Cloud HTTPS URL |
+| `QDRANT_API_KEY` | bắt buộc | Qdrant database API key |
+| `QDRANT_COLLECTION` | `rag_documents` | Application vector collection |
+| `QDRANT_TIMEOUT_SECONDS` | `5.0` | Qdrant timeout |
 
-Lưu ý:
+Không commit `.env`. Health checks và scripts không in URI, API keys hoặc raw provider
+exceptions.
 
-- **Không commit `.env`** (đã được `.gitignore` chặn).
-- `.env` luôn được đọc theo project root, không phụ thuộc thư mục chạy.
-- P1-04 cung cấp `FileStorage` và `LocalFileStorage`; key dạng
-  `documents/{document_id}/{version_id}/original` được sinh từ UUID nội bộ, không từ
-  filename. Mỗi key là immutable, thao tác lưu trả SHA-256 và size, và mọi path đều
-  được kiểm tra nằm trong `DOCUMENTS_DIR`.
-- Upload P1-05 dùng storage abstraction, MongoDB lifecycle và Qdrant; activation chỉ xảy ra
-  sau khi số chunk trong Qdrant được verify. Raw file/version lỗi được giữ để retry;
-  `reconcile_ingestion.py` xử lý cửa sổ lỗi sau upsert/verify.
-- API upload/list/get/update/re-index/delete dùng MongoDB/Qdrant/local storage. Chat/retrieval
-  vẫn dùng PostgreSQL/pgvector, nên document V2 chưa được `/chat` truy hồi trước task cutover.
-
----
-
-## 7. Quick Start
-
-Chạy từ **project root**:
+## Chạy backend
 
 ```powershell
-# 1) Tạo .env và điền key
-Copy-Item .env.example .env
-
-# 2) Cài dependencies
+# project root
 pip install -r backend/requirements.txt
 
-# 3) Chạy PostgreSQL + pgvector
-docker compose up -d db
-
-# 4) Chạy backend (mở terminal thứ hai)
 Set-Location backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-Kiểm tra API đang chạy: mở `http://127.0.0.1:8000/docs` (Swagger UI) hoặc:
+Swagger: `http://127.0.0.1:8000/docs`.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-```
-
-Smoke test end-to-end nhanh (terminal thứ ba, từ project root):
-
-```powershell
-python backend/scripts/try_step.py        # load + split file mẫu
-python backend/scripts/try_vectorstore.py # embed + lưu vào pgvector
-python backend/scripts/try_rag.py "Hệ thống dùng vector database nào?"
-```
-
-Chi tiết Quick Start đầy đủ ở **cuối README** (mục 17).
-
----
-
-## 8. Chạy PostgreSQL + pgvector
-
-Chạy từ **project root**:
-
-```powershell
-docker compose up -d db
-```
-
-Thông tin container (theo `docker-compose.yml`):
-
-- Image: `pgvector/pgvector:pg16` (PostgreSQL 16 + pgvector).
-- Container: `rag-demo-postgres`.
-- Port: host **5433** → container `5432` (host 5432 thường đã bị PostgreSQL native chiếm).
-- User/Password/Database: `rag` / `rag_password` / `rag`.
-
-Kiểm tra:
-
-```powershell
-docker compose ps
-docker exec rag-demo-postgres pg_isready -U rag -d rag
-```
-
-Bảng vector được tạo tự động khi index lần đầu (extension `vector` cũng được tạo tự động). Với model mặc định, tên table là:
-
-```text
-rag_chunks_gemini_embedding_001
-```
-
-Dừng database:
-
-```powershell
-docker compose down          # giữ dữ liệu (volume pgdata)
-docker compose down -v       # xoá luôn dữ liệu
-```
-
----
-
-## 9. Chạy backend
-
-Cài dependencies (từ project root hoặc `backend/`):
-
-```powershell
-pip install -r backend/requirements.txt
-```
-
-Chạy API — **phải chạy từ thư mục `backend/`** vì app import theo package `app.*`:
-
-```powershell
-Set-Location backend
-uvicorn app.main:app --reload --port 8000
-```
-
-Endpoints:
-
-| Method | Path | Mô tả |
-| --- | --- | --- |
-| GET | `/health` | Health check, trả `{"status": "ok", "llm_model": "..."}` |
-| GET | `/health/dependencies` | Readiness MongoDB/Qdrant; HTTP 503 khi thiếu cấu hình hoặc không kết nối được, không trả secrets |
-| POST | `/documents/upload` | Upload đồng bộ qua local storage + MongoDB lifecycle + Qdrant |
-| GET | `/documents` | Danh sách MongoDB documents; hỗ trợ `include_deleted`, `offset`, `limit` |
-| GET | `/documents/{document_id}` | Chi tiết identity, active version và lịch sử versions |
-| PUT | `/documents/{document_id}` | Upload raw file mới và tạo immutable version mới |
-| POST | `/documents/{document_id}/re-index` | Tạo version mới từ raw file của active version |
-| DELETE | `/documents/{document_id}` | Soft-delete/unpublish, cleanup Qdrant, giữ raw file và audit history |
-| POST | `/chat` | Hỏi đáp RAG, trả `answer` + `sources` |
-| GET | `/docs` | Swagger UI |
-
-Kiểm tra độc lập hai cloud connection mà không ghi dữ liệu hoặc in credentials:
+Kiểm tra dependencies:
 
 ```powershell
 python backend/scripts/check_cloud_connections.py
+Invoke-RestMethod http://127.0.0.1:8000/health/dependencies
 ```
 
-Script trả exit code `0` chỉ khi cả MongoDB Atlas và Qdrant Cloud đều kết nối/xác thực thành công. Document APIs đã dùng MongoDB/Qdrant/local storage; riêng `/chat` vẫn dùng PostgreSQL/pgvector cho tới task migration/cutover.
+`/health/dependencies` trả HTTP 200 chỉ khi MongoDB và Qdrant đều sẵn sàng.
 
-MongoDB Atlas hiện có ba collection metadata cho V2: `documents`, `document_versions` và `ingestion_jobs`. Backend tạo các indexes có tên cố định khi startup; có thể chạy initializer độc lập và idempotent bằng:
+## APIs
+
+| Method | Path | Mô tả |
+| --- | --- | --- |
+| GET | `/health` | Process health |
+| GET | `/health/dependencies` | MongoDB/Qdrant readiness |
+| POST | `/documents/upload` | Tạo document và active version đầu tiên |
+| GET | `/documents` | List documents; có pagination và `include_deleted` |
+| GET | `/documents/{document_id}` | Identity, active version và version history |
+| PUT | `/documents/{document_id}` | Tạo immutable version từ raw file mới |
+| POST | `/documents/{document_id}/re-index` | Tạo version từ raw file active hiện tại |
+| DELETE | `/documents/{document_id}` | Unpublish, xóa Qdrant points, giữ raw/audit history |
+| POST | `/chat` | Qdrant RAG; optional `session_id` để persist turn |
+| POST | `/sessions` | Tạo session với scope mặc định `ALL_ACTIVE` |
+| GET | `/sessions` | List active sessions với `offset/limit/total` |
+| GET | `/sessions/{session_id}` | Lấy session; tombstone trả HTTP 410 |
+| PATCH | `/sessions/{session_id}` | Cập nhật title |
+| GET | `/sessions/{session_id}/messages` | History theo `sequence`, có pagination |
+| DELETE | `/sessions/{session_id}` | Soft-delete session, hard-delete related messages |
+
+Upload:
 
 ```powershell
-python backend/scripts/init_mongodb_indexes.py
+curl.exe -X POST -F "file=@data/documents/research_paper_1_ai_rag.pdf" `
+  http://127.0.0.1:8000/documents/upload
 ```
 
-`document_id`, `version_id` và `job_id` là UUID độc lập filename. Unique constraint nghiệp vụ chỉ áp dụng cho cặp `(document_id, version)`; filename và SHA-256 checksum không unique. Toàn bộ document management API dùng V2; `/chat` vẫn dùng PostgreSQL/pgvector ở giai đoạn này.
-
----
-
-## 10. Upload / index document
-
-Định dạng hỗ trợ: `.pdf`, `.md`, `.markdown`, `.txt`, `.xlsx`.
-
-**Cách A — qua API** (backend đã chạy). Bash/WSL:
-
-```bash
-curl -X POST -F "file=@data/documents/sample_rag.md" http://127.0.0.1:8000/documents/upload
-```
-
-PowerShell:
-
-```powershell
-curl.exe -X POST -F "file=@data/documents/sample_rag.md" http://127.0.0.1:8000/documents/upload
-```
-
-Response mẫu (HTTP 201):
-
-```json
-{
-  "document_id": "<uuid-v4>",
-  "version_id": "<uuid-v4>",
-  "job_id": "<uuid-v4>",
-  "file_name": "sample_rag.md",
-  "num_chunks": 7,
-  "status": "INDEXED",
-  "activated": true
-}
-```
-
-File được lưu bằng key `documents/{document_id}/{version_id}/original`; filename không được dùng làm filesystem path. Mỗi lần gọi upload tạo một document UUID mới, kể cả khi trùng filename. `PUT` tạo version từ file mới; `re-index` tạo version từ raw file của active version. Active version chỉ đổi sau khi Qdrant verify thành công.
-
-**Cách B — qua script** (từ project root):
-
-```powershell
-python backend/scripts/try_step.py data/documents/sample_rag.md        # chỉ load + split
-python backend/scripts/try_vectorstore.py data/documents/sample_rag.md # embed + lưu pgvector
-python backend/scripts/try_pipeline.py                                 # index + chat end-to-end
-```
-
-- `try_step.py` không truyền path sẽ dùng/tạo fixture `backend/fixtures/sample_rag.md`,
-  không ghi vào thư mục runtime `data/documents/`.
-- `try_vectorstore.py --fake` chạy offline bằng `DeterministicFakeEmbedding` (không cần API key), dùng table `..._fake`.
-
----
-
-## 11. Chat / query document
-
-API (PowerShell):
+Chat:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat `
   -ContentType "application/json" `
-  -Body '{"question": "Hệ thống dùng vector database nào?"}'
+  -Body '{"question":"Retrieval-Augmented Generation kết hợp những thành phần nào?"}'
 ```
 
-Bash/WSL:
-
-```bash
-curl -X POST http://127.0.0.1:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Hệ thống dùng vector database nào?"}'
-```
-
-Response mẫu:
-
-```json
-{
-  "answer": "Hệ thống lưu vector trong PostgreSQL 16 kèm extension pgvector.",
-  "sources": [
-    {"file_name": "sample_rag.md", "source": "D:\\Project\\rag-demo\\data\\documents\\sample_rag.md",
-     "document_id": "sample-doc", "chunk_index": 2, "page": null}
-  ]
-}
-```
-
-Nếu context không chứa câu trả lời, prompt buộc model trả về: `Không tìm thấy thông tin trong tài liệu.`
-
-Script (từ project root):
+Request cũ không có `session_id` vẫn stateless và response vẫn là `answer + sources`.
+Để lưu hội thoại, gửi session đã tạo:
 
 ```powershell
-python backend/scripts/try_rag.py "Tài liệu nói gì về chunk_size và chunk_overlap?"
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat `
+  -ContentType "application/json" `
+  -Body "{`"question`":`"RAG là gì?`",`"session_id`":`"$($session.session_id)`"}"
 ```
 
----
+Với persistent chat, backend cấp atomically hai sequence, ghi user `COMPLETED` và assistant
+`PENDING` trước generation, sau đó chuyển assistant thành `COMPLETED` hoặc `FAILED`.
+Hai messages dùng chung `request_id`; failure chỉ lưu error code an toàn. Token usage hiện
+`null` vì pipeline chưa trả usage metadata. MongoDB atomic guard chỉ cho một generation
+hoạt động trên mỗi session; request đồng thời thứ hai trả HTTP 409 và không tạo messages.
+Guard chỉ được chính `request_id` sở hữu release, kể cả completion, error hoặc cancellation.
 
-## 12. Delete / list document
+Mỗi source trả `file_name`, `document_id`, `version_id`, `chunk_id`, `chunk_index` và
+`page` nếu loader cung cấp. `source` không chứa local filesystem path.
 
-List:
+Session:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/documents
+$session = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/sessions `
+  -ContentType "application/json" -Body '{"title":"RAG research"}'
+Invoke-RestMethod "http://127.0.0.1:8000/sessions/$($session.session_id)/messages?offset=0&limit=50"
 ```
 
-Response list gồm trạng thái identity, active version, số chunk/version và cleanup state. Thêm `?include_deleted=true` để xem cả document đã soft-delete.
+Session delete giữ tombstone để phân biệt `404` không tồn tại và `410` đã xóa, đồng thời
+hard-delete toàn bộ messages liên quan. DELETE lặp lại idempotent và tiếp tục cleanup nếu
+lần trước bị gián đoạn. DELETE trong lúc session có generation active trả HTTP 409. Session
+đã xóa không xuất hiện trong default list.
 
-Get chi tiết:
+DELETE đặt `active_version_id=null` trước khi cleanup Qdrant. Nếu cleanup tạm thời lỗi,
+API trả HTTP 202 với `cleanup_pending=true`; gọi DELETE lại để retry. Raw files, versions
+và jobs vẫn được giữ cho audit/manual recovery.
+
+## Demo corpus migration
+
+Manifest M-04 chỉ định đúng ba repository-owned files trong `data/documents/`; migration
+không scan file runtime ngoài manifest.
 
 ```powershell
-Invoke-RestMethod "http://127.0.0.1:8000/documents/<document_id>"
+python backend/scripts/migrate_demo_corpus.py
 ```
 
-Update bằng raw file mới:
+Migration đã được xác minh với 3 documents và 68 chunks (`37/16/15`). `source_key` có
+unique partial index nên rerun cùng checksum chỉ verify, không tạo document/version trùng.
+Source bytes thay đổi sẽ tạo immutable version mới và chỉ activate sau khi raw checksum,
+Mongo state, Qdrant count và filtered retrieval đều PASS.
+
+Raw copies nằm dưới `data/documents/documents/...` và được `.gitignore` loại khỏi source
+control; ba source files ở root vẫn được track.
+
+## Verification
 
 ```powershell
-curl.exe -X PUT -F "file=@data/documents/sample_rag.md" "http://127.0.0.1:8000/documents/<document_id>"
-```
-
-Re-index từ raw file của active version:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/documents/<document_id>/re-index"
-```
-
-Delete (thay `<document_id>` bằng UUID thật):
-
-```powershell
-Invoke-RestMethod -Method Delete -Uri "http://127.0.0.1:8000/documents/<document_id>"
-```
-
-Response mẫu:
-
-```json
-{
-  "document_id": "<document_id>",
-  "status": "DELETED",
-  "deleted_chunks": 14,
-  "raw_file_policy": "retained",
-  "retained_files": 2,
-  "cleanup_pending": false,
-  "retrieval_eligible": false
-}
-```
-
-Lưu ý:
-
-- DELETE unpublish metadata trước (`active_version_id=null`), rồi xóa và verify toàn bộ Qdrant points theo `document_id`.
-- Raw files, document versions và ingestion jobs được giữ để audit/manual recovery. Chính sách garbage collection dài hạn chưa được triển khai.
-- Nếu Qdrant cleanup tạm thời lỗi, API trả HTTP `202` với `cleanup_pending=true`; gọi lại DELETE sẽ retry idempotent.
-- Nếu `document_id` không tồn tại → HTTP `404`.
-
----
-
-## 13. Phase 1 verification
-
-Chạy kiểm chứng live bằng namespace test riêng (MongoDB Atlas + local raw storage +
-Gemini embedding + Qdrant Cloud):
-
-```powershell
+# Document lifecycle, failed re-index, page metadata và delete cleanup
 python backend/scripts/verify_phase1.py
+
+# M-05 counts/retrieval/Q&A/page/active-version/delete cutover checks
+python backend/scripts/verify_cutover.py
+
+# Vector adapter contract trên Qdrant Cloud
+python backend/scripts/smoke_vector_adapter.py
+
+# P2-01 models/indexes trên MongoDB Atlas; test data được cleanup chính xác
+python backend/scripts/init_mongodb_indexes.py
+python backend/scripts/smoke_conversation_models.py
+
+# P2-02 Session APIs; isolated test session/messages được cleanup chính xác
+python backend/scripts/smoke_session_api.py
+
+# P2-03 persistent /chat success/failure lifecycle; exact cleanup
+python backend/scripts/smoke_message_persistence.py
+
+# P2-04 two concurrent HTTP requests + Atlas atomic guard
+python backend/scripts/smoke_session_concurrency.py
+
+# P2-05 restart persistence, ordering/pagination và failure/delete contracts
+python backend/scripts/verify_phase2.py
 ```
 
-Script kiểm tra upload; bytes/checksum file gốc; metadata và số chunk; payload Qdrant
-(`document_id`, `version_id`, `chunk_id`, `chunk_index`, `file_name`, `page`,
-`chunk_text`); similarity retrieval; chuyển active version; failed re-index không làm
-mất active version; và delete không còn retrieval hit. Dữ liệu dùng marker
-`p1-07-verify-<uuid>.md`, được cleanup chính xác trên MongoDB, Qdrant và local storage.
-Script không in URI, API key hoặc raw exception.
+`verify_cutover.py` dùng namespace test riêng cho version/delete checks và cleanup chính
+xác; không xóa demo corpus hoặc collection/database dùng chung.
+`verify_phase2.py` dùng FastAPI lifespan thật qua ba lần khởi động, nhưng mock generation
+deterministic để phép thử persistence không phụ thuộc quota LLM. Script tạo một session UUID
+riêng trên Atlas, kiểm tra 8 messages gồm một failed turn, rồi cleanup chính xác theo ID;
+không xóa collection/database dùng chung.
 
-Unit test dùng loader fixture có `page=7` để xác minh page metadata được giữ qua
-chunking/upsert/query. Live Markdown smoke xác minh field `page` hiện diện với giá trị
-`null`, đúng vì Markdown không có page number.
-
-Regression/evaluation hiện tại vẫn là pipeline V1 PostgreSQL/pgvector. Docker Desktop
-và service `db` phải hoạt động trước khi chạy:
-
-```powershell
-docker compose up -d db
-python backend/scripts/eval_cli.py
-```
-
-Nếu PostgreSQL tại cổng cấu hình không sẵn sàng, eval sẽ dừng trước bước index corpus;
-không được coi là PASS.
-
-Kết quả verification gần nhất: live V2 PASS và cleanup PASS; unit/API/in-memory
-38/38 PASS. Regression/eval V1 PASS 9/9 cases, không có error; retrieval hit/recall,
-answer relevance, faithfulness và fallback accuracy đều đạt `1.0`. Report:
-`backend/evaluation/results/eval_20261011_150123.json`.
-
----
-
-## 14. Evaluation
-
-Evaluation đo chất lượng baseline bằng golden set nhỏ (deterministic metric, **không** dùng LLM-judge).
-
-Chạy từ **project root**:
+## Evaluation
 
 ```powershell
 python backend/scripts/eval_cli.py
-python backend/scripts/eval_cli.py --no-reindex                 # bỏ qua bước index lại corpus
+python backend/scripts/eval_cli.py --no-reindex
 python backend/scripts/eval_cli.py --out backend/evaluation/results/run.json
 ```
 
-Thành phần:
+- Corpus: `backend/evaluation/corpus/`.
+- Golden set: 9 cases, gồm 7 in-document và 2 fallback.
+- Collection eval: `<QDRANT_COLLECTION>_eval`, tách khỏi application collection.
+- Metrics: retrieval hit/recall, fact coverage, faithfulness proxy, fallback accuracy,
+  latency và token usage nếu provider trả metadata.
+- Provider errors được retry tối đa ba lần rồi ghi nhận theo case.
 
-- `backend/evaluation/corpus/`: 3 tài liệu nhỏ (`postgresql.md`, `chunking.md`, `llm-embedding.md`).
-- `backend/evaluation/golden_set.json`: 9 case (7 in-document + 2 out-of-document).
-- `backend/evaluation/metrics.py`: metric deterministic.
-- Corpus được index vào table **riêng** `rag_eval_gemini_embedding_001` (không đụng dữ liệu demo).
-- Kết quả in ra console + lưu JSON vào `backend/evaluation/results/`.
+Kết quả M-05 gần nhất: Qdrant eval PASS 9/9, không lỗi; retrieval hit/recall, answer
+relevance, faithfulness và fallback accuracy đều đạt `1.0`.
 
-Metric:
+## Project structure chính
 
-- **Retrieval**: `retrieval_hit` (có source đúng không) và `retrieval_recall`.
-- **Answer relevance**: `answer_fact_coverage` (tỉ lệ expected facts có trong answer) → `answer_relevant`.
-- **Faithfulness**: `faithfulness_ratio` (tỉ lệ token nội dung của answer có trong retrieved context), ngưỡng `0.7`; case out-of-document phải chứa đúng câu fallback.
-- **Latency**: thời gian mỗi query; **Token usage**: input/output/total nếu provider trả metadata.
-- Case lỗi tạm thời của provider được retry tối đa 3 lần, sau đó ghi nhận là `error` (không làm sập cả run).
-
----
-
-## 15. PDF test
-
-Loader PDF dùng `PyPDFLoader(mode="page")` nên **giữ metadata `page`** (0-based).
-
-Cách 1 — load + split:
-
-```powershell
-python backend/scripts/try_step.py "C:\duong\dan\file.pdf"
+```text
+backend/
+├── app/
+│   ├── api/                    # document/chat routes
+│   ├── rag/                    # loader, splitter, embeddings, retriever, chain
+│   ├── cloud_connections.py    # MongoDB/Qdrant lifecycle
+│   ├── conversation_models.py  # session/message persistence contract
+│   ├── conversation_indexes.py # stable ordering/query indexes
+│   ├── conversation_repository.py
+│   ├── conversation_service.py
+│   ├── conversation_schemas.py
+│   ├── document_models.py      # Mongo records/status
+│   ├── document_repository.py  # Mongo persistence
+│   ├── storage.py              # FileStorage + LocalFileStorage
+│   ├── ingestion.py            # raw → parse/chunk/embed → Qdrant → activate
+│   ├── vector_index.py         # backend-neutral vector contract
+│   ├── qdrant_ingestion.py     # Qdrant adapter
+│   └── data_migration.py       # idempotent demo migration
+├── evaluation/                 # isolated corpus/golden set/results
+├── migration/demo_corpus.json
+├── scripts/
+│   ├── migrate_demo_corpus.py
+│   ├── smoke_conversation_models.py
+│   ├── smoke_session_api.py
+│   ├── smoke_message_persistence.py
+│   ├── smoke_session_concurrency.py
+│   ├── verify_phase1.py
+│   ├── verify_phase2.py
+│   ├── verify_cutover.py
+│   └── eval_cli.py
+└── tests/
 ```
 
-Cách 2 — index + xác nhận lưu pgvector:
+## Rollback M-05
 
-```powershell
-python backend/scripts/try_vectorstore.py "C:\duong\dan\file.pdf"
-```
+Cutover không xóa PostgreSQL container, volume hoặc dữ liệu cũ. Trong phiên M-05,
+container baseline được để nguyên để rollback có thể thực hiện nếu production smoke phát
+hiện lỗi.
 
-Cách 3 — upload qua API:
+Rollback là code rollback, không phải dual-write tự động:
 
-```powershell
-curl.exe -X POST -F "file=@C:\duong\dan\file.pdf" http://127.0.0.1:8000/documents/upload
-```
+1. Chọn Git ref ngay trước M-05 và restore `backend/app/db.py`,
+   `backend/app/rag/vectorstore.py`, retriever/pipeline/chat cũ, ba scripts V1,
+   `docker-compose.yml`, requirements, config và `.env.example` từ ref đó.
+2. Cài lại requirements của ref trước M-05 và đặt `DATABASE_URL` trong `.env`.
+3. Chạy lại Compose PostgreSQL với volume cũ, xác minh `pg_isready` và bảng baseline.
+4. Chạy eval V1 trước khi đưa traffic `/chat` trở lại.
+5. Không xóa MongoDB/Qdrant data khi rollback; chúng vẫn là bản migration có thể kiểm tra
+   hoặc dùng lại cho lần cutover sau.
 
-Sau đó hỏi bằng `/chat` hoặc `python backend/scripts/try_rag.py "..."`. Source trả về sẽ có `page` (thay vì `null` như Markdown).
+Không chạy `docker compose down -v` nếu còn cần rollback vì lệnh đó xóa volume.
 
----
+## Giới hạn hiện tại
 
-## 16. Troubleshooting
-
-- **`docker: ... daemon is not running`**: mở Docker Desktop rồi chạy lại `docker compose up -d db`.
-- **Cổng 5432 bị chiếm**: không sao — container đã được map ra host **5433**; `DATABASE_URL` cũng dùng 5433.
-- **`Field required` khi import settings / API lỗi khởi động**: thiếu `.env` hoặc thiếu `OPENROUTER_API_KEY` / `EMBEDDING_API_KEY`. Tạo `.env` từ `.env.example`.
-- **`/chat` trả HTTP 502** (`Lỗi RAG pipeline: ...`): lỗi khi retrieve/generate — thường do API key LLM/embedding sai, hết quota, hoặc provider quá tải. Kiểm tra key và thử lại.
-- **Free model trả 429 / provider overloaded**: free model có thể bị rate-limit tạm thời; thử lại, hoặc đổi `LLM_MODEL` sang free model khác.
-- **Import `app...` thất bại khi chạy uvicorn**: phải chạy từ thư mục `backend/` (`Set-Location backend`).
-- **`ModuleNotFoundError: pydantic_settings`**: chưa cài dependencies → `pip install -r backend/requirements.txt`.
-- **Cảnh báo `langchain-community is being sunset`**: dự kiến, không phải lỗi.
-- **Tiếng Việt hiển thị lỗi trên console Windows**: các script đã tự cấu hình UTF-8; nếu vẫn lỗi, đặt `$env:PYTHONIOENCODING="utf-8"` trước khi chạy.
-- **Đổi embedding model**: vector nằm ở table khác (`rag_chunks_<model>`) → **phải re-index** dữ liệu.
-- **Đổi sang embedding model nhiều/ít chiều**: table mới sẽ được tạo theo số chiều thực tế (probe 1 lần), không cần cấu hình thủ công.
-
----
-
-## 17. Current Limitations
-
-- **Chưa có frontend** (ngoài scope V1); thao tác qua terminal/API.
-- **Không authentication**, **không streaming**, **không chat memory/history**.
-- Không reranker, hybrid search, query rewriting, không Agent/tool calling, không LangGraph/MCP.
-- Backend chạy local; `docker-compose.yml` chỉ có PostgreSQL (backend **chưa** container hoá).
-- Chưa tạo ANN index cho vector (đang quét tuần tự). `gemini-embedding-001` mặc định 3072 chiều > giới hạn 2000 chiều của HNSW/IVFFlat, nên muốn dùng ANN index cần giảm `output_dimensionality`.
-- DELETE document V2 soft-delete metadata, xóa Qdrant points nhưng giữ raw file và audit history;
-  garbage collection dài hạn chưa được triển khai.
-- Với câu hỏi ngoài tài liệu, response vẫn trả `top_k` source đã retrieve kèm câu fallback (chưa lọc source không liên quan).
-- Evaluation dùng **metric heuristic deterministic** (không phải ground-truth tuyệt đối); corpus nhỏ nên retrieval metric dễ bão hoà; free LLM không deterministic nên điểm có thể thay đổi giữa các lần chạy.
-- Mỗi lần đổi embedding model cần re-index (kể cả corpus eval).
-
----
-
-## 18. Quick Start (đầy đủ)
-
-```powershell
-# 0) Lấy source và vào project root
-Set-Location D:\Project\rag-demo
-
-# 1) Tạo .env và điền OPENROUTER_API_KEY + EMBEDDING_API_KEY
-Copy-Item .env.example .env
-
-# 2) Cài dependencies
-pip install -r backend/requirements.txt
-
-# 3) Bật PostgreSQL + pgvector (host port 5433)
-docker compose up -d db
-docker exec rag-demo-postgres pg_isready -U rag -d rag
-
-# 4) Chạy backend (terminal riêng)
-Set-Location backend
-uvicorn app.main:app --reload --port 8000
-# -> Swagger: http://127.0.0.1:8000/docs
-
-# 5) Upload + chat thử (terminal khác, từ project root)
-curl.exe -X POST -F "file=@data/documents/sample_rag.md" http://127.0.0.1:8000/documents/upload
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat -ContentType "application/json" -Body '{"question": "Hệ thống dùng vector database nào?"}'
-Invoke-RestMethod http://127.0.0.1:8000/documents
-
-# 6) Test pipeline bằng script
-python backend/scripts/try_pipeline.py
-
-# 7) Evaluation
-python backend/scripts/eval_cli.py
-```
+- Chưa có frontend, authentication hoặc streaming.
+- Non-streaming provider call chạy trong worker thread; nếu transport disconnect không thể
+  ngắt SDK call ngay, guard được giữ tới khi worker thực sự về terminal state.
+- Process crash giữa generation có thể để lại persistent guard; automatic lease/stale-guard
+  reconciliation chưa triển khai. P2-05 xác minh clean restart sau terminal state, không mô
+  phỏng hard process kill giữa provider call.
+- Chưa có tenant/document authorization đầy đủ; hiện phù hợp single-user development.
+- Không reranker, hybrid search, query rewriting, Agent, LangGraph hoặc S3 adapter.
+- Soft delete giữ raw file và audit history; chưa có garbage-collection dài hạn.
+- Qdrant payload giữ chunk text để retrieval nhanh.
+- Với câu hỏi ngoài tài liệu, response vẫn có thể trả top-k candidates kèm fallback.
+- Evaluation dùng metrics heuristic trên corpus nhỏ; free LLM có thể biến động giữa runs.
+- Đổi embedding model/dimension yêu cầu re-index application và evaluation collections.

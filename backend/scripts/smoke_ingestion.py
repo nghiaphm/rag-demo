@@ -22,8 +22,9 @@ from app.document_indexes import (
 )
 from app.document_models import DocumentStatus, IngestionJobStatus
 from app.ingestion import create_ingestion_service
-from app.qdrant_ingestion import QdrantIngestionIndex, VectorIndexError
+from app.qdrant_ingestion import QdrantVectorIndex, VectorIndexError
 from app.storage import StorageError, create_file_storage
+from app.vector_index import VectorFilter
 from app.config import settings
 
 
@@ -46,7 +47,7 @@ def main() -> int:
         stage = "storage"
         storage = create_file_storage(settings)
         stage = "service"
-        vector_index = QdrantIngestionIndex(
+        vector_index = QdrantVectorIndex(
             connections.qdrant.client, settings.qdrant_collection
         )
         service = create_ingestion_service(
@@ -73,7 +74,9 @@ def main() -> int:
             and job.get("status") == IngestionJobStatus.COMPLETED.value,
             "raw_file_exists": version is not None
             and storage.exists(version["storage_key"]),
-            "qdrant_verified": vector_index.count_version(result.version_id)
+            "qdrant_verified": vector_index.count(
+                VectorFilter(version_id=result.version_id)
+            )
             == result.num_chunks,
         }
         if not all(checks.values()):
@@ -107,7 +110,7 @@ def main() -> int:
             for version in versions:
                 try:
                     if vector_index is not None:
-                        vector_index.delete_version(version["_id"])
+                        vector_index.delete(VectorFilter(version_id=version["_id"]))
                     if storage is not None and version.get("storage_key"):
                         storage.delete(version["storage_key"])
                 except (VectorIndexError, StorageError):

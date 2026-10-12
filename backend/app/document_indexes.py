@@ -12,6 +12,12 @@ INGESTION_JOBS_COLLECTION = "ingestion_jobs"
 DOCUMENT_INDEXES: tuple[IndexModel, ...] = (
     IndexModel([("file_name", ASCENDING)], name="idx_documents_file_name"),
     IndexModel(
+        [("source_key", ASCENDING)],
+        name="uq_documents_source_key",
+        unique=True,
+        partialFilterExpression={"source_key": {"$type": "string"}},
+    ),
+    IndexModel(
         [("status", ASCENDING), ("updated_at", DESCENDING)],
         name="idx_documents_status_updated_at",
     ),

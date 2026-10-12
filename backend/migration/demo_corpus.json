@@ -1,0 +1,17 @@
+{
+  "namespace": "demo-corpus-v1",
+  "documents": [
+    {
+      "source_id": "enterprise-it-knowledge-base",
+      "path": "data/documents/enterprise_it_knowledge_base.xlsx"
+    },
+    {
+      "source_id": "research-paper-ai-rag",
+      "path": "data/documents/research_paper_1_ai_rag.pdf"
+    },
+    {
+      "source_id": "research-paper-go-microservices",
+      "path": "data/documents/research_paper_2_go_microservices.pdf"
+    }
+  ]
+}

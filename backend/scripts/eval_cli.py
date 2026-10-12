@@ -5,18 +5,20 @@ Chạy từ project root:
     python backend/scripts/eval_cli.py --no-reindex
     python backend/scripts/eval_cli.py --out backend/evaluation/results/run.json
 
-Script index corpus trong backend/evaluation/corpus/ vào một table eval riêng
+Script index corpus trong backend/evaluation/corpus/ vào một Qdrant collection riêng
 (không đụng dữ liệu demo), chạy từng case qua đúng retriever/chain hiện tại,
 tính metric deterministic, in kết quả và lưu JSON để so sánh các configuration.
 """
 
 import argparse
+import hashlib
 import json
 import statistics
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import NAMESPACE_URL, uuid5
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -28,9 +30,14 @@ if hasattr(sys.stdout, "reconfigure"):
 from langchain_core.callbacks import BaseCallbackHandler
 
 from app.config import settings
+from app.cloud_connections import QdrantConnection
+from app.qdrant_ingestion import QdrantVectorIndex
 from app.rag.chain import build_rag_chain
-from app.rag.pipeline import index_document
+from app.rag.embeddings import get_embeddings
+from app.rag.loader import load_document
 from app.rag.retriever import get_retriever
+from app.rag.splitter import split_documents
+from app.vector_index import VectorFilter, VectorRecord, chunk_point_id
 from evaluation.metrics import (
     answer_fact_coverage,
     faithfulness_ratio,
@@ -41,7 +48,7 @@ EVAL_DIR = BACKEND_DIR / "evaluation"
 CORPUS_DIR = EVAL_DIR / "corpus"
 GOLDEN_SET_PATH = EVAL_DIR / "golden_set.json"
 RESULTS_DIR = EVAL_DIR / "results"
-EVAL_TABLE = "rag_eval_gemini_embedding_001"
+EVAL_COLLECTION = f"{settings.qdrant_collection[:250]}_eval"
 FALLBACK_PHRASE = "Không tìm thấy thông tin trong tài liệu"
 FAITHFULNESS_THRESHOLD = 0.7
 MAX_ATTEMPTS = 3  # 1 lần gọi + 2 lần thử lại cho lỗi tạm thời của provider
@@ -78,12 +85,47 @@ class TokenUsageCallback(BaseCallbackHandler):
         self.total_tokens += int(usage.get("total_tokens") or 0)
 
 
-def _index_corpus() -> list[dict]:
-    """Index lại corpus vào table eval (idempotent theo document_id)."""
+def _corpus_identity(path: Path) -> tuple[str, str]:
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    document_id = str(uuid5(NAMESPACE_URL, f"rag-demo-eval-document:{path.name}"))
+    version_id = str(uuid5(NAMESPACE_URL, f"{document_id}:{digest}"))
+    return document_id, version_id
+
+
+def _active_eval_versions() -> tuple[str, ...]:
+    return tuple(_corpus_identity(path)[1] for path in sorted(CORPUS_DIR.glob("*.md")))
+
+
+def _index_corpus(vector_index, embeddings) -> list[dict]:
+    """Index lại corpus vào collection eval riêng, idempotent theo document identity."""
     indexed: list[dict] = []
     for path in sorted(CORPUS_DIR.glob("*.md")):
-        info = index_document(path, document_id=f"eval-{path.stem}", table_name=EVAL_TABLE)
-        indexed.append(info)
+        document_id, version_id = _corpus_identity(path)
+        chunks = split_documents(load_document(path))
+        vectors = embeddings.embed_documents([chunk.page_content for chunk in chunks])
+        vector_index.delete(VectorFilter(document_id=document_id))
+        vector_index.upsert([
+            VectorRecord(
+                point_id=chunk_point_id(version_id, chunk_index),
+                document_id=document_id,
+                version_id=version_id,
+                chunk_index=chunk_index,
+                file_name=path.name,
+                chunk_text=chunk.page_content,
+                page=None if chunk.metadata.get("page") is None else int(chunk.metadata["page"]),
+                vector=tuple(vector),
+            )
+            for chunk_index, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True))
+        ])
+        count = vector_index.count(VectorFilter(version_id=version_id))
+        if count != len(chunks):
+            raise RuntimeError("Eval Qdrant chunk count mismatch")
+        indexed.append({
+            "document_id": document_id,
+            "version_id": version_id,
+            "file_name": path.name,
+            "num_chunks": count,
+        })
     return indexed
 
 
@@ -244,53 +286,67 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=None, help="Đường dẫn file JSON lưu kết quả.")
     args = parser.parse_args()
 
-    golden_set = _load_golden_set()
-    indexed = [] if args.no_reindex else _index_corpus()
+    connection = QdrantConnection()
+    status = connection.connect()
+    if not status.ok or connection.client is None:
+        print(f"BLOCKED: qdrant ok={status.ok}; code={status.code}")
+        raise SystemExit(2)
+    embeddings = get_embeddings()
+    vector_index = QdrantVectorIndex(connection.client, EVAL_COLLECTION)
+    try:
+        golden_set = _load_golden_set()
+        indexed = [] if args.no_reindex else _index_corpus(vector_index, embeddings)
 
-    print("Cấu hình:")
-    print(f"  LLM               : {settings.llm_model}")
-    print(f"  Embedding         : {settings.embedding_provider} / {settings.embedding_model}")
-    print(f"  chunk_size/overlap: {settings.chunk_size}/{settings.chunk_overlap} | top_k={settings.top_k}")
-    print(f"  eval table        : {EVAL_TABLE}")
-    if indexed:
-        print(f"  corpus đã index   : {[item['file_name'] for item in indexed]}")
+        print("Cấu hình:")
+        print(f"  LLM               : {settings.llm_model}")
+        print(f"  Embedding         : {settings.embedding_provider} / {settings.embedding_model}")
+        print(f"  chunk_size/overlap: {settings.chunk_size}/{settings.chunk_overlap} | top_k={settings.top_k}")
+        print(f"  eval collection   : {EVAL_COLLECTION}")
+        if indexed:
+            print(f"  corpus đã index   : {[item['file_name'] for item in indexed]}")
 
-    retriever = get_retriever(table_name=EVAL_TABLE)
-    chain = build_rag_chain(retriever=retriever)
+        retriever = get_retriever(
+            vector_index=vector_index,
+            embeddings=embeddings,
+            active_version_ids=_active_eval_versions(),
+        )
+        chain = build_rag_chain(retriever=retriever)
 
-    cases = [_run_case(case, chain) for case in golden_set["cases"]]
-    for case in cases:
-        _print_case(case)
+        cases = [_run_case(case, chain) for case in golden_set["cases"]]
+        for case in cases:
+            _print_case(case)
 
-    summary = _summarize(cases)
-    print("\n===== TỔNG HỢP =====")
-    for key, value in summary.items():
-        print(f"  {key}: {value}")
+        summary = _summarize(cases)
+        print("\n===== TỔNG HỢP =====")
+        for key, value in summary.items():
+            print(f"  {key}: {value}")
 
-    report = {
-        "golden_set": golden_set.get("name"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "config": {
-            "llm_model": settings.llm_model,
-            "embedding_provider": settings.embedding_provider,
-            "embedding_model": settings.embedding_model,
-            "chunk_size": settings.chunk_size,
-            "chunk_overlap": settings.chunk_overlap,
-            "top_k": settings.top_k,
-            "table": EVAL_TABLE,
-        },
-        "cases": cases,
-        "summary": summary,
-    }
+        report = {
+            "golden_set": golden_set.get("name"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "config": {
+                "llm_model": settings.llm_model,
+                "embedding_provider": settings.embedding_provider,
+                "embedding_model": settings.embedding_model,
+                "chunk_size": settings.chunk_size,
+                "chunk_overlap": settings.chunk_overlap,
+                "top_k": settings.top_k,
+                "collection": EVAL_COLLECTION,
+            },
+            "cases": cases,
+            "summary": summary,
+        }
 
-    out_path = args.out
-    if out_path is None:
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        out_path = RESULTS_DIR / f"eval_{stamp}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nĐã lưu kết quả: {out_path}")
+        out_path = args.out
+        if out_path is None:
+            RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            out_path = RESULTS_DIR / f"eval_{stamp}.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"\nĐã lưu kết quả: {out_path}")
+    finally:
+        connection.close()
 
 
 if __name__ == "__main__":

@@ -1,0 +1,282 @@
+{
+  "golden_set": "rag-demo-qdrant-golden-set",
+  "timestamp": "2026-10-12T00:49:30.405682+00:00",
+  "config": {
+    "llm_model": "nvidia/nemotron-3-super-120b-a12b:free",
+    "embedding_provider": "google",
+    "embedding_model": "gemini-embedding-001",
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "top_k": 5,
+    "collection": "rag_documents_eval"
+  },
+  "cases": [
+    {
+      "id": "vector-backend",
+      "question": "Hệ thống dùng vector database nào cho retrieval runtime?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Hệ thống dùng **Qdrant Cloud** làm vector database cho retrieval runtime.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 3844.3,
+      "tokens": {
+        "input": 410,
+        "output": 92,
+        "total": 502,
+        "available": true
+      }
+    },
+    {
+      "id": "qdrant-collection",
+      "question": "Collection Qdrant mặc định của ứng dụng tên gì?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Collection Qdrant mặc định của ứng dụng có tên `rag_documents`. (xem trong tài liệu qdrant.md: \"Collection ứng dụng mặc định có tên `rag_documents` và dùng cosine distance.\")",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 3130.0,
+      "tokens": {
+        "input": 411,
+        "output": 248,
+        "total": 659,
+        "available": true
+      }
+    },
+    {
+      "id": "active-version-filter",
+      "question": "Retriever cho phép những Qdrant points thuộc version nào?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Retriever chỉ cho phép các Qdrant points thuộc **active version**.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 2244.2,
+      "tokens": {
+        "input": 412,
+        "output": 127,
+        "total": 539,
+        "available": true
+      }
+    },
+    {
+      "id": "chunk-size",
+      "question": "chunk_size mặc định là bao nhiêu ký tự?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Giá trị mặc định của `chunk_size` là 500 ký tự.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 3399.4,
+      "tokens": {
+        "input": 411,
+        "output": 64,
+        "total": 475,
+        "available": true
+      }
+    },
+    {
+      "id": "chunk-overlap",
+      "question": "chunk_overlap mặc định là bao nhiêu ký tự?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Chunk_overlap mặc định là 50 ký tự.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 1643.4,
+      "tokens": {
+        "input": 412,
+        "output": 37,
+        "total": 449,
+        "available": true
+      }
+    },
+    {
+      "id": "embedding-dim",
+      "question": "Vector của gemini-embedding-001 có bao nhiêu chiều?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Vector của gemini-embedding-001 có 3072 chiều.",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 1.0,
+      "faithful": true,
+      "latency_ms": 2148.5,
+      "tokens": {
+        "input": 417,
+        "output": 79,
+        "total": 496,
+        "available": true
+      }
+    },
+    {
+      "id": "embedding-change",
+      "question": "Khi đổi embedding model thì phải làm gì với dữ liệu?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": true,
+      "retrieval_recall": 1.0,
+      "answer": "Khi đổi embedding model thì phải re-index toàn bộ dữ liệu. (nguồn: [1] llm-embedding.md)",
+      "answer_fact_coverage": 1.0,
+      "answer_relevant": true,
+      "expect_fallback": false,
+      "fallback_correct": null,
+      "faithfulness_ratio": 0.714,
+      "faithful": true,
+      "latency_ms": 3913.7,
+      "tokens": {
+        "input": 411,
+        "output": 290,
+        "total": 701,
+        "available": true
+      }
+    },
+    {
+      "id": "oob-capital",
+      "question": "Thủ đô của Nhật Bản là gì?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": null,
+      "retrieval_recall": null,
+      "answer": "Không tìm thấy thông tin trong tài liệu.",
+      "answer_fact_coverage": null,
+      "answer_relevant": null,
+      "expect_fallback": true,
+      "fallback_correct": true,
+      "faithfulness_ratio": 0.333,
+      "faithful": true,
+      "latency_ms": 1971.7,
+      "tokens": {
+        "input": 407,
+        "output": 64,
+        "total": 471,
+        "available": true
+      }
+    },
+    {
+      "id": "oob-gold",
+      "question": "Giá vàng thế giới hôm nay là bao nhiêu?",
+      "error": null,
+      "top_k": 3,
+      "retrieved_sources": [
+        "chunking.md",
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "retrieval_hit": null,
+      "retrieval_recall": null,
+      "answer": "Không tìm thấy thông tin trong tài liệu.",
+      "answer_fact_coverage": null,
+      "answer_relevant": null,
+      "expect_fallback": true,
+      "fallback_correct": true,
+      "faithfulness_ratio": 0.333,
+      "faithful": true,
+      "latency_ms": 3772.1,
+      "tokens": {
+        "input": 413,
+        "output": 336,
+        "total": 749,
+        "available": true
+      }
+    }
+  ],
+  "summary": {
+    "n_cases": 9,
+    "n_ok": 9,
+    "n_errors": 0,
+    "error_ids": [],
+    "n_in_document": 7,
+    "n_out_of_document": 2,
+    "retrieval_hit_rate": 1.0,
+    "mean_retrieval_recall": 1.0,
+    "answer_relevance_rate": 1.0,
+    "mean_answer_fact_coverage": 1.0,
+    "faithfulness_rate": 1.0,
+    "fallback_accuracy": 1.0,
+    "latency_ms": {
+      "mean": 2896.4,
+      "max": 3913.7
+    },
+    "tokens": {
+      "available": true,
+      "input": 3704,
+      "output": 1337,
+      "total": 5041
+    }
+  }
+}

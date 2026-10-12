@@ -7,7 +7,6 @@ from pathlib import Path
 from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 
 from app.document_models import (
     DocumentStatus,
@@ -17,13 +16,15 @@ from app.document_models import (
 )
 from app.document_repository import RepositoryConflictError, RepositoryError
 from app.document_service import DocumentService
+from app.data_migration import DemoCorpusMigration, MigrationSource
 from app.ingestion import IngestionError, IngestionService
 from app.qdrant_ingestion import (
-    QdrantIngestionIndex,
+    QdrantVectorIndex,
     VectorCollectionMismatchError,
     VectorIndexError,
 )
 from app.storage import LocalFileStorage
+from app.vector_index import VectorFilter
 
 
 class DeterministicEmbeddings(Embeddings):
@@ -53,6 +54,16 @@ class MemoryRepository:
 
     def get_document(self, document_id):
         return self.documents[document_id]
+
+    def find_document_by_source_key(self, source_key):
+        return next(
+            (
+                document
+                for document in self.documents.values()
+                if document.source_key == source_key
+            ),
+            None,
+        )
 
     def get_version(self, version_id):
         return self.versions[version_id]
@@ -231,10 +242,11 @@ class MemoryRepository:
 class IngestionServiceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.storage = LocalFileStorage(Path(self.temp.name))
+        self.temp_root = Path(self.temp.name)
+        self.storage = LocalFileStorage(self.temp_root / "storage")
         self.repository = MemoryRepository()
         self.qdrant = QdrantClient(":memory:")
-        self.vector_index = QdrantIngestionIndex(self.qdrant, "test_documents")
+        self.vector_index = QdrantVectorIndex(self.qdrant, "test_documents")
 
     def tearDown(self):
         self.qdrant.close()
@@ -258,6 +270,15 @@ class IngestionServiceTests(unittest.TestCase):
             ingestion=ingestion,
         )
 
+    def migration(self, *, ingestion=None):
+        return DemoCorpusMigration(
+            repository=self.repository,
+            storage=self.storage,
+            vector_index=self.vector_index,
+            ingestion=ingestion or self.service(),
+            embeddings=DeterministicEmbeddings(),
+        )
+
     def test_successful_ingestion_saves_indexes_verifies_and_activates(self):
         result = self.service().ingest(file_name="guide.md", content=b"# Guide\n\nHello RAG")
         document = self.repository.documents[result.document_id]
@@ -272,10 +293,15 @@ class IngestionServiceTests(unittest.TestCase):
         self.assertEqual(version.embedding_model, "test-embedding")
         self.assertTrue(self.storage.exists(version.storage_key))
         self.assertEqual(job.status, IngestionJobStatus.COMPLETED)
-        self.assertEqual(self.vector_index.count_version(result.version_id), result.num_chunks)
+        self.assertEqual(
+            self.vector_index.count(VectorFilter(version_id=result.version_id)),
+            result.num_chunks,
+        )
         points, _ = self.qdrant.scroll(
             collection_name="test_documents",
-            scroll_filter=self.vector_index._version_filter(result.version_id),
+            scroll_filter=self.vector_index._to_qdrant_filter(
+                VectorFilter(version_id=result.version_id)
+            ),
             limit=10,
             with_payload=True,
             with_vectors=False,
@@ -304,7 +330,9 @@ class IngestionServiceTests(unittest.TestCase):
         self.assertEqual(document.active_version_id, first.version_id)
         self.assertEqual(document.status, DocumentStatus.INDEXED)
         self.assertEqual(failed.status, DocumentStatus.FAILED)
-        self.assertEqual(self.vector_index.count_version(failed.version_id), 0)
+        self.assertEqual(
+            self.vector_index.count(VectorFilter(version_id=failed.version_id)), 0
+        )
 
         retried = self.service().retry(failed.version_id)
         self.assertTrue(retried.activated)
@@ -324,7 +352,9 @@ class IngestionServiceTests(unittest.TestCase):
             self.service().ingest(file_name="recover.txt", content=b"recoverable content")
         self.assertEqual(raised.exception.code, "metadata_finalize_failed")
         version = next(iter(self.repository.versions.values()))
-        self.assertGreater(self.vector_index.count_version(version.version_id), 0)
+        self.assertGreater(
+            self.vector_index.count(VectorFilter(version_id=version.version_id)), 0
+        )
 
         summary = self.service().reconcile_processing()
         self.assertEqual(summary, {"completed": 1, "failed": 0, "skipped": 0})
@@ -370,7 +400,9 @@ class IngestionServiceTests(unittest.TestCase):
         self.assertIsNone(document.active_version_id)
         self.assertFalse(result.cleanup_pending)
         self.assertEqual(result.retained_files, 3)
-        self.assertEqual(self.vector_index.count_document(first.document_id), 0)
+        self.assertEqual(
+            self.vector_index.count(VectorFilter(document_id=first.document_id)), 0
+        )
         self.assertTrue(
             all(
                 self.storage.exists(version.storage_key)
@@ -403,7 +435,7 @@ class IngestionServiceTests(unittest.TestCase):
         first = service.ingestion.ingest(file_name="guide.md", content=b"version one")
 
         class UnavailableVectorIndex:
-            def count_document(self, document_id):
+            def count(self, filters):
                 raise VectorIndexError("unavailable")
 
         unavailable = DocumentService(
@@ -450,44 +482,98 @@ class IngestionServiceTests(unittest.TestCase):
         active = self.repository.documents[first.document_id].active_version_id
         self.assertEqual(active, second.version_id)
 
-        response = self.qdrant.query_points(
-            collection_name="test_documents",
-            query=DeterministicEmbeddings().embed_query("verification marker"),
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id", match=MatchValue(value=first.document_id)
-                    ),
-                    FieldCondition(
-                        key="version_id", match=MatchValue(value=active)
-                    ),
-                ]
-            ),
+        results = self.vector_index.query(
+            DeterministicEmbeddings().embed_query("verification marker"),
             limit=5,
-            with_payload=True,
+            filters=VectorFilter(
+                document_id=first.document_id,
+                version_id=active,
+            ),
         )
-        self.assertEqual(len(response.points), 1)
-        payload = response.points[0].payload
-        self.assertEqual(payload["document_id"], first.document_id)
-        self.assertEqual(payload["version_id"], second.version_id)
-        self.assertEqual(payload["chunk_index"], 0)
-        self.assertEqual(payload["page"], 7)
-        self.assertEqual(payload["chunk_text"], "verification marker")
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result.document_id, first.document_id)
+        self.assertEqual(result.version_id, second.version_id)
+        self.assertEqual(result.chunk_index, 0)
+        self.assertEqual(result.page, 7)
+        self.assertEqual(result.chunk_text, "verification marker")
 
         service.delete(first.document_id)
-        after_delete = self.qdrant.query_points(
-            collection_name="test_documents",
-            query=DeterministicEmbeddings().embed_query("verification marker"),
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="document_id", match=MatchValue(value=first.document_id)
-                    )
-                ]
-            ),
+        after_delete = self.vector_index.query(
+            DeterministicEmbeddings().embed_query("verification marker"),
             limit=5,
+            filters=VectorFilter(document_id=first.document_id),
         )
-        self.assertEqual(after_delete.points, [])
+        self.assertEqual(after_delete, [])
+
+    def test_demo_migration_is_idempotent_and_tracks_source_identity(self):
+        source = self.temp_root / "demo.md"
+        source.write_bytes(b"# Demo\n\nStable migration content")
+        item = MigrationSource("demo-corpus-v1:demo", source)
+
+        first = self.migration().migrate([item])
+        second = self.migration().migrate([item])
+
+        self.assertEqual(first.created, 1)
+        self.assertEqual(first.failed, 0)
+        self.assertEqual(second.verified, 1)
+        self.assertEqual(second.failed, 0)
+        self.assertEqual(len(self.repository.documents), 1)
+        self.assertEqual(len(self.repository.versions), 1)
+        document = next(iter(self.repository.documents.values()))
+        self.assertEqual(document.source_key, item.source_key)
+
+    def test_demo_migration_changed_source_creates_and_activates_new_version(self):
+        source = self.temp_root / "demo.md"
+        item = MigrationSource("demo-corpus-v1:demo", source)
+        source.write_bytes(b"version one")
+        first = self.migration().migrate([item]).items[0]
+        source.write_bytes(b"version two with changed bytes")
+
+        second = self.migration().migrate([item]).items[0]
+
+        self.assertEqual(second.outcome, "UPDATED")
+        self.assertEqual(first.document_id, second.document_id)
+        self.assertNotEqual(first.version_id, second.version_id)
+        self.assertEqual(len(self.repository.versions), 2)
+        self.assertEqual(
+            self.repository.documents[first.document_id].active_version_id,
+            second.version_id,
+        )
+
+    def test_demo_migration_failure_does_not_replace_active_version(self):
+        source = self.temp_root / "demo.md"
+        item = MigrationSource("demo-corpus-v1:demo", source)
+        source.write_bytes(b"working version")
+        first = self.migration().migrate([item]).items[0]
+        source.write_bytes(b"candidate that fails")
+        failing_ingestion = self.service(FailingEmbeddings())
+
+        failed = self.migration(ingestion=failing_ingestion).migrate([item]).items[0]
+
+        self.assertEqual(failed.outcome, "FAILED")
+        self.assertEqual(failed.error_code, "embedding_failed")
+        self.assertEqual(
+            self.repository.documents[first.document_id].active_version_id,
+            first.version_id,
+        )
+        self.assertEqual(
+            self.repository.versions[first.version_id].status,
+            DocumentStatus.INDEXED,
+        )
+
+    def test_demo_migration_same_checksum_fails_verify_without_new_version(self):
+        source = self.temp_root / "demo.md"
+        source.write_bytes(b"content whose vectors disappear")
+        item = MigrationSource("demo-corpus-v1:demo", source)
+        first = self.migration().migrate([item]).items[0]
+        self.vector_index.delete(VectorFilter(version_id=first.version_id))
+
+        result = self.migration().migrate([item]).items[0]
+
+        self.assertEqual(result.outcome, "FAILED")
+        self.assertEqual(result.error_code, "vector_count_mismatch")
+        self.assertEqual(len(self.repository.versions), 1)
 
 
 if __name__ == "__main__":

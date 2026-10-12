@@ -1,4 +1,4 @@
-"""Tạo/xác minh document indexes trên MongoDB Atlas; không ghi document dữ liệu."""
+"""Tạo/xác minh MongoDB indexes trên Atlas; không ghi application data."""
 
 import sys
 from pathlib import Path
@@ -10,6 +10,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from app.cloud_connections import MongoDBConnection
+from app.conversation_indexes import (
+    CONVERSATION_INDEX_DEFINITIONS,
+    initialize_conversation_indexes,
+)
 from app.document_indexes import INDEX_DEFINITIONS, initialize_document_indexes
 
 
@@ -21,10 +25,17 @@ def main() -> int:
             print(f"mongodb: ok=False; code={status.code}; message={status.message}")
             return 1
 
-        first = initialize_document_indexes(connection.database)
-        second = initialize_document_indexes(connection.database)
+        definitions = {**INDEX_DEFINITIONS, **CONVERSATION_INDEX_DEFINITIONS}
+        first = {
+            **initialize_document_indexes(connection.database),
+            **initialize_conversation_indexes(connection.database),
+        }
+        second = {
+            **initialize_document_indexes(connection.database),
+            **initialize_conversation_indexes(connection.database),
+        }
         verified = True
-        for collection_name, expected_indexes in INDEX_DEFINITIONS.items():
+        for collection_name, expected_indexes in definitions.items():
             actual_names = set(connection.database[collection_name].index_information())
             expected_names = {index.document["name"] for index in expected_indexes}
             collection_ok = expected_names.issubset(actual_names)

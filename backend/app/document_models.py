@@ -56,6 +56,7 @@ class DocumentRecord(MongoRecord):
 
     document_id: str = Field(default_factory=new_uuid, alias="_id")
     file_name: str = Field(min_length=1, max_length=255)
+    source_key: str | None = Field(default=None, min_length=1, max_length=512)
     active_version_id: str | None = None
     status: DocumentStatus = DocumentStatus.UPLOADED
     cleanup_pending: bool = False
@@ -67,6 +68,16 @@ class DocumentRecord(MongoRecord):
     _validate_active_version_id = field_validator("active_version_id")(
         lambda value: None if value is None else _canonical_uuid(value)
     )
+
+    @field_validator("source_key")
+    @classmethod
+    def _normalize_source_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("source_key không được rỗng")
+        return normalized
 
     @field_validator("created_at", "updated_at", "deleted_at")
     @classmethod

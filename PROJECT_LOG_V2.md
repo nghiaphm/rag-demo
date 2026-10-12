@@ -48,17 +48,17 @@
 
 | Workstream | Trạng thái | Điều kiện kết thúc |
 |---|---|---|
-| Giai đoạn 1 — Metadata và lưu trữ tài liệu | IN PROGRESS | Upload → lưu → index Qdrant → list/get → delete/re-index đã xác minh |
-| Giai đoạn 2 — Session và Message Persistence | PLANNED | Hội thoại lưu bền vững, thứ tự đúng, kiểm soát concurrent generation |
+| Giai đoạn 1 — Metadata và lưu trữ tài liệu | COMPLETED | Upload → lưu → index Qdrant → list/get → delete/re-index đã xác minh |
+| Giai đoạn 2 — Session và Message Persistence | COMPLETED — P2-01…P2-05 | Hội thoại lưu bền vững, thứ tự đúng, kiểm soát concurrent generation |
 | Giai đoạn 3 — Response Contract | PLANNED | JSON/SSE schema có ví dụ, có tests |
 | Giai đoạn 4 — SSE Streaming API | PLANNED | Stream thực sự, xử lý disconnect/lỗi và trạng thái message |
 | Giai đoạn 5 — History-aware RAG | PLANNED | Test multi-turn và evaluation retrieval/generation đạt tiêu chí |
-| M — Migration pgvector → Qdrant Cloud | IN PROGRESS | Qdrant là retrieval backend sau kiểm thử cutover |
+| M — Migration pgvector → Qdrant Cloud | CUTOVER COMPLETED; M-06 IN PROGRESS | P2 slice PASS; response/SSE/history-aware gates chạy lại ở Giai đoạn 3–5 |
 
-- **Giai đoạn hiện tại:** Giai đoạn 1 (IN PROGRESS; cloud connection layer đã triển khai, chưa migration/cutover)
-- **Task vừa hoàn thành:** `P1-07` — verification V2 và regression/eval V1 đều PASS; toàn bộ checklist P1-01…P1-07 đã hoàn thành.
-- **Task tiếp theo:** `M-03` (**chưa bắt đầu; chờ giao việc**); chưa chuyển sang Giai đoạn 2.
-- **Blockers:** Không có blocker cho P1-07. Tồn đọng đúng phạm vi: `/chat` vẫn dùng PostgreSQL/pgvector; M-03 chưa có query adapter/cutover retrieval đầy đủ; MongoDB user có role quản trị rộng cần thu hẹp trước dữ liệu thật.
+- **Giai đoạn hiện tại:** Giai đoạn 2 COMPLETED; `P2-01`…`P2-05` đã nghiệm thu.
+- **Task vừa hoàn thành:** `P2-05` — restart persistence, history ordering/pagination, invalid/missing/deleted session và failed generation đã live verification trên Atlas.
+- **Task tiếp theo:** `P3-01` (**chưa bắt đầu; chờ giao việc**). `M-06` IN PROGRESS: toàn bộ P2 session/message/concurrency/Qdrant citation slice PASS, các gate response/SSE/history-aware chờ P3–P5.
+- **Blockers:** Không có blocker cho P2-05. M-06 chưa thể nghiệm thu vì response contract, SSE và history-aware chưa được triển khai theo roadmap. Automatic stale-guard recovery sau hard process crash chưa triển khai; MongoDB user có role quản trị rộng cần thu hẹp trước dữ liệu thật.
 - **Chi tiết nhật ký:** [`CURRENT_CHANGE.md`](./CURRENT_CHANGE.md).
 
 ## 3. Quy ước kỹ thuật chung
@@ -104,11 +104,11 @@
 
 **Mục tiêu:** lưu session/messages bền vững trong MongoDB, trước tiên tích hợp với non-streaming hiện có.
 
-- [ ] **P2-01 — Models/indexes:** `sessions` (ID, title, scope, timestamps, optional user) và `messages` (session, role, content, status, citations, model, usage, timestamps, request ID); index thứ tự ổn định.
-- [ ] **P2-02 — Session APIs:** create/list/get/update title/delete; phân trang history, xử lý ID sai/session đã xóa, quy tắc xóa message liên quan.
-- [ ] **P2-03 — Message persistence:** lưu user message trước generation, lưu assistant success/failure. Chốt `/chat` không session giữ stateless hay tự tạo session; đảm bảo backward compatibility.
-- [ ] **P2-04 — Concurrency:** một active generation/session bằng atomic guard, giải phóng khi hoàn tất/lỗi/hủy; test hai request đồng thời.
-- [ ] **P2-05 — Verification:** restart backend vẫn tải session/history; thứ tự, pagination, invalid/deleted session, failed generation; cập nhật README.
+- [x] **P2-01 — Models/indexes:** `sessions` (ID, title, scope, timestamps, optional user) và `messages` (session, role, content, status, citations, model, usage, timestamps, request ID); index thứ tự ổn định.
+- [x] **P2-02 — Session APIs:** create/list/get/update title/delete; phân trang history, xử lý ID sai/session đã xóa, quy tắc xóa message liên quan.
+- [x] **P2-03 — Message persistence:** lưu user message trước generation, lưu assistant success/failure. Chốt `/chat` không session giữ stateless hay tự tạo session; đảm bảo backward compatibility.
+- [x] **P2-04 — Concurrency:** một active generation/session bằng atomic guard, giải phóng khi hoàn tất/lỗi/hủy; test hai request đồng thời.
+- [x] **P2-05 — Verification:** restart backend vẫn tải session/history; thứ tự, pagination, invalid/deleted session, failed generation; cập nhật README.
 
 **Điều kiện kết thúc:** Session/messages khôi phục được sau restart; thứ tự đúng; concurrent same-session request tuân thủ chính sách đã ghi.
 
@@ -154,10 +154,10 @@
 
 - [x] **M-01 — Kiểm kê phụ thuộc:** tìm pgvector trong db, vectorstore, retriever, pipeline, scripts, tests, eval, compose, requirements, settings; lưu kết quả retrieval baseline.
 - [x] **M-02 — Qdrant Cloud connection:** xác minh `.env` có `QDRANT_URL` và `QDRANT_API_KEY` (không in giá trị), cập nhật `.env.example` bằng placeholder, kết nối Qdrant Cloud qua HTTPS/SDK và health check; xử lý timeout/credential/TLS an toàn; kiểm tra collection naming, embedding dimension/distance và payload indexes. **Không thêm Qdrant vào Docker Compose; không tạo cluster mới.**
-- [ ] **M-03 — Vector adapter:** add/upsert/query/delete/filter với ID hợp lệ, metadata/chunk text; cô lập sau interface để đổi backend.
-- [ ] **M-04 — Data migration:** re-parse/re-embed raw demo corpus vào Qdrant Cloud; quản lý per-version/status; không nhận đã migrate nếu chưa kiểm chứng.
-- [ ] **M-05 — Cutover:** so sánh document/chunk counts, retrieval Q&A, delete, page metadata, active-version filter và eval isolation; rồi mới gỡ runtime path/dependencies pgvector, cập nhật compose/config/docs; ghi rollback.
-- [ ] **M-06 — Regression liên giai đoạn:** xác minh citation/scope với session, response, stream và history-aware; ghi và sửa regression.
+- [x] **M-03 — Vector adapter:** add/upsert/query/delete/filter với ID hợp lệ, metadata/chunk text; cô lập sau interface để đổi backend.
+- [x] **M-04 — Data migration:** re-parse/re-embed raw demo corpus vào Qdrant Cloud; quản lý per-version/status; không nhận đã migrate nếu chưa kiểm chứng.
+- [x] **M-05 — Cutover:** so sánh document/chunk counts, retrieval Q&A, delete, page metadata, active-version filter và eval isolation; rồi mới gỡ runtime path/dependencies pgvector, cập nhật compose/config/docs; ghi rollback.
+- [ ] **M-06 — Regression liên giai đoạn:** xác minh citation/scope với session, response, stream và history-aware; ghi và sửa regression. **IN PROGRESS:** P2-01…P2-05 session/message/API/scope/concurrency/restart và Qdrant citation mapping PASS; unified response, SSE và history-aware chờ P3–P5.
 
 ## 10. Kiểm thử và nghiệm thu tối thiểu (mọi giai đoạn)
 
@@ -184,6 +184,6 @@ Không tự chuyển task/phase. Không commit secrets; giữ API đang hoạt �
 
 ## 12. Quyết định và những vấn đề cần chốt khi triển khai
 
-**Đã chốt:** MongoDB Atlas (cloud, cluster người dùng đã tạo) quản lý application data; IP Access List hiện là `0.0.0.0/0` chỉ nên là tạm thời và cần thu hẹp khi có thể; **Qdrant Cloud (cluster đã tạo; kiểm tra `QDRANT_URL`, `QDRANT_API_KEY` từ `.env`)** thay pgvector; local file storage trong development qua `FileStorage`, key chỉ sinh từ `document_id/version_id` và không cho ghi đè để giữ version immutable, abstraction sẵn sàng đổi S3-compatible sau này; upload P1-05 chạy đồng bộ để giữ API baseline, chỉ activate version sau Qdrant verify và giữ active version cũ khi candidate fail; P1-06 dùng soft-delete/unpublish metadata trước, xóa toàn bộ Qdrant points và verify trong request, giữ raw files cùng version/job history; lỗi Qdrant để `cleanup_pending=true` và DELETE lặp lại sẽ retry idempotent; external LLM/embedding APIs; Modular Monolith; SSE; 5 giai đoạn + M xuyên suốt.
+**Đã chốt:** MongoDB Atlas (cloud, cluster người dùng đã tạo) quản lý application data; IP Access List hiện là `0.0.0.0/0` chỉ nên là tạm thời và cần thu hẹp khi có thể; **Qdrant Cloud (cluster đã tạo; kiểm tra `QDRANT_URL`, `QDRANT_API_KEY` từ `.env`)** thay pgvector; local file storage trong development qua `FileStorage`, key chỉ sinh từ `document_id/version_id` và không cho ghi đè để giữ version immutable, abstraction sẵn sàng đổi S3-compatible sau này; upload P1-05 chạy đồng bộ để giữ API baseline, chỉ activate version sau Qdrant verify và giữ active version cũ khi candidate fail; P1-06 dùng soft-delete/unpublish metadata trước, xóa toàn bộ Qdrant points và verify trong request, giữ raw files cùng version/job history; lỗi Qdrant để `cleanup_pending=true` và DELETE lặp lại sẽ retry idempotent; M-05 đã cutover `/chat` sang Qdrant, scope retrieval lấy `active_version_id` từ MongoDB, eval dùng collection Qdrant riêng; pgvector runtime/dependencies/config/Compose đã gỡ; PostgreSQL container/volume cũ không bị xóa và rollback yêu cầu restore code/config từ Git ref trước M-05 rồi chạy lại V1 eval; P2-01 dùng UUID string làm Mongo `_id`, scope mặc định `ALL_ACTIVE`, message order bằng unique `(session_id, sequence)`, một `request_id` có thể liên kết cặp user/assistant; P2-02 soft-delete session trước rồi hard-delete related messages, giữ tombstone để trả `410`, DELETE lặp lại retry cleanup idempotent; P2-03 giữ `/chat` không có `session_id` stateless, còn request có session ghi user + assistant `PENDING` trước generation và terminal `COMPLETED/FAILED`, sequence cấp atomically theo cặp; P2-04 lưu `active_generation_id` trên session và acquire/release atomically theo owner request, request thứ hai và DELETE khi active trả `409`; external LLM/embedding APIs; Modular Monolith; SSE; 5 giai đoạn + M xuyên suốt.
 
 **Chốt trước khi thay đổi hành vi liên quan:** `/chat` stateless hay tự tạo session; upload/index sync hay background job; retention dài hạn/garbage collection cho raw file và audit history sau soft-delete; Qdrant collection/dimension/distance phải xác minh; mapping client cancel/disconnect sang message status; authentication/ACL nếu dùng dữ liệu nội bộ thật/đa người dùng. Ghi quyết định mới ngắn gọn tại đây; diễn biến triển khai để ở `CURRENT_CHANGE.md`.

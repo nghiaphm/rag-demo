@@ -2,8 +2,8 @@
 Tập trung toàn bộ cấu hình của hệ thống tại 1 chỗ.
 
 Mọi module khác phải import `settings` từ đây thay vì đọc `os.environ` trực tiếp.
-Stack: FastAPI + LangChain + PostgreSQL/pgvector + API-first (OpenRouter cho LLM,
-embedding provider gọi qua API).
+Stack: FastAPI + LangChain + MongoDB Atlas + Qdrant Cloud + API-first
+(OpenRouter cho LLM, embedding provider gọi qua API).
 """
 
 from functools import lru_cache
@@ -40,11 +40,10 @@ class Settings(BaseSettings):
     top_k: int = 5
 
     # ----- Storage -----
-    database_url: str = "postgresql+psycopg://rag:rag_password@localhost:5433/rag"
     documents_dir: str = "./data/documents"
     storage_backend: str = "local"
 
-    # ----- V2 cloud connections (chưa thay thế PostgreSQL pipeline) -----
+    # ----- Cloud persistence and retrieval -----
     mongodb_uri: SecretStr | None = None
     mongodb_db_name: str | None = None
     mongodb_timeout_ms: int = 5000

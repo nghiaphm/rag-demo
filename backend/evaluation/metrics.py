@@ -24,6 +24,14 @@ _STOPWORDS: frozenset[str] = frozenset(
 )
 
 _TOKEN_RE = re.compile(r"\d+(?:[.,]\d+)*|[^\W\d_]+", flags=re.UNICODE)
+_DASH_TRANSLATION = str.maketrans({
+    "‐": "-",  # hyphen
+    "‑": "-",  # non-breaking hyphen
+    "‒": "-",  # figure dash
+    "–": "-",  # en dash
+    "—": "-",  # em dash
+    "−": "-",  # minus sign
+})
 
 
 def fact_present(fact: str, text: str) -> bool:
@@ -31,8 +39,10 @@ def fact_present(fact: str, text: str) -> bool:
 
     Dùng word-boundary để `50` không khớp nhầm trong `500`.
     """
-    pattern = r"(?<!\w)" + re.escape(fact) + r"(?!\w)"
-    return re.search(pattern, text, flags=re.IGNORECASE) is not None
+    normalized_fact = fact.translate(_DASH_TRANSLATION)
+    normalized_text = text.translate(_DASH_TRANSLATION)
+    pattern = r"(?<!\w)" + re.escape(normalized_fact) + r"(?!\w)"
+    return re.search(pattern, normalized_text, flags=re.IGNORECASE) is not None
 
 
 def answer_fact_coverage(answer: str, expected_facts: list[str]) -> float:

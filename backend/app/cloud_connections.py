@@ -1,7 +1,6 @@
 """Client lifecycle và health check an toàn cho MongoDB Atlas/Qdrant Cloud.
 
-Module này chỉ thiết lập kết nối V2. Pipeline retrieval hiện tại vẫn dùng
-PostgreSQL/pgvector cho tới task cutover được nghiệm thu.
+Các client dùng chung cho document lifecycle và Qdrant retrieval runtime.
 """
 
 from __future__ import annotations

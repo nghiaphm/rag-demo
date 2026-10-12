@@ -94,10 +94,24 @@ class DocumentIndexTests(unittest.TestCase):
             for index in indexes
             if index.document.get("unique") is True
         ]
-        self.assertEqual(len(unique_indexes), 1)
+        version_index = next(
+            index for index in unique_indexes if "document_id" in index["key"]
+        )
         self.assertEqual(
-            list(unique_indexes[0]["key"].items()),
+            list(version_index["key"].items()),
             [("document_id", 1), ("version", 1)],
+        )
+
+    def test_migration_source_key_is_unique_only_when_present(self):
+        source_index = next(
+            index.document
+            for index in DOCUMENT_INDEXES
+            if "source_key" in index.document["key"]
+        )
+        self.assertTrue(source_index["unique"])
+        self.assertEqual(
+            source_index["partialFilterExpression"],
+            {"source_key": {"$type": "string"}},
         )
 
     def test_filename_and_checksum_indexes_are_not_unique(self):

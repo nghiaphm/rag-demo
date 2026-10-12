@@ -9,7 +9,7 @@ prompt để mô hình sinh câu trả lời có căn cứ.
 ## 2. Kiến trúc của project này
 Project được xây theo hướng API-first. LLM được gọi qua OpenRouter, embedding
 được gọi qua một provider API hỗ trợ bởi LangChain, và vector được lưu trong
-PostgreSQL cùng phần mở rộng pgvector. Docker Compose dùng để chạy database.
+MongoDB Atlas giữ metadata và active version; Qdrant Cloud lưu vector retrieval.
 Toàn bộ V1 thao tác qua terminal, script và HTTP API, chưa có frontend.
 
 ## 3. Document ingestion

@@ -13,8 +13,9 @@ from app.ingestion import (
     IngestionResult,
     IngestionService,
 )
-from app.qdrant_ingestion import QdrantIngestionIndex, VectorIndexError
+from app.qdrant_ingestion import QdrantVectorIndex
 from app.storage import FileStorage, StorageError, create_file_storage
+from app.vector_index import VectorFilter, VectorIndex, VectorIndexError
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +45,7 @@ class DocumentService:
         *,
         repository: Any,
         storage: FileStorage,
-        vector_index: QdrantIngestionIndex,
+        vector_index: VectorIndex,
         ingestion: IngestionService,
     ) -> None:
         self.repository = repository
@@ -109,9 +110,10 @@ class DocumentService:
         deleted_chunks = 0
         cleanup_pending = True
         try:
-            deleted_chunks = self.vector_index.count_document(document_id)
-            self.vector_index.delete_document(document_id)
-            if self.vector_index.count_document(document_id) != 0:
+            document_filter = VectorFilter(document_id=document_id)
+            deleted_chunks = self.vector_index.count(document_filter)
+            self.vector_index.delete(document_filter)
+            if self.vector_index.count(document_filter) != 0:
                 raise VectorIndexError("Qdrant vẫn còn points sau cleanup")
             self.repository.mark_cleanup_complete(document_id)
             cleanup_pending = False
@@ -129,7 +131,7 @@ class DocumentService:
 def create_document_service(*, database: Any, qdrant_client: Any) -> DocumentService:
     repository = MongoDocumentRepository(database)
     storage = create_file_storage(settings)
-    vector_index = QdrantIngestionIndex(qdrant_client, settings.qdrant_collection)
+    vector_index = QdrantVectorIndex(qdrant_client, settings.qdrant_collection)
     ingestion = IngestionService(
         repository=repository,
         storage=storage,

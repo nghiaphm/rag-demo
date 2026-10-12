@@ -79,6 +79,13 @@ class MongoDocumentRepository:
             raise RepositoryNotFoundError("Document không tồn tại")
         return DocumentRecord.model_validate(value)
 
+    def find_document_by_source_key(self, source_key: str) -> DocumentRecord | None:
+        try:
+            value = self.documents.find_one({"source_key": source_key})
+        except PyMongoError as exc:
+            raise RepositoryError("Không thể đọc migration source metadata") from exc
+        return None if value is None else DocumentRecord.model_validate(value)
+
     def get_version(self, version_id: str) -> DocumentVersionRecord:
         try:
             value = self.versions.find_one({"_id": version_id})
@@ -113,6 +120,20 @@ class MongoDocumentRepository:
             return [DocumentVersionRecord.model_validate(value) for value in values]
         except PyMongoError as exc:
             raise RepositoryError("Không thể liệt kê document versions") from exc
+
+    def list_active_version_ids(self) -> list[str]:
+        """Danh sách version được phép retrieval tại thời điểm query."""
+        try:
+            values = self.documents.find(
+                {
+                    "status": DocumentStatus.INDEXED.value,
+                    "active_version_id": {"$type": "string"},
+                },
+                {"active_version_id": 1},
+            )
+            return [str(value["active_version_id"]) for value in values]
+        except PyMongoError as exc:
+            raise RepositoryError("Không thể đọc active retrieval scope") from exc
 
     def next_version_number(self, document_id: str) -> int:
         try:
