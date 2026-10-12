@@ -177,6 +177,6 @@ class MessageRecord(MongoRecord):
 
         if self.status is MessageStatus.FAILED and not self.error_code:
             raise ValueError("FAILED message cần error_code an toàn")
-        if self.status is not MessageStatus.FAILED and self.error_code is not None:
-            raise ValueError("error_code chỉ dùng cho FAILED message")
+        if self.status not in {MessageStatus.FAILED, MessageStatus.PARTIAL} and self.error_code is not None:
+            raise ValueError("error_code chỉ dùng cho terminal failure message")
         return self

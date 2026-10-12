@@ -12,7 +12,8 @@ from app.config import Settings
 
 def make_settings(**overrides) -> Settings:
     values = {
-        "openrouter_api_key": "test-openrouter",
+        "groq_api_key": "test-groq",
+        "openai_base_url": "https://api.groq.com/openai/v1",
         "embedding_api_key": "test-embedding",
         "mongodb_uri": "mongodb+srv://user:password@example.mongodb.net/",
         "mongodb_db_name": "rag_demo",

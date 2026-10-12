@@ -1,0 +1,83 @@
+{
+  "name": "rag-demo-history-aware-golden-set",
+  "description": "P5-05 paired baseline/history-aware evaluation on the isolated Qdrant corpus.",
+  "cases": [
+    {
+      "id": "pronoun-follow-up",
+      "category": "pronoun_follow_up",
+      "history": [
+        {
+          "user": "Hệ thống dùng vector database nào cho retrieval runtime?",
+          "assistant": "Hệ thống dùng Qdrant Cloud cho retrieval runtime."
+        }
+      ],
+      "question": "Collection mặc định của nó tên gì?",
+      "expected_sources": ["qdrant.md"],
+      "expected_facts": ["rag_documents"],
+      "expect_fallback": false,
+      "expect_rewrite": true
+    },
+    {
+      "id": "topic-switch",
+      "category": "topic_switch",
+      "history": [
+        {
+          "user": "Qdrant dùng distance nào?",
+          "assistant": "Qdrant dùng cosine distance."
+        }
+      ],
+      "question": "chunk_overlap mặc định là bao nhiêu ký tự?",
+      "expected_sources": ["chunking.md"],
+      "expected_facts": ["50"],
+      "expect_fallback": false,
+      "expect_rewrite": false
+    },
+    {
+      "id": "long-session-pronoun",
+      "category": "long_session",
+      "padding_turns": 32,
+      "history": [
+        {
+          "user": "Embedding baseline dùng model nào?",
+          "assistant": "Embedding baseline dùng model gemini-embedding-001 của Google."
+        }
+      ],
+      "question": "Vector của nó có bao nhiêu chiều?",
+      "expected_sources": ["llm-embedding.md"],
+      "expected_facts": ["3072"],
+      "expect_fallback": false,
+      "expect_rewrite": true,
+      "expect_history_omitted": true
+    },
+    {
+      "id": "out-of-document",
+      "category": "out_of_document",
+      "history": [
+        {
+          "user": "Ứng dụng dùng collection nào?",
+          "assistant": "Ứng dụng dùng collection rag_documents."
+        }
+      ],
+      "question": "Thủ đô của Nhật Bản là gì?",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_fallback": true,
+      "expect_rewrite": false
+    },
+    {
+      "id": "cross-document-follow-up",
+      "category": "cross_document",
+      "history": [
+        {
+          "user": "Collection Qdrant mặc định tên gì?",
+          "assistant": "Collection Qdrant mặc định tên rag_documents."
+        }
+      ],
+      "question": "Còn chunk_size mặc định là bao nhiêu?",
+      "expected_sources": ["chunking.md"],
+      "expected_facts": ["500"],
+      "expect_fallback": false,
+      "expect_rewrite": true
+    }
+  ]
+}

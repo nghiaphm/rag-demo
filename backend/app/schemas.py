@@ -1,9 +1,10 @@
 """Pydantic schemas cho request/response của FastAPI."""
 
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.document_models import DocumentStatus
 
@@ -18,6 +19,58 @@ class Source(BaseModel):
     chunk_id: str | None = None
     chunk_index: int | None = None
     page: int | None = None
+
+
+class Citation(BaseModel):
+    """Citation truy ngược được; mapping eligibility được hoàn thiện ở P3-02."""
+
+    chunk_id: UUID
+    document_id: UUID
+    version_id: UUID
+    file_name: str | None = None
+    page: int | None = Field(default=None, ge=0)
+
+
+class ChatResponseStatus(str, Enum):
+    """Terminal status của logical non-streaming reply."""
+
+    COMPLETED = "COMPLETED"
+    PARTIAL = "PARTIAL"
+    FAILED = "FAILED"
+
+
+class ChatResponseMode(str, Enum):
+    STATELESS = "STATELESS"
+    PERSISTENT = "PERSISTENT"
+
+
+class ChatResponseMetadata(BaseModel):
+    """Provider-neutral metadata; object này luôn hiện diện trong response."""
+
+    mode: ChatResponseMode
+    model: str | None = Field(min_length=1, max_length=255)
+
+
+class ChatUsage(BaseModel):
+    """Token usage chuẩn hóa; toàn object là null khi provider không cung cấp."""
+
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _validate_total(self) -> "ChatUsage":
+        if self.total_tokens < self.input_tokens + self.output_tokens:
+            raise ValueError("total_tokens không được nhỏ hơn input + output")
+        return self
+
+
+class ChatError(BaseModel):
+    """Lỗi public an toàn, không chứa raw provider response hay credentials."""
+
+    code: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=500)
+    retryable: bool = False
 
 
 class ChatRequest(BaseModel):
@@ -40,10 +93,89 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Response cho POST /chat."""
+    """Logical JSON reply dùng chung làm nền cho JSON và SSE ở các task sau.
 
-    answer: str
+    Nullability:
+    - stateless: ``session_id`` và hai message ID là null;
+    - ``usage`` là null nếu provider không trả token accounting;
+    - terminal success có ``error=null``; FAILED cần một ``error`` an toàn;
+    - ``sources``/``citations`` luôn là array, có thể rỗng nhưng không null.
+    """
+
+    request_id: UUID
+    session_id: UUID | None
+    user_message_id: UUID | None
+    assistant_message_id: UUID | None
+    answer: str | None = Field(max_length=1_000_000)
     sources: list[Source]
+    citations: list[Citation]
+    metadata: ChatResponseMetadata
+    usage: ChatUsage | None
+    status: ChatResponseStatus
+    error: ChatError | None
+
+    @model_validator(mode="after")
+    def _validate_reply_contract(self) -> "ChatResponse":
+        message_ids = (self.user_message_id, self.assistant_message_id)
+        if self.metadata.mode is ChatResponseMode.STATELESS:
+            if self.session_id is not None or any(value is not None for value in message_ids):
+                raise ValueError("stateless response không có session/message IDs")
+        else:
+            if self.session_id is None or any(value is None for value in message_ids):
+                raise ValueError("persistent response cần session và đủ hai message IDs")
+
+        if self.status is ChatResponseStatus.COMPLETED:
+            if self.answer is None or not self.answer.strip():
+                raise ValueError("COMPLETED response cần answer khác rỗng")
+            if self.error is not None:
+                raise ValueError("COMPLETED response phải có error=null")
+        elif self.status is ChatResponseStatus.FAILED:
+            if self.error is None:
+                raise ValueError("FAILED response cần error an toàn")
+
+        source_refs: set[tuple[str, str, str, int | None]] = set()
+        for source in self.sources:
+            try:
+                source_refs.add(
+                    (
+                        str(UUID(str(source.chunk_id))),
+                        str(UUID(str(source.document_id))),
+                        str(UUID(str(source.version_id))),
+                        source.page,
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
+        for citation in self.citations:
+            citation_ref = (
+                str(citation.chunk_id),
+                str(citation.document_id),
+                str(citation.version_id),
+                citation.page,
+            )
+            if citation_ref not in source_refs:
+                raise ValueError("citation phải tham chiếu một retrieved source thực")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "request_id": "11111111-1111-4111-8111-111111111111",
+                    "session_id": None,
+                    "user_message_id": None,
+                    "assistant_message_id": None,
+                    "answer": "Câu trả lời có căn cứ.",
+                    "sources": [],
+                    "citations": [],
+                    "metadata": {"mode": "STATELESS", "model": "provider/model"},
+                    "usage": None,
+                    "status": "COMPLETED",
+                    "error": None,
+                }
+            ]
+        }
+    }
 
 
 class DocumentIndexInfo(BaseModel):

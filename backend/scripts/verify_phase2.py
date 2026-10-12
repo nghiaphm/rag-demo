@@ -33,7 +33,7 @@ def _expect(response, status: int, stage: str) -> dict:
 
 def _generation(turn: int) -> dict:
     return {
-        "answer": f"P2-05 deterministic answer {turn}",
+        "answer": f"P2-05 deterministic answer {turn} [1]",
         "sources": [
             {
                 "chunk_id": str(uuid4()),
@@ -98,7 +98,7 @@ def main() -> int:
                         200,
                         f"successful chat {turn}",
                     )
-                if result["answer"] != f"P2-05 deterministic answer {turn}":
+                if result["answer"] != f"P2-05 deterministic answer {turn} [1]":
                     raise RuntimeError("chat response mismatch")
 
             with patch(

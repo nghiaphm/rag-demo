@@ -1,4 +1,4 @@
-"""RAG chain: question -> retrieve top-k -> prompt -> OpenRouter LLM -> answer + sources."""
+"""RAG chain: question -> retrieve top-k -> prompt -> configured Groq LLM -> answer."""
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser

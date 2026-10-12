@@ -3,7 +3,7 @@ Tập trung toàn bộ cấu hình của hệ thống tại 1 chỗ.
 
 Mọi module khác phải import `settings` từ đây thay vì đọc `os.environ` trực tiếp.
 Stack: FastAPI + LangChain + MongoDB Atlas + Qdrant Cloud + API-first
-(OpenRouter cho LLM, embedding provider gọi qua API).
+(Groq OpenAI-compatible API cho LLM, embedding provider gọi qua API).
 """
 
 from functools import lru_cache
@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse
 
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # .env nằm ở project root (ngang hàng docker-compose.yml), không phụ thuộc CWD
@@ -21,10 +21,10 @@ ENV_FILE = PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
-    # ----- LLM (OpenRouter) -----
-    openrouter_api_key: str
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    llm_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    # ----- LLM (Groq qua OpenAI-compatible API) -----
+    groq_api_key: SecretStr
+    openai_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
 
     # ----- Embedding provider (độc lập với LLM) -----
     # Baseline: Google Gemini embedding (free tier, gọi qua API — không self-host).
@@ -38,6 +38,20 @@ class Settings(BaseSettings):
 
     # ----- Retrieval -----
     top_k: int = 5
+
+    # ----- History-aware context budget -----
+    rag_context_window_tokens: int = 8192
+    rag_system_max_tokens: int = 1024
+    rag_history_max_tokens: int = 2048
+    rag_chunks_max_tokens: int = 3584
+    rag_query_max_tokens: int = 512
+    rag_output_reserve_tokens: int = 1024
+    rag_token_chars_per_token: float = 3.0
+    rag_rewrite_timeout_seconds: float = 15.0
+    rag_rewrite_max_chars: int = 1000
+
+    # ----- Streaming -----
+    stream_timeout_seconds: float = 120.0
 
     # ----- Storage -----
     documents_dir: str = "./data/documents"
@@ -59,6 +73,39 @@ class Settings(BaseSettings):
         if backend != "local":
             raise ValueError("STORAGE_BACKEND hiện chỉ hỗ trợ giá trị 'local'")
         return backend
+
+    @field_validator("groq_api_key")
+    @classmethod
+    def _validate_groq_api_key(cls, value: SecretStr) -> SecretStr:
+        secret = value.get_secret_value().strip()
+        if not secret:
+            raise ValueError("GROQ_API_KEY không được rỗng")
+        return SecretStr(secret)
+
+    @field_validator("openai_base_url")
+    @classmethod
+    def _validate_openai_base_url(cls, value: str) -> str:
+        url = value.strip().rstrip("/")
+        parsed = urlparse(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "api.groq.com"
+            or parsed.path != "/openai/v1"
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "OPENAI_BASE_URL cho Groq phải là HTTPS API base kết thúc /openai/v1"
+            )
+        return url
+
+    @field_validator("llm_model")
+    @classmethod
+    def _validate_llm_model(cls, value: str) -> str:
+        model = value.strip()
+        if not model:
+            raise ValueError("LLM_MODEL không được rỗng")
+        return model
 
     @field_validator("mongodb_uri")
     @classmethod
@@ -116,6 +163,63 @@ class Settings(BaseSettings):
         if value <= 0:
             raise ValueError("QDRANT_TIMEOUT_SECONDS phải lớn hơn 0")
         return value
+
+    @field_validator("stream_timeout_seconds")
+    @classmethod
+    def _validate_stream_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("STREAM_TIMEOUT_SECONDS phải lớn hơn 0")
+        return value
+
+    @field_validator(
+        "rag_context_window_tokens",
+        "rag_system_max_tokens",
+        "rag_history_max_tokens",
+        "rag_chunks_max_tokens",
+        "rag_query_max_tokens",
+        "rag_output_reserve_tokens",
+    )
+    @classmethod
+    def _validate_token_budget_value(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("Các giới hạn token phải lớn hơn 0")
+        return value
+
+    @field_validator("rag_token_chars_per_token")
+    @classmethod
+    def _validate_chars_per_token(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("RAG_TOKEN_CHARS_PER_TOKEN phải lớn hơn 0")
+        return value
+
+    @field_validator("rag_rewrite_timeout_seconds")
+    @classmethod
+    def _validate_rewrite_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("RAG_REWRITE_TIMEOUT_SECONDS phải lớn hơn 0")
+        return value
+
+    @field_validator("rag_rewrite_max_chars")
+    @classmethod
+    def _validate_rewrite_max_chars(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("RAG_REWRITE_MAX_CHARS phải lớn hơn 0")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_context_budget_total(self) -> "Settings":
+        allocated = (
+            self.rag_system_max_tokens
+            + self.rag_history_max_tokens
+            + self.rag_chunks_max_tokens
+            + self.rag_query_max_tokens
+            + self.rag_output_reserve_tokens
+        )
+        if allocated > self.rag_context_window_tokens:
+            raise ValueError(
+                "Tổng system/history/chunks/query/output reserve vượt context window"
+            )
+        return self
 
     # Đọc từ file .env, không phân biệt hoa/thường tên biến.
     # extra="ignore" để biến môi trường lạ/cũ không làm app crash.

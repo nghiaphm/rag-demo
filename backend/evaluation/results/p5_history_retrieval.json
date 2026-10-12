@@ -1,0 +1,564 @@
+{
+  "golden_set": "rag-demo-history-aware-golden-set",
+  "timestamp": "2026-10-12T09:58:34.505996+00:00",
+  "mode": "retrieval_only",
+  "config": {
+    "llm_model": "openai/gpt-oss-120b",
+    "embedding_model": "gemini-embedding-001",
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "top_k": 5,
+    "collection": "rag_documents_eval",
+    "indexed": []
+  },
+  "cases": [
+    {
+      "id": "pronoun-follow-up",
+      "category": "pronoun_follow_up",
+      "question": "Collection mặc định của nó tên gì?",
+      "expected_sources": [
+        "qdrant.md"
+      ],
+      "expected_facts": [
+        "rag_documents"
+      ],
+      "expect_fallback": false,
+      "baseline": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 0,
+          "chunks": 380,
+          "query": 16,
+          "output_reserve": 1024,
+          "total": 1609
+        },
+        "rewrite_status": "SKIPPED_NO_HISTORY",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 1291.0,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "history_aware": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 46,
+          "chunks": 380,
+          "query": 16,
+          "output_reserve": 1024,
+          "total": 1655
+        },
+        "rewrite_status": "REWRITTEN",
+        "rewritten": true,
+        "rewrite_provider_calls": 1,
+        "rewrite_reason": "context_reference",
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 2184.5,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 467,
+          "generation": 0,
+          "total": 467,
+          "generation_available": false,
+          "rewrite_usage_source": "provider"
+        }
+      },
+      "acceptance": {
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "rewrite_ok": true,
+        "history_budget_ok": true,
+        "passed": true
+      }
+    },
+    {
+      "id": "topic-switch",
+      "category": "topic_switch",
+      "question": "chunk_overlap mặc định là bao nhiêu ký tự?",
+      "expected_sources": [
+        "chunking.md"
+      ],
+      "expected_facts": [
+        "50"
+      ],
+      "expect_fallback": false,
+      "baseline": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 0,
+          "chunks": 380,
+          "query": 19,
+          "output_reserve": 1024,
+          "total": 1612
+        },
+        "rewrite_status": "SKIPPED_NO_HISTORY",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 915.7,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "history_aware": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 29,
+          "chunks": 380,
+          "query": 19,
+          "output_reserve": 1024,
+          "total": 1641
+        },
+        "rewrite_status": "SKIPPED_INDEPENDENT",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 909.5,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "acceptance": {
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "rewrite_ok": true,
+        "history_budget_ok": true,
+        "passed": true
+      }
+    },
+    {
+      "id": "long-session-pronoun",
+      "category": "long_session",
+      "question": "Vector của nó có bao nhiêu chiều?",
+      "expected_sources": [
+        "llm-embedding.md"
+      ],
+      "expected_facts": [
+        "3072"
+      ],
+      "expect_fallback": false,
+      "baseline": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 0,
+          "chunks": 380,
+          "query": 16,
+          "output_reserve": 1024,
+          "total": 1609
+        },
+        "rewrite_status": "SKIPPED_NO_HISTORY",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 909.1,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "history_aware": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 1915,
+          "chunks": 380,
+          "query": 16,
+          "output_reserve": 1024,
+          "total": 3524
+        },
+        "rewrite_status": "REJECTED_UNGROUNDED",
+        "rewritten": false,
+        "rewrite_provider_calls": 1,
+        "rewrite_reason": "context_reference",
+        "omitted_history_turns": 19,
+        "latency_ms": {
+          "prepare": 2117.3,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 1744,
+          "generation": 0,
+          "total": 1744,
+          "generation_available": false,
+          "rewrite_usage_source": "provider"
+        }
+      },
+      "acceptance": {
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "rewrite_ok": true,
+        "history_budget_ok": true,
+        "passed": true
+      }
+    },
+    {
+      "id": "out-of-document",
+      "category": "out_of_document",
+      "question": "Thủ đô của Nhật Bản là gì?",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_fallback": true,
+      "baseline": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": null,
+        "retrieval_recall": null,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 0,
+          "chunks": 380,
+          "query": 13,
+          "output_reserve": 1024,
+          "total": 1606
+        },
+        "rewrite_status": "SKIPPED_NO_HISTORY",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 938.8,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "history_aware": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": null,
+        "retrieval_recall": null,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 33,
+          "chunks": 380,
+          "query": 13,
+          "output_reserve": 1024,
+          "total": 1639
+        },
+        "rewrite_status": "SKIPPED_INDEPENDENT",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 920.8,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "acceptance": {
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "rewrite_ok": true,
+        "history_budget_ok": true,
+        "passed": true
+      }
+    },
+    {
+      "id": "cross-document-follow-up",
+      "category": "cross_document",
+      "question": "Còn chunk_size mặc định là bao nhiêu?",
+      "expected_sources": [
+        "chunking.md"
+      ],
+      "expected_facts": [
+        "500"
+      ],
+      "expect_fallback": false,
+      "baseline": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 0,
+          "chunks": 380,
+          "query": 17,
+          "output_reserve": 1024,
+          "total": 1610
+        },
+        "rewrite_status": "SKIPPED_NO_HISTORY",
+        "rewritten": false,
+        "rewrite_provider_calls": 0,
+        "rewrite_reason": null,
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 914.7,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 0,
+          "generation": 0,
+          "total": 0,
+          "generation_available": false,
+          "rewrite_usage_source": "none"
+        }
+      },
+      "history_aware": {
+        "error": null,
+        "retrieved_sources": [
+          "chunking.md",
+          "llm-embedding.md",
+          "qdrant.md"
+        ],
+        "retrieval_hit": true,
+        "retrieval_recall": 1.0,
+        "answer": "",
+        "answer_fact_coverage": null,
+        "answer_relevant": null,
+        "faithfulness_ratio": null,
+        "faithful": null,
+        "fallback_correct": null,
+        "budget_ok": true,
+        "budget_usage": {
+          "system": 189,
+          "history": 37,
+          "chunks": 380,
+          "query": 17,
+          "output_reserve": 1024,
+          "total": 1647
+        },
+        "rewrite_status": "REJECTED_UNGROUNDED",
+        "rewritten": false,
+        "rewrite_provider_calls": 1,
+        "rewrite_reason": "context_reference",
+        "omitted_history_turns": 0,
+        "latency_ms": {
+          "prepare": 2035.9,
+          "generation": null,
+          "total": null
+        },
+        "tokens": {
+          "rewrite": 526,
+          "generation": 0,
+          "total": 526,
+          "generation_available": false,
+          "rewrite_usage_source": "provider"
+        }
+      },
+      "acceptance": {
+        "retrieval_ok": true,
+        "answer_ok": true,
+        "rewrite_ok": true,
+        "history_budget_ok": true,
+        "passed": true
+      }
+    }
+  ],
+  "summary": {
+    "n_cases": 5,
+    "baseline": {
+      "n_ok": 5,
+      "n_errors": 0,
+      "retrieval_hit_rate": 1.0,
+      "mean_retrieval_recall": 1.0,
+      "answer_relevance_rate": null,
+      "faithfulness_rate": null,
+      "fallback_accuracy": null,
+      "mean_total_latency_ms": null,
+      "total_tokens": 0
+    },
+    "history_aware": {
+      "n_ok": 5,
+      "n_errors": 0,
+      "retrieval_hit_rate": 1.0,
+      "mean_retrieval_recall": 1.0,
+      "answer_relevance_rate": null,
+      "faithfulness_rate": null,
+      "fallback_accuracy": null,
+      "mean_total_latency_ms": null,
+      "total_tokens": 2737
+    },
+    "delta": {
+      "retrieval_hit_rate": 0.0,
+      "mean_retrieval_recall": 0.0,
+      "answer_relevance_rate": null,
+      "faithfulness_rate": null,
+      "fallback_accuracy": null,
+      "mean_total_latency_ms": null,
+      "total_tokens": 2737.0
+    },
+    "referent_accuracy": null,
+    "all_budgets_ok": true,
+    "acceptance_pass_rate": 1.0
+  }
+}

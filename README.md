@@ -1,6 +1,6 @@
 # RAG Demo (API-first)
 
-RAG demo dùng FastAPI + LangChain, OpenRouter cho LLM, Google Gemini cho embedding,
+RAG demo dùng FastAPI + LangChain, Groq cho LLM qua OpenAI-compatible API, Google Gemini cho embedding,
 MongoDB Atlas cho document lifecycle, Qdrant Cloud cho vector retrieval và local filesystem
 cho raw documents. `/chat` đã cutover sang Qdrant; PostgreSQL/pgvector không còn nằm trong
 runtime hoặc dependency manifest.
@@ -15,8 +15,8 @@ FastAPI
   ├── Document APIs ── MongoDB metadata ── LocalFileStorage
   │                         │
   │                         └── parse/chunk/embed ── Qdrant Cloud
-  ├── Session/message models + indexes ── MongoDB Atlas
-  └── /chat ── Mongo active-version scope ── Qdrant retriever ── OpenRouter LLM
+  ├── Session/message models + indexes ── MongoDB Atlas ── whole-turn history loader
+  └── /chat + /chat/stream ── history/budget/rewrite ── scoped Qdrant ── Groq LLM
 ```
 
 - MongoDB là source of truth cho document identity, versions, status và `active_version_id`.
@@ -31,13 +31,19 @@ FastAPI
   retrieval scope, message lifecycle, citations/usage/request linkage và stable sequence.
   Session CRUD, paginated history và optional `/chat` persistence đã được xác minh qua
   nhiều lần khởi động lại FastAPI.
+- P5 history loader giữ nguyên session retrieval scope, đọc message theo stable sequence và
+  chỉ trả cặp user/assistant hoàn chỉnh. Mặc định assistant `PARTIAL`, `FAILED`, `PENDING`
+  hoặc `STREAMING` làm cả lượt bị loại; không đưa orphan message vào history.
+- JSON và SSE dùng chung prepared-request builder. Builder snapshot active versions theo scope
+  session, dùng query rewrite chỉ cho retrieval, còn generation luôn nhận original query cùng
+  recent whole-turn history và ranked chunks đã nằm trong context budget.
 
 ## Yêu cầu
 
 - Python 3.10+; dự án đã được kiểm tra với Python 3.10.11.
 - MongoDB Atlas cluster và database user.
 - Qdrant Cloud cluster và database API key.
-- OpenRouter API key và Google AI Studio API key.
+- Groq API key và Google AI Studio API key.
 - Không cần Docker hoặc PostgreSQL để chạy backend hiện tại.
 
 ## Cấu hình
@@ -50,15 +56,24 @@ Copy-Item .env.example .env
 
 | Biến | Mặc định | Mô tả |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | bắt buộc | OpenRouter credential |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter endpoint |
-| `LLM_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` | Chat model |
+| `GROQ_API_KEY` | bắt buộc | Groq credential; không ghi vào source/log |
+| `OPENAI_BASE_URL` | `https://api.groq.com/openai/v1` | Groq OpenAI-compatible API base |
+| `LLM_MODEL` | `openai/gpt-oss-120b` | Chat model đang được Groq/tier tài khoản hỗ trợ |
 | `EMBEDDING_PROVIDER` | `google` | Embedding provider |
 | `EMBEDDING_API_KEY` | bắt buộc | Google embedding credential |
 | `EMBEDDING_MODEL` | `gemini-embedding-001` | Embedding model |
 | `CHUNK_SIZE` | `500` | Chunk size |
 | `CHUNK_OVERLAP` | `50` | Chunk overlap |
 | `TOP_K` | `5` | Số chunks retrieve |
+| `RAG_CONTEXT_WINDOW_TOKENS` | `8192` | Tổng context window dùng để kiểm tra budget |
+| `RAG_SYSTEM_MAX_TOKENS` | `1024` | Allocation system instruction |
+| `RAG_HISTORY_MAX_TOKENS` | `2048` | Allocation các whole turns gần nhất |
+| `RAG_CHUNKS_MAX_TOKENS` | `3584` | Allocation retrieved chunks |
+| `RAG_QUERY_MAX_TOKENS` | `512` | Allocation query hiện tại |
+| `RAG_OUTPUT_RESERVE_TOKENS` | `1024` | Phần giữ trước cho output |
+| `RAG_TOKEN_CHARS_PER_TOKEN` | `3.0` | Hệ số approximate counter đa ngôn ngữ |
+| `RAG_REWRITE_TIMEOUT_SECONDS` | `15.0` | Timeout riêng cho query rewrite provider call |
+| `RAG_REWRITE_MAX_CHARS` | `1000` | Độ dài tối đa của retrieval query được rewrite |
 | `DOCUMENTS_DIR` | `./data/documents` | Local raw-file root |
 | `STORAGE_BACKEND` | `local` | Hiện chỉ hỗ trợ local |
 | `MONGODB_URI` | bắt buộc | MongoDB Atlas URI; không commit |
@@ -128,8 +143,9 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat `
   -Body '{"question":"Retrieval-Augmented Generation kết hợp những thành phần nào?"}'
 ```
 
-Request cũ không có `session_id` vẫn stateless và response vẫn là `answer + sources`.
-Để lưu hội thoại, gửi session đã tạo:
+Request cũ không có `session_id` vẫn stateless. Hai field `answer` và `sources` được giữ,
+response P3-01 bổ sung ID, citations, metadata, usage, status và error. Để lưu hội thoại,
+gửi session đã tạo:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat `
@@ -139,13 +155,145 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/chat `
 
 Với persistent chat, backend cấp atomically hai sequence, ghi user `COMPLETED` và assistant
 `PENDING` trước generation, sau đó chuyển assistant thành `COMPLETED` hoặc `FAILED`.
-Hai messages dùng chung `request_id`; failure chỉ lưu error code an toàn. Token usage hiện
-`null` vì pipeline chưa trả usage metadata. MongoDB atomic guard chỉ cho một generation
+Hai messages dùng chung `request_id`; failure chỉ lưu error code an toàn. Token usage được
+chuẩn hóa khi provider trả metadata, nếu không có thì vẫn là `null`. MongoDB atomic guard chỉ cho một generation
 hoạt động trên mỗi session; request đồng thời thứ hai trả HTTP 409 và không tạo messages.
 Guard chỉ được chính `request_id` sở hữu release, kể cả completion, error hoặc cancellation.
 
+Khi request có `session_id`, retrieval chỉ dùng active versions thuộc scope lưu trên server.
+Whole-turn history gần nhất được chọn theo budget; query phụ thuộc context có thể được rewrite
+để retrieve, nhưng prompt tạo câu trả lời luôn giữ câu hỏi gốc. History không được dùng làm
+nguồn citation; `[n]` chỉ map về ranked Qdrant chunks có metadata khớp MongoDB active version.
+
+Response JSON thành công có một contract thống nhất. Ví dụ stateless:
+
+```json
+{
+  "request_id": "11111111-1111-4111-8111-111111111111",
+  "session_id": null,
+  "user_message_id": null,
+  "assistant_message_id": null,
+  "answer": "Câu trả lời có căn cứ.",
+  "sources": [],
+  "citations": [],
+  "metadata": {"mode": "STATELESS", "model": "provider/model"},
+  "usage": null,
+  "status": "COMPLETED",
+  "error": null
+}
+```
+
+Tất cả field trên luôn hiện diện. `sources` và `citations` luôn là array, dùng `[]` khi
+không có dữ liệu. Stateless dùng `null` cho session/message IDs; persistent bắt buộc có đủ
+ba ID và chúng khớp MongoDB history. `usage=null` khi provider không trả token accounting.
+`COMPLETED` bắt buộc có answer khác rỗng và `error=null`; schema `FAILED` yêu cầu error
+gồm `code`, message an toàn và `retryable`. Nếu generation thất bại sau khi logical reply
+đã bắt đầu, `/chat` trả HTTP 502 với đầy đủ schema trên, `status=FAILED`, `answer=null`,
+`sources=[]`, `citations=[]`, `usage=null` và không lộ raw provider detail. Với persistent
+request, ba request/message IDs vẫn trỏ đúng failed turn đã lưu. Validation, session 404/410,
+concurrency 409 và persistence 503 xảy ra trước logical reply vẫn giữ FastAPI `detail`.
+
+Compatibility là additive, không đổi URL hoặc version: client cũ tiếp tục gửi request không
+có `session_id` và chỉ đọc `answer`/`sources`; các field mới có thể được bỏ qua. Fallback
+`Không tìm thấy thông tin trong tài liệu` không tạo citation giả; khi không có candidates thì
+`sources=[]`, `citations=[]`. Response nhiều tài liệu giữ toàn bộ candidates trong `sources`
+và chỉ đưa candidates thực sự được answer tham chiếu vào `citations`.
+
+`sources` là toàn bộ retrieved candidates theo đúng thứ tự context `[1]…[n]`. `citations`
+chỉ gồm candidates có ordinal `[n]` thực sự xuất hiện trong answer và có `chunk_id`,
+`document_id`, `version_id` là UUID hợp lệ cùng `page` hợp lệ. IDs luôn lấy từ metadata
+retrieval phía server; UUID/citation object do model tự viết, ordinal ngoài phạm vi,
+metadata lỗi và citation trùng đều bị bỏ qua. Nếu model không emit marker thì
+`citations=[]` thay vì gắn giả mọi candidate. Persistent response và MongoDB history lưu
+cùng tập verified citations.
+
+### SSE contract
+
+P3-03 định nghĩa contract mà endpoint stateless `/chat/stream` ở P4-01 sử dụng. Mỗi frame
+dùng đúng `event: <name>` và `data: <JSON>`, kết thúc bằng một dòng trống. Success
+transcript có thứ tự:
+
+```text
+event: start
+data: {"sequence":1,"request_id":"...","session_id":"...","user_message_id":"...","assistant_message_id":"...","mode":"PERSISTENT"}
+
+event: metadata
+data: {"sequence":2,"model":"provider/model","sources":[]}
+
+event: delta
+data: {"sequence":3,"content":"Xin "}
+
+event: delta
+data: {"sequence":4,"content":"chào"}
+
+event: done
+data: {"sequence":5,"status":"COMPLETED","usage":null}
+```
+
+Nếu có verified citations, các event `citation` nằm sau `metadata` và trước `delta` đầu
+tiên. Client dựng answer bằng cách nối `delta.content` theo sequence (`"Xin " + "chào"`).
+Sequence bắt đầu từ 1 và liên tục; `start` duy nhất luôn đầu tiên; chỉ một terminal event
+và terminal luôn cuối. `done` chỉ mang `COMPLETED` và cần ít nhất một delta. `error` thay
+cho `done`: status `FAILED` nếu chưa phát delta, `PARTIAL` nếu đã phát nội dung; error chỉ
+chứa code/message/retryable an toàn. Lỗi sau khi đã gửi headers phải dùng event `error`,
+không đổi HTTP status giữa stream.
+
 Mỗi source trả `file_name`, `document_id`, `version_id`, `chunk_id`, `chunk_index` và
 `page` nếu loader cung cấp. `source` không chứa local filesystem path.
+
+### POST `/chat/stream` (P4-03)
+
+`POST /chat/stream` giữ nguyên `/chat` JSON và trả `Content-Type: text/event-stream`.
+Request không có `session_id` giữ stateless. Request có `session_id` chuẩn bị retrieval/prompt
+trước headers, sau đó atomically tạo user message và assistant `PENDING → STREAMING`; LangChain/Groq
+`astream()` phát các text delta hợp lệ và backend tích lũy chúng để ghi terminal state.
+Chunk control/empty bị bỏ qua; usage provider (nếu có, kể cả ở chunk không có text) được đưa
+vào `done`. Transcript là `start → metadata → delta* → done`; citation theo answer ordinal
+chưa được phát realtime vì contract yêu cầu citation đứng trước delta, nên được để trống thay
+vì buffer toàn bộ answer. Stream thành công mới ghi `COMPLETED`; provider lỗi/no-content ghi
+`PARTIAL`/`FAILED` theo content đã phát và release session guard. Provider error, output rỗng,
+timeout hoặc persistence failure sau headers phát đúng một SSE `error` an toàn; không tự retry sau
+khi đã phát output. `STREAM_TIMEOUT_SECONDS` (mặc định 120 giây) giới hạn toàn bộ provider stream.
+Cancel/disconnect đóng downstream iterator nếu có thể, persist `RAG_STREAM_CANCELLED` và release
+guard; client đã ngắt thì không thể nhận terminal frame. Response dùng `no-cache, no-transform`
+và `X-Accel-Buffering: no` để hạn chế proxy buffering.
+Nếu lỗi xảy ra trước headers, endpoint trả JSON HTTP 502 an toàn.
+
+Mỗi request stream ghi một metric one-shot bằng monotonic clock: `first_event_ms`, nullable
+`first_content_ms`, `total_latency_ms`, `delta_count`, mode và safe outcome. Thời gian bắt đầu
+được lấy trước retrieval nên bao gồm cả pre-header preparation. Metric chỉ chứa `request_id` và
+các trường vận hành trên; không log question, answer, sources hoặc credentials. Với pre-header
+failure, first-event/first-content là `null`; với output rỗng, first-content là `null`.
+
+Native `EventSource` không gửi được POST body, nên client dùng `fetch` và đọc
+`ReadableStream`:
+
+```javascript
+const response = await fetch("/chat/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+  body: JSON.stringify({ question: "RAG là gì?" }),
+});
+if (!response.ok || !response.body) throw new Error("Stream không khởi tạo được");
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+for (;;) {
+  const { value, done } = await reader.read();
+  buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+  for (;;) {
+    const boundary = buffer.indexOf("\n\n");
+    if (boundary < 0) break;
+    const frame = buffer.slice(0, boundary);
+    buffer = buffer.slice(boundary + 2);
+    const event = frame.match(/^event: (.+)$/m)?.[1];
+    const raw = frame.match(/^data: (.+)$/m)?.[1];
+    if (event && raw) console.log(event, JSON.parse(raw));
+  }
+  if (done) break;
+}
+```
 
 Session:
 
@@ -208,6 +356,42 @@ python backend/scripts/smoke_session_concurrency.py
 
 # P2-05 restart persistence, ordering/pagination và failure/delete contracts
 python backend/scripts/verify_phase2.py
+
+# P3-01/P3-04 unified JSON contract, legacy projection, fallback, multi-document và safe failure
+python backend/scripts/smoke_response_contract.py
+
+# P3-02 read-only real Qdrant candidate → verified citation mapping
+python backend/scripts/smoke_citation_mapping.py
+
+# P3-03 typed SSE events, ordering, terminal and reconstruction contract
+python backend/scripts/smoke_sse_schema.py
+
+# P4-01 live readiness + stateless POST SSE endpoint (mocked answer, no data write)
+python backend/scripts/smoke_stream_endpoint.py
+
+# P4-02 read-only Groq/LangChain async provider stream
+python backend/scripts/smoke_provider_stream.py
+
+# P4-03 Atlas persistent lifecycle (deterministic provider; exact cleanup)
+python backend/scripts/smoke_stream_lifecycle.py
+
+# P4-04 post-header error + timeout persistence on Atlas; exact cleanup
+python backend/scripts/smoke_stream_errors.py
+
+# P4-05 latency metrics, empty/partial streams, reconstruction + Atlas persistence
+python backend/scripts/smoke_stream_metrics.py
+
+# P5-01 Atlas session scope, stable order, paging và whole-turn filtering
+python backend/scripts/smoke_history_loader.py
+
+# P5-02 offline context allocations, recent whole turns và deterministic truncation
+python backend/scripts/smoke_context_budget.py
+
+# P5-03 offline conditional rewrite, grounding guard, fallback và metrics
+python backend/scripts/smoke_query_rewriting.py
+
+# P5-04 live selected scope, budgeted history/context và citation provenance; exact cleanup
+python backend/scripts/smoke_rag_integration.py
 ```
 
 `verify_cutover.py` dùng namespace test riêng cho version/delete checks và cleanup chính
@@ -223,6 +407,8 @@ không xóa collection/database dùng chung.
 python backend/scripts/eval_cli.py
 python backend/scripts/eval_cli.py --no-reindex
 python backend/scripts/eval_cli.py --out backend/evaluation/results/run.json
+python backend/scripts/eval_history_cli.py --no-reindex
+python backend/scripts/eval_history_cli.py --no-reindex --retrieval-only --out backend/evaluation/results/p5_history_retrieval.json
 ```
 
 - Corpus: `backend/evaluation/corpus/`.
@@ -232,8 +418,23 @@ python backend/scripts/eval_cli.py --out backend/evaluation/results/run.json
   latency và token usage nếu provider trả metadata.
 - Provider errors được retry tối đa ba lần rồi ghi nhận theo case.
 
+P5-05 dùng `history_golden_set.json` với 5 nhóm: pronoun/follow-up, topic switch,
+long session, out-of-document và cross-document. Mỗi case chạy theo cặp baseline không có
+history và history-aware trên cùng collection eval, sau đó ghi retrieval hit/recall, fact
+coverage, faithfulness proxy, fallback/referent accuracy, context budget, latency và token.
+`--retrieval-only` là đường kiểm tra an toàn khi quota generation không khả dụng; rewrite
+vẫn chạy theo điều kiện và lỗi chỉ được ghi bằng loại lỗi, không ghi raw provider response.
+
 Kết quả M-05 gần nhất: Qdrant eval PASS 9/9, không lỗi; retrieval hit/recall, answer
 relevance, faithfulness và fallback accuracy đều đạt `1.0`.
+
+Kết quả P5-05 gần nhất: paired live generation PASS 5/5; baseline và history-aware đều đạt
+retrieval hit/recall, answer relevance, faithfulness proxy và fallback accuracy `1.0`;
+referent accuracy `1.0`, mọi context budget hợp lệ. History-aware tăng trung bình `5873.7 ms`
+và `4120` tokens trên toàn bộ 5 case so với baseline trong lần chạy này. Một long-session
+rewrite timeout và một candidate bị grounding guard từ chối đều fallback nguyên query an toàn,
+nhưng vẫn vượt các gate retrieval/answer; kết quả nằm tại
+`backend/evaluation/results/p5_history_eval.json`.
 
 ## Project structure chính
 
@@ -263,6 +464,9 @@ backend/
 │   ├── smoke_session_api.py
 │   ├── smoke_message_persistence.py
 │   ├── smoke_session_concurrency.py
+│   ├── smoke_response_contract.py
+│   ├── smoke_citation_mapping.py
+│   ├── smoke_sse_schema.py
 │   ├── verify_phase1.py
 │   ├── verify_phase2.py
 │   ├── verify_cutover.py
@@ -291,14 +495,27 @@ Không chạy `docker compose down -v` nếu còn cần rollback vì lệnh đó
 
 ## Giới hạn hiện tại
 
-- Chưa có frontend, authentication hoặc streaming.
+- Chưa có frontend hoặc authentication. Streaming hỗ trợ lifecycle persistent, safe error/cancel,
+  latency metrics và client reconstruction verification. P4-02 dùng Groq qua OpenAI-compatible API;
+  live `smoke_provider_stream.py` với `openai/gpt-oss-120b` đã phát text delta và usage metadata.
+- History loader, context budget và conditional rewrite đã được nối vào cả JSON/SSE runtime.
+  Budget mặc định là `1024 system + 2048 history + 3584 chunks + 512 query + 1024 output
+  reserve = 8192`. Startup từ chối tổng allocation vượt window. System không bị truncate;
+  history chỉ lấy suffix whole turns mới nhất; chunks giữ ranking và chỉ cắt prefix chunk cuối;
+  query dùng head–tail marker. Counter là xấp xỉ `3 chars/token`, không phải tokenizer chính xác
+  theo model. Query rewriter chỉ gọi provider khi detector thấy tham chiếu context; original
+  query luôn được giữ cho final generation, còn candidate retrieval query phải có lexical
+  provenance từ original/history. Error, timeout, entity/số mới hoặc output invalid đều fallback
+  original. Metrics ghi provider calls, latency và provider/estimated token cost; không suy đoán
+  USD cost vì pricing phụ thuộc model/provider. Query rewrite thêm một provider call chỉ với
+  follow-up được detector xác định là phụ thuộc context.
 - Non-streaming provider call chạy trong worker thread; nếu transport disconnect không thể
   ngắt SDK call ngay, guard được giữ tới khi worker thực sự về terminal state.
 - Process crash giữa generation có thể để lại persistent guard; automatic lease/stale-guard
   reconciliation chưa triển khai. P2-05 xác minh clean restart sau terminal state, không mô
   phỏng hard process kill giữa provider call.
 - Chưa có tenant/document authorization đầy đủ; hiện phù hợp single-user development.
-- Không reranker, hybrid search, query rewriting, Agent, LangGraph hoặc S3 adapter.
+- Không reranker, hybrid search, Agent, LangGraph hoặc S3 adapter.
 - Soft delete giữ raw file và audit history; chưa có garbage-collection dài hạn.
 - Qdrant payload giữ chunk text để retrieval nhanh.
 - Với câu hỏi ngoài tài liệu, response vẫn có thể trả top-k candidates kèm fallback.

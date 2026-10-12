@@ -183,14 +183,33 @@ class MongoConversationRepository:
                 raise SessionConflictError("Message sequence đã tồn tại") from exc
             raise ConversationRepositoryError("Không thể tạo message pair") from exc
 
-    def finalize_assistant_message(self, message: MessageRecord) -> MessageRecord:
-        """Chỉ cho phép chuyển placeholder PENDING sang một terminal state."""
+    def mark_assistant_streaming(self, message: MessageRecord) -> MessageRecord:
+        """Move a durable assistant placeholder into its active stream state."""
         try:
             result = self.messages.replace_one(
                 {
                     "_id": message.message_id,
                     "session_id": message.session_id,
+                    "request_id": message.request_id,
                     "status": "PENDING",
+                },
+                message.to_mongo(),
+            )
+        except PyMongoError as exc:
+            raise ConversationRepositoryError("Unable to start assistant stream") from exc
+        if result.matched_count != 1:
+            raise SessionConflictError("Assistant message is no longer PENDING")
+        return message
+
+    def finalize_assistant_message(self, message: MessageRecord) -> MessageRecord:
+        """Finalize an owned PENDING/STREAMING assistant message exactly once."""
+        try:
+            result = self.messages.replace_one(
+                {
+                    "_id": message.message_id,
+                    "session_id": message.session_id,
+                    "request_id": message.request_id,
+                    "status": {"$in": ["PENDING", "STREAMING"]},
                 },
                 message.to_mongo(),
             )

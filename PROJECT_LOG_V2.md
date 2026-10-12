@@ -21,10 +21,10 @@
 ## 1. Kiến trúc V2 đã chốt
 
 | Lớp | Quyết định | Trách nhiệm |
-|---|---|---|
+| --- | --- | --- |
 | Backend | Python + FastAPI | API-first; giữ `/chat` JSON baseline hoặc version hóa có hướng chuyển đổi |
 | Điều phối RAG | LangChain / LCEL | Ingestion, retrieval, context và generation; chưa cần LangGraph |
-| LLM | OpenRouter API | External generation; cấu hình model trong settings |
+| LLM | Groq qua OpenAI-compatible API | External generation; `GROQ_API_KEY`, `OPENAI_BASE_URL` và model cấu hình trong settings |
 | Embedding | Google Gemini API | Embedding query/chunks với cấu hình tương thích |
 | Application DB | **MongoDB Atlas (cloud; cluster đã được người dùng tạo)** | Document metadata, versions, ingestion jobs, sessions, messages; backend kết nối qua URI trong biến môi trường |
 | Vector DB | **Qdrant Cloud (cluster đã được người dùng tạo)** | Chunk embeddings, payload, semantic retrieval; thay pgvector; kết nối bằng URL và API key qua settings |
@@ -47,18 +47,18 @@
 **Thứ tự:** Giai đoạn 1 → 2 → 3 → 4 → 5. Task migration `M-01…M-05` bắt đầu **trong Giai đoạn 1**, `M-06` kiểm tra xuyên các giai đoạn tiếp theo; **không phải Giai đoạn 6**. Không nghiệm thu Giai đoạn 1 nếu luồng Qdrant index/retrieve chưa smoke-test thành công.
 
 | Workstream | Trạng thái | Điều kiện kết thúc |
-|---|---|---|
+| --- | --- | --- |
 | Giai đoạn 1 — Metadata và lưu trữ tài liệu | COMPLETED | Upload → lưu → index Qdrant → list/get → delete/re-index đã xác minh |
 | Giai đoạn 2 — Session và Message Persistence | COMPLETED — P2-01…P2-05 | Hội thoại lưu bền vững, thứ tự đúng, kiểm soát concurrent generation |
-| Giai đoạn 3 — Response Contract | PLANNED | JSON/SSE schema có ví dụ, có tests |
-| Giai đoạn 4 — SSE Streaming API | PLANNED | Stream thực sự, xử lý disconnect/lỗi và trạng thái message |
-| Giai đoạn 5 — History-aware RAG | PLANNED | Test multi-turn và evaluation retrieval/generation đạt tiêu chí |
-| M — Migration pgvector → Qdrant Cloud | CUTOVER COMPLETED; M-06 IN PROGRESS | P2 slice PASS; response/SSE/history-aware gates chạy lại ở Giai đoạn 3–5 |
+| Giai đoạn 3 — Response Contract | COMPLETED — P3-01…P3-04 | JSON/SSE schema, compatibility và failure contract đã test |
+| Giai đoạn 4 — SSE Streaming API | COMPLETED — P4-01…P4-05 | Groq live async stream, transport, lifecycle, errors và metrics đều PASS |
+| Giai đoạn 5 — History-aware RAG | IN PROGRESS — P5-01…P5-05 COMPLETED | Multi-turn evaluation PASS; final docs P5-06 còn lại |
+| M — Migration pgvector → Qdrant Cloud | CUTOVER COMPLETED; M-06 IN PROGRESS | P2/P3/P4 và P5 evaluation PASS; final cross-phase audit còn chờ P5-06 |
 
-- **Giai đoạn hiện tại:** Giai đoạn 2 COMPLETED; `P2-01`…`P2-05` đã nghiệm thu.
-- **Task vừa hoàn thành:** `P2-05` — restart persistence, history ordering/pagination, invalid/missing/deleted session và failed generation đã live verification trên Atlas.
-- **Task tiếp theo:** `P3-01` (**chưa bắt đầu; chờ giao việc**). `M-06` IN PROGRESS: toàn bộ P2 session/message/concurrency/Qdrant citation slice PASS, các gate response/SSE/history-aware chờ P3–P5.
-- **Blockers:** Không có blocker cho P2-05. M-06 chưa thể nghiệm thu vì response contract, SSE và history-aware chưa được triển khai theo roadmap. Automatic stale-guard recovery sau hard process crash chưa triển khai; MongoDB user có role quản trị rộng cần thu hẹp trước dữ liệu thật.
+- **Giai đoạn hiện tại:** Giai đoạn 5 IN PROGRESS với `P5-01`…`P5-05` COMPLETED.
+- **Task vừa hoàn thành:** `P5-05` — paired baseline/history-aware evaluation PASS 5/5 với live provider và retrieval-only fallback path.
+- **Task tiếp theo:** `P5-06` chưa bắt đầu và chỉ triển khai khi được giao riêng. `M-06` vẫn IN PROGRESS.
+- **Blockers:** Không có blocker cho P5-05. Final docs/cross-phase audit P5-06 còn lại trước khi nghiệm thu toàn giai đoạn và M-06.
 - **Chi tiết nhật ký:** [`CURRENT_CHANGE.md`](./CURRENT_CHANGE.md).
 
 ## 3. Quy ước kỹ thuật chung
@@ -116,10 +116,10 @@
 
 **Mục tiêu:** một schema logical reply, độc lập transport/provider.
 
-- [ ] **P3-01 — JSON schema:** `request_id`, `session_id`, `user_message_id`, `assistant_message_id`, `answer`, `sources/citations`, `metadata`, `usage`, `status`, `error`; quy định optional/null.
-- [ ] **P3-02 — Citation mapping:** chỉ map `chunk_id`, `document_id`, `version_id`, page từ tài liệu thực và đủ điều kiện; không tin citation ID do LLM tự tạo; phân biệt retrieved candidates và cited sources.
-- [ ] **P3-03 — SSE schema:** định nghĩa `start`, `metadata`, `citation`, `delta`, `done`, `error`, thứ tự event, terminal rules, cách ghép nội dung và ID của assistant message.
-- [ ] **P3-04 — Compatibility/tests:** Pydantic validation, lỗi/usage không có, fallback no-results, nhiều documents; giữ client `/chat` cũ hoặc có version/migration rõ ràng.
+- [x] **P3-01 — JSON schema:** `request_id`, `session_id`, `user_message_id`, `assistant_message_id`, `answer`, `sources/citations`, `metadata`, `usage`, `status`, `error`; quy định optional/null.
+- [x] **P3-02 — Citation mapping:** chỉ map `chunk_id`, `document_id`, `version_id`, page từ tài liệu thực và đủ điều kiện; không tin citation ID do LLM tự tạo; phân biệt retrieved candidates và cited sources.
+- [x] **P3-03 — SSE schema:** định nghĩa `start`, `metadata`, `citation`, `delta`, `done`, `error`, thứ tự event, terminal rules, cách ghép nội dung và ID của assistant message.
+- [x] **P3-04 — Compatibility/tests:** Pydantic validation, lỗi/usage không có, fallback no-results, nhiều documents; giữ client `/chat` cũ hoặc có version/migration rõ ràng.
 
 **Điều kiện kết thúc:** Có ví dụ JSON/SSE transcript và test schema/citation; không lộ raw provider response/secrets.
 
@@ -127,11 +127,11 @@
 
 **Mục tiêu:** stream delta từ LLM qua SSE và ghi lifecycle assistant message vào MongoDB.
 
-- [ ] **P4-01 — Endpoint:** thêm `POST /chat/stream` (ví dụ); giữ `/chat` JSON; hướng dẫn fetch-stream vì native EventSource không gửi POST body trực tiếp.
-- [ ] **P4-02 — Provider integration:** consume LangChain/OpenRouter async stream, chuẩn hóa text delta; bỏ qua chunk không có text hợp lệ, ghi usage nếu có.
-- [ ] **P4-03 — Lifecycle:** tạo assistant message trước streaming, tích lũy content để persist, phát event theo thứ tự, chỉ ghi `COMPLETED` khi thành công; `PARTIAL/FAILED` đúng thực tế.
-- [ ] **P4-04 — Error/disconnect:** trước headers trả HTTP error phù hợp; sau headers gửi terminal SSE `error`; dừng downstream nếu có thể, tránh output lặp do retry; kiểm tra buffering/timeout.
-- [ ] **P4-05 — Metrics/tests:** first-event, first-content, total latency; mock provider, output rỗng, lỗi giữa stream, disconnect/cancel, persistence và client reconstruction.
+- [x] **P4-01 — Endpoint:** thêm `POST /chat/stream` (ví dụ); giữ `/chat` JSON; hướng dẫn fetch-stream vì native EventSource không gửi POST body trực tiếp.
+- [x] **P4-02 — Provider integration:** consume LangChain/Groq OpenAI-compatible async stream, chuẩn hóa text delta; bỏ qua chunk không có text hợp lệ, ghi usage nếu có. Groq authentication và configured-model availability PASS; live `astream()` phát 14 text delta hợp lệ kèm usage metadata; focused 34/34 và full regression 145/145 PASS.
+- [x] **P4-03 — Lifecycle:** tạo assistant message trước streaming, tích lũy content để persist, phát event theo thứ tự, chỉ ghi `COMPLETED` khi thành công; `PARTIAL/FAILED` đúng thực tế.
+- [x] **P4-04 — Error/disconnect:** trước headers trả HTTP error phù hợp; sau headers gửi terminal SSE `error`; dừng downstream nếu có thể, tránh output lặp do retry; kiểm tra buffering/timeout.
+- [x] **P4-05 — Metrics/tests:** first-event, first-content, total latency; mock provider, output rỗng, lỗi giữa stream, disconnect/cancel, persistence và client reconstruction.
 
 **Điều kiện kết thúc:** Client nhận nội dung tăng dần; stream kết thúc một lần; trạng thái/content MongoDB khớp kết quả; error/cancel tests đạt.
 
@@ -139,11 +139,11 @@
 
 **Mục tiêu:** hỏi đáp nhiều lượt, chọn history có giới hạn, cải thiện follow-up retrieval.
 
-- [ ] **P5-01 — History loader:** lấy message đúng session/scope/thứ tự; mặc định loại assistant `PARTIAL/FAILED`, không cắt rời lượt user/assistant.
-- [ ] **P5-02 — Context budget:** cấu hình giới hạn token cho system + history + chunks + query + output reserve; chọn các lượt hoàn chỉnh gần nhất, ghi cách truncate.
-- [ ] **P5-03 — Query rewriting:** chỉ rewrite câu phụ thuộc context khi cần; giữ original query cho final generation, không thêm facts thiếu căn cứ; đo chi phí/latency phát sinh.
-- [ ] **P5-04 — RAG integration:** retrieval chỉ tài liệu active/đúng scope; citation truy ngược Qdrant/MongoDB; stream và non-stream dùng chung retrieval/context builder.
-- [ ] **P5-05 — Evaluation:** test pronoun/follow-up, chuyển chủ đề, long session, out-of-document và cross-document; so sánh với baseline, ghi retrieval, grounding proxy, latency/token; xử lý provider quota.
+- [x] **P5-01 — History loader:** lấy message đúng session/scope/thứ tự; mặc định loại assistant `PARTIAL/FAILED`, không cắt rời lượt user/assistant.
+- [x] **P5-02 — Context budget:** cấu hình giới hạn token cho system + history + chunks + query + output reserve; chọn các lượt hoàn chỉnh gần nhất, ghi cách truncate.
+- [x] **P5-03 — Query rewriting:** chỉ rewrite câu phụ thuộc context khi cần; giữ original query cho final generation, không thêm facts thiếu căn cứ; đo chi phí/latency phát sinh.
+- [x] **P5-04 — RAG integration:** retrieval chỉ tài liệu active/đúng scope; citation truy ngược Qdrant/MongoDB; stream và non-stream dùng chung retrieval/context builder. Unit/full regression, live scoped Atlas/Qdrant smoke và live JSON/SSE transport đã PASS.
+- [x] **P5-05 — Evaluation:** test pronoun/follow-up, chuyển chủ đề, long session, out-of-document và cross-document; paired baseline/history-aware live PASS 5/5, retrieval/answer/grounding proxy/fallback/referent/budget đều đạt; ghi latency/token, retry hữu hạn và retrieval-only path xử lý provider quota.
 - [ ] **P5-06 — Final docs:** cập nhật README, kiến trúc, API example, test instructions và giới hạn còn tồn tại.
 
 **Điều kiện kết thúc:** Multi-turn tests đúng referent; scope/citation đúng; không vượt budget; stream/non-stream nhất quán.
@@ -157,7 +157,7 @@
 - [x] **M-03 — Vector adapter:** add/upsert/query/delete/filter với ID hợp lệ, metadata/chunk text; cô lập sau interface để đổi backend.
 - [x] **M-04 — Data migration:** re-parse/re-embed raw demo corpus vào Qdrant Cloud; quản lý per-version/status; không nhận đã migrate nếu chưa kiểm chứng.
 - [x] **M-05 — Cutover:** so sánh document/chunk counts, retrieval Q&A, delete, page metadata, active-version filter và eval isolation; rồi mới gỡ runtime path/dependencies pgvector, cập nhật compose/config/docs; ghi rollback.
-- [ ] **M-06 — Regression liên giai đoạn:** xác minh citation/scope với session, response, stream và history-aware; ghi và sửa regression. **IN PROGRESS:** P2-01…P2-05 session/message/API/scope/concurrency/restart và Qdrant citation mapping PASS; unified response, SSE và history-aware chờ P3–P5.
+- [ ] **M-06 — Regression liên giai đoạn:** xác minh citation/scope với session, response, stream và history-aware; ghi và sửa regression. **IN PROGRESS:** P2-01…P2-05 PASS; P3-01…P3-04 PASS; P4-01…P4-05 PASS gồm live Groq provider; P5-01…P5-05 history/budget/rewrite/shared scoped integration và paired evaluation PASS; final cross-phase audit còn chờ P5-06.
 
 ## 10. Kiểm thử và nghiệm thu tối thiểu (mọi giai đoạn)
 
@@ -184,6 +184,26 @@ Không tự chuyển task/phase. Không commit secrets; giữ API đang hoạt �
 
 ## 12. Quyết định và những vấn đề cần chốt khi triển khai
 
-**Đã chốt:** MongoDB Atlas (cloud, cluster người dùng đã tạo) quản lý application data; IP Access List hiện là `0.0.0.0/0` chỉ nên là tạm thời và cần thu hẹp khi có thể; **Qdrant Cloud (cluster đã tạo; kiểm tra `QDRANT_URL`, `QDRANT_API_KEY` từ `.env`)** thay pgvector; local file storage trong development qua `FileStorage`, key chỉ sinh từ `document_id/version_id` và không cho ghi đè để giữ version immutable, abstraction sẵn sàng đổi S3-compatible sau này; upload P1-05 chạy đồng bộ để giữ API baseline, chỉ activate version sau Qdrant verify và giữ active version cũ khi candidate fail; P1-06 dùng soft-delete/unpublish metadata trước, xóa toàn bộ Qdrant points và verify trong request, giữ raw files cùng version/job history; lỗi Qdrant để `cleanup_pending=true` và DELETE lặp lại sẽ retry idempotent; M-05 đã cutover `/chat` sang Qdrant, scope retrieval lấy `active_version_id` từ MongoDB, eval dùng collection Qdrant riêng; pgvector runtime/dependencies/config/Compose đã gỡ; PostgreSQL container/volume cũ không bị xóa và rollback yêu cầu restore code/config từ Git ref trước M-05 rồi chạy lại V1 eval; P2-01 dùng UUID string làm Mongo `_id`, scope mặc định `ALL_ACTIVE`, message order bằng unique `(session_id, sequence)`, một `request_id` có thể liên kết cặp user/assistant; P2-02 soft-delete session trước rồi hard-delete related messages, giữ tombstone để trả `410`, DELETE lặp lại retry cleanup idempotent; P2-03 giữ `/chat` không có `session_id` stateless, còn request có session ghi user + assistant `PENDING` trước generation và terminal `COMPLETED/FAILED`, sequence cấp atomically theo cặp; P2-04 lưu `active_generation_id` trên session và acquire/release atomically theo owner request, request thứ hai và DELETE khi active trả `409`; external LLM/embedding APIs; Modular Monolith; SSE; 5 giai đoạn + M xuyên suốt.
+**Đã chốt:** MongoDB Atlas (cloud, cluster người dùng đã tạo) quản lý application data; IP Access List hiện là `0.0.0.0/0` chỉ nên là tạm thời và cần thu hẹp khi có thể; **Qdrant Cloud (cluster đã tạo; kiểm tra `QDRANT_URL`, `QDRANT_API_KEY` từ `.env`)** thay pgvector; local file storage trong development qua `FileStorage`, key chỉ sinh từ `document_id/version_id` và không cho ghi đè để giữ version immutable, abstraction sẵn sàng đổi S3-compatible sau này; upload P1-05 chạy đồng bộ để giữ API baseline, chỉ activate version sau Qdrant verify và giữ active version cũ khi candidate fail; P1-06 dùng soft-delete/unpublish metadata trước, xóa toàn bộ Qdrant points và verify trong request, giữ raw files cùng version/job history; lỗi Qdrant để `cleanup_pending=true` và DELETE lặp lại sẽ retry idempotent; M-05 đã cutover `/chat` sang Qdrant, scope retrieval lấy `active_version_id` từ MongoDB, eval dùng collection Qdrant riêng; pgvector runtime/dependencies/config/Compose đã gỡ; PostgreSQL container/volume cũ không bị xóa và rollback yêu cầu restore code/config từ Git ref trước M-05 rồi chạy lại V1 eval; P2-01 dùng UUID string làm Mongo `_id`, scope mặc định `ALL_ACTIVE`, message order bằng unique `(session_id, sequence)`, một `request_id` có thể liên kết cặp user/assistant; P2-02 soft-delete session trước rồi hard-delete related messages, giữ tombstone để trả `410`, DELETE lặp lại retry cleanup idempotent; P2-03 giữ `/chat` không có `session_id` stateless, còn request có session ghi user + assistant `PENDING` trước generation và terminal `COMPLETED/FAILED`, sequence cấp atomically theo cặp; P2-04 lưu `active_generation_id` trên session và acquire/release atomically theo owner request, request thứ hai và DELETE khi active trả `409`; P3-01 mở rộng additive `/chat` JSON: mọi top-level field luôn hiện diện, nullable field trả explicit `null`, list trả `[]`, stateless IDs null còn persistent IDs khớp MongoDB; P3-02 đánh số retrieved context phía server và chỉ map ordinal `[n]` trong answer về candidate metadata đủ UUID/page, không tin IDs do model sinh; P3-03 chốt SSE `start→metadata→citation*→delta*→done|error`, sequence liên tục, terminal duy nhất và answer ghép từ delta; external LLM/embedding APIs; Modular Monolith; SSE; 5 giai đoạn + M xuyên suốt.
 
-**Chốt trước khi thay đổi hành vi liên quan:** `/chat` stateless hay tự tạo session; upload/index sync hay background job; retention dài hạn/garbage collection cho raw file và audit history sau soft-delete; Qdrant collection/dimension/distance phải xác minh; mapping client cancel/disconnect sang message status; authentication/ACL nếu dùng dữ liệu nội bộ thật/đa người dùng. Ghi quyết định mới ngắn gọn tại đây; diễn biến triển khai để ở `CURRENT_CHANGE.md`.
+**P3-04:** Giữ `/chat` tương thích additive, không đổi URL/version; client cũ tiếp tục dùng `answer`/`sources`. Generation failure sau khi đã tạo logical reply trả HTTP 502 với full `ChatResponse`, `status=FAILED` và error an toàn; validation/session/concurrency/persistence error xảy ra trước logical reply tiếp tục dùng HTTP `detail` hiện có.
+
+**P4-01:** `/chat/stream` là POST SSE, giữ `/chat` JSON không đổi và dùng typed transcript P3-03. Client POST body qua `fetch`/`ReadableStream`, không dùng native `EventSource`.
+
+**P4-02:** Stream provider dùng LangChain `ChatOpenAI.astream()` trỏ tới Groq OpenAI-compatible API sau retrieval/prompt; chỉ content text hợp lệ thành delta, usage chuẩn hóa từ metadata và được gửi ở `done` nếu provider có. Không buffer answer chỉ để phát citation vì contract hiện yêu cầu citation trước delta; không phát citation giả. `GROQ_API_KEY` được giữ bằng `SecretStr`, base URL bị giới hạn ở HTTPS `api.groq.com/openai/v1`, và runtime không còn phụ thuộc OpenRouter. Xác minh 2026-10-12 với `openai/gpt-oss-120b`: auth `/models`, model availability và live async stream đều PASS; 14 text delta hợp lệ và usage metadata được nhận.
+
+**P4-03:** Với request có `session_id`, backend chuẩn bị retrieval trước headers rồi atomically tạo user message và assistant `PENDING → STREAMING`, giữ generation guard. Mọi delta được tích lũy; terminal success mới ghi `COMPLETED`, còn provider lỗi/no-content ghi `PARTIAL` hoặc `FAILED` và luôn release guard. Atlas smoke dùng provider deterministic, session UUID riêng và cleanup chính xác. Cancel/disconnect và persistence failure sau headers còn thuộc P4-04.
+
+**P4-04:** Retrieval/session/dependency failure trước headers giữ HTTP 4xx/5xx phù hợp. Sau headers, provider error, output rỗng, timeout hoặc persistence failure chỉ phát một terminal SSE `error` an toàn; không retry sau output. `STREAM_TIMEOUT_SECONDS` đặt deadline tổng cho provider stream. Timeout/cancel đóng async iterator; disconnect ở cả prefix/delta yield cố finalize persistent message với `RAG_STREAM_CANCELLED` và release guard, nhưng không thể gửi terminal event khi client đã ngắt. `Cache-Control: no-cache, no-transform` và `X-Accel-Buffering: no` hạn chế proxy buffering.
+
+**P4-05:** Mỗi request stream dùng monotonic clock đo từ lúc endpoint bắt đầu: `first_event_ms`, nullable `first_content_ms`, `total_latency_ms` và `delta_count`; metric one-shot gắn `request_id`, mode và safe outcome. Logging không chứa question, answer, source hay credentials và lỗi metrics không làm hỏng response. Unit/integration bao phủ mock provider, success reconstruction, output rỗng, lỗi giữa stream, timeout, persistence failure, cancel/disconnect và terminal uniqueness; Atlas smoke đối chiếu reconstructed content với MongoDB history rồi cleanup chính xác.
+
+**P5-01:** `ConversationHistoryLoader` trả session record kèm retrieval scope và các `HistoryTurn` bất khả phân theo thứ tự sequence tăng dần. Cặp hợp lệ phải cùng `request_id`, đúng session, `USER COMPLETED` đứng ngay trước assistant; mặc định assistant chỉ nhận `COMPLETED`, nên `PARTIAL/FAILED/PENDING/STREAMING`, orphan, cross-session hoặc cặp không liên tiếp đều bị loại cả lượt. Diagnostic caller có thể opt-in terminal `PARTIAL/FAILED`; active state không bao giờ là history. Token budget/truncation, query rewriting và nối loader vào RAG thuộc P5-02…P5-04.
+
+**P5-02:** Context window mặc định 8192 token được chia cấu hình thành system 1024, history 2048, chunks 3584, query 512 và output reserve 1024; startup từ chối tổng allocation vượt window. Bộ đếm dùng `langchain-core` approximate counter với hệ số đa ngôn ngữ mặc định 3 chars/token, chưa phải tokenizer chính xác theo model. System instruction không bao giờ bị cắt mà fail an toàn nếu vượt phần cấp; history lấy suffix các whole turns mới nhất và dừng ở turn đầu tiên không vừa; chunks giữ retrieval rank, chỉ prefix-truncate chunk cuối vừa chỗ rồi dừng; query dùng deterministic head–tail marker. Contract này đã được nối vào runtime tại P5-04.
+
+**P5-03:** `QueryDependencyDetector` chỉ mở provider call cho query có dấu hiệu tham chiếu context và có history; query độc lập/no-history giữ nguyên với zero call/token cost. `QueryRewriter` luôn trả riêng `original_query` và `retrieval_query`; provider output phải một dòng, khác original, trong giới hạn và mọi lexical token phải có provenance từ original/selected history hoặc connector an toàn, đồng thời phải thực sự đưa antecedent từ history vào. Entity/số/fact mới, output lỗi, timeout hoặc invalid đều fallback original. Metrics ghi provider-call count, added latency và token cost; ưu tiên usage thật, nếu vắng thì estimate và gắn `usage_source`. Không suy đoán USD cost khi chưa có pricing model/provider cố định. P5-04 đã nối retrieval query và original generation query theo đúng ranh giới này.
+
+**P5-04:** `/chat` và `/chat/stream` dùng chung immutable prepared-request builder. Với session, builder tải whole-turn history và scope server-side từ MongoDB, resolve `ALL_ACTIVE` hoặc `SELECTED_DOCUMENTS` thành snapshot active-version IDs rồi áp Qdrant filter; missing/deleted/inactive document không được retrieve. Chỉ rewritten query đi vào embedding/retrieval, còn prompt cuối luôn chứa original query đã budget cùng recent whole turns và ranked chunk blocks; history chỉ hỗ trợ resolve tham chiếu, không phải nguồn được citation. Budget giữ ordinal/source mapping khi cắt chunk; response source/citation tiếp tục truy ngược exact Qdrant chunk và Mongo active version. JSON/SSE cùng dùng builder này.
+
+**Chốt trước khi thay đổi hành vi liên quan:** upload/index sync hay background job; retention dài hạn/garbage collection cho raw file và audit history sau soft-delete; Qdrant collection/dimension/distance phải xác minh; mapping client cancel/disconnect sang message status; authentication/ACL nếu dùng dữ liệu nội bộ thật/đa người dùng. Ghi quyết định mới ngắn gọn tại đây; diễn biến triển khai để ở `CURRENT_CHANGE.md`.
