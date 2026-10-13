@@ -47,3 +47,21 @@
 - **Kiểm thử:** Focused contract/persistence/concurrency — PASS 15/15; toàn bộ unit/API/in-memory regression — PASS 82/82. Live `smoke_response_contract.py` — PASS stateless/persistent contract, explicit nulls, durable ID linkage, Atlas history, MongoDB/Qdrant readiness và cleanup. Live `verify_phase2.py` — PASS hai restart persistence/tombstone và cleanup.
 - **Tồn đọng / quyết định:** Stateless `citations=[]` ở P3-01; quy tắc candidate source/eligible citation thuộc P3-02. HTTP integration errors vẫn dùng status + FastAPI `detail`; unified error envelope/compatibility thuộc P3-04. Không triển khai SSE hoặc history-aware.
 - **Tiếp theo:** `P3-02` — chưa bắt đầu; chờ giao việc riêng. `M-06` tiếp tục IN PROGRESS.
+
+### [2026-10-12] P3-02 — Citation mapping
+
+- **Trạng thái:** COMPLETED; Giai đoạn 3 IN PROGRESS.
+- **Đã thực hiện:** Thêm mapper server-side dùng ordinal `[n]` trong answer để chọn candidate thứ `n` từ danh sách retrieved theo thứ tự context. `sources` giữ mọi candidate; `citations` chỉ chứa candidate được nhắc, có ba UUID hợp lệ và page null/không âm; duplicate, ordinal 0/out-of-range, metadata lỗi và UUID/citation object do model tự viết bị bỏ qua. Prompt yêu cầu dùng đúng ordinal và cấm tự tạo ID. API và persistence cùng recompute verified citations từ answer + server sources; Pydantic buộc mọi citation là member của source list. Persistent Mongo history lưu đúng tập citations trả về.
+- **Files thay đổi:** `backend/app/citation_mapping.py`, `backend/app/rag/prompt.py`, `backend/app/api/chat.py`, `backend/app/conversation_service.py`, `backend/app/schemas.py`, `backend/tests/test_citation_mapping.py`, `backend/tests/test_chat_response_schema.py`, `backend/tests/test_chat_persistence.py`, `backend/scripts/smoke_response_contract.py`, `backend/scripts/smoke_citation_mapping.py`, `backend/scripts/verify_phase2.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
+- **Kiểm thử:** Focused citation/schema/persistence/retriever — PASS 22/22; toàn bộ unit/API/in-memory regression — PASS 89/89. Live HTTP/Atlas smoke — PASS 2 candidates/1 verified citation, response-history match và cleanup. Read-only real Gemini embedding → Qdrant retrieval → Mongo active-version provenance — PASS 3 candidates/1 citation. Live P2 restart/history regression — PASS và cleanup.
+- **Tồn đọng / quyết định:** Nếu provider không emit `[n]`, citations cố ý rỗng để không overclaim; sources vẫn cho biết candidates. Không parse hoặc tin UUID do model sinh. Chưa triển khai SSE/P3-03 hay unified HTTP error compatibility/P3-04.
+- **Tiếp theo:** `P3-03` — chưa bắt đầu; chờ giao việc riêng. `M-06` tiếp tục IN PROGRESS.
+
+### [2026-10-12] P3-03 — SSE schema
+
+- **Trạng thái:** COMPLETED; Giai đoạn 3 IN PROGRESS.
+- **Đã thực hiện:** Định nghĩa typed discriminated events `start`, `metadata`, `citation`, `delta`, `done`, `error` và strict data models. `start` mang request/session/user/assistant IDs và kiểm tra stateless/persistent; metadata mang model + candidate sources; citation phải thuộc source; delta là content chunk; done chỉ `COMPLETED`; error mang safe error và `FAILED/PARTIAL`. Transcript validator buộc start đầu tiên, sequence `1…n`, metadata trước content, citation trước delta, một terminal cuối cùng, done cần delta, error status khớp partial output. Client reconstruction nối `delta.content`; encoder sinh đúng `event:` + JSON `data:` + blank line.
+- **Files thay đổi:** `backend/app/sse_schema.py`, `backend/tests/test_sse_schema.py`, `backend/scripts/smoke_sse_schema.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
+- **Kiểm thử:** Focused SSE/JSON/citation schema — PASS 20/20; toàn bộ unit/API/in-memory regression — PASS 96/96; offline `smoke_sse_schema.py` — PASS event order, stable assistant ID, JSON wire frames, terminal và reconstructed answer.
+- **Tồn đọng / quyết định:** P3-03 chỉ chốt contract; chưa tạo `/chat/stream`, chưa consume provider async stream, persist streaming lifecycle, xử lý disconnect/buffering hay metrics — các việc này thuộc P4. HTTP error compatibility còn ở P3-04.
+- **Tiếp theo:** `P3-04` — chưa bắt đầu; chờ giao việc riêng. `M-06` tiếp tục IN PROGRESS.
