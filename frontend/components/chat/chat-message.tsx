@@ -1,12 +1,21 @@
-import { Bot, UserRound } from "lucide-react"
+import { Bot, LoaderCircle, UserRound } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import type { ChatFixtureMessage } from "@/fixtures/chat"
+import type { ChatViewMessage } from "@/lib/chat/controller"
 
-export function ChatMessage({ message }: { message: ChatFixtureMessage }) {
+const statusLabels = {
+  PENDING: "Đang gửi",
+  STREAMING: "Đang trả lời",
+  COMPLETED: "Hoàn tất",
+  PARTIAL: "Chưa hoàn tất",
+  FAILED: "Thất bại",
+} as const
+
+export function ChatMessage({ message }: { message: ChatViewMessage }) {
   const isUser = message.role === "user"
 
   return (
@@ -32,9 +41,20 @@ export function ChatMessage({ message }: { message: ChatFixtureMessage }) {
             : "rounded-tl-sm border bg-card text-card-foreground shadow-xs"
         )}
       >
+        {!isUser && (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Badge variant={message.status === "FAILED" ? "destructive" : "secondary"}>
+              {(message.status === "PENDING" || message.status === "STREAMING") && (
+                <LoaderCircle className="animate-spin" aria-hidden="true" />
+              )}
+              {statusLabels[message.status]}
+            </Badge>
+            {message.model && <span className="text-xs text-muted-foreground">{message.model}</span>}
+          </div>
+        )}
         {isUser ? (
           <p className="whitespace-pre-wrap">{message.content}</p>
-        ) : (
+        ) : message.content ? (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -75,6 +95,13 @@ export function ChatMessage({ message }: { message: ChatFixtureMessage }) {
           >
             {message.content}
           </ReactMarkdown>
+        ) : (
+          <p className="text-muted-foreground">Đang chuẩn bị câu trả lời…</p>
+        )}
+        {!isUser && message.error && (
+          <p role="alert" className="mt-3 border-t pt-3 text-sm text-destructive">
+            {message.error.message}
+          </p>
         )}
       </div>
     </article>

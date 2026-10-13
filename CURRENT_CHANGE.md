@@ -4,11 +4,11 @@
 
 ## 1. Trạng thái gần nhất
 
-- **Giai đoạn:** Frontend F0/F1/F2 COMPLETED; F2-01…F2-03 COMPLETED; backend roadmap giữ nguyên.
-- **Task vừa hoàn thành:** `[FRONTEND/F2-03]` — Documents static components, 2026-10-13.
-- **Task tiếp theo:** `F3-01` — NOT STARTED; chờ giao việc riêng.
-- **Blocker:** Không có cho implementation F2-03. Browser interaction QA BLOCKED bởi Node REPL của Browser plugin; HTTP rendered-content checks đã PASS.
-- **Lần cập nhật:** Build/typecheck/lint, regression 38/38, contract 45 schemas, fixture-only document HTTP checks và diff PASS; chi tiết FRONTEND_PLAN mục 15. Groq/Gemini live calls = 0.
+- **Giai đoạn:** Frontend F0/F1/F2/F3 COMPLETED; backend roadmap giữ nguyên.
+- **Task vừa hoàn thành:** `[FRONTEND/F3-03]` — Cancel/recovery, 2026-10-14.
+- **Task tiếp theo:** `F4-01` — NOT STARTED; chờ giao việc riêng.
+- **Blocker:** Không có cho implementation F3-03; browser live SSE/cancel cần API base URL/CORS phù hợp và chưa chạy.
+- **Lần cập nhật:** Controller cancel/recovery fixtures 8/8, combined frontend 58/58, 45-schema contract, build/typecheck/lint/diff PASS; chi tiết FRONTEND_PLAN mục 18. Groq/Gemini live calls = 0.
 
 > **Quyết định hạ tầng:** MongoDB Atlas cloud, không dùng MongoDB container; Qdrant Cloud (người dùng đã tạo cluster), không dùng Qdrant Docker; raw files lưu local. IP Access List Atlas hiện `0.0.0.0/0` theo xác nhận người dùng — chỉ phù hợp tạm cho development, cần thu hẹp khi có thể. Agent cần kiểm tra `QDRANT_URL` và `QDRANT_API_KEY` đã có trong `.env`, không in/copy giá trị vào log; `.env.example` chỉ dùng placeholder. Không lưu MongoDB URI/Qdrant URL thực/credentials trong file này. Đây là cập nhật tài liệu, **không phải bằng chứng P1-02 hoặc M-02 đã triển khai**.
 
@@ -24,6 +24,33 @@
 ## 3. Nhật ký thay đổi (mới nhất ở trên)
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
+
+### [2026-10-14] [FRONTEND/F3-03] — Cancel/recovery
+
+- **Trạng thái:** COMPLETED; F3 COMPLETED, F4-01 chưa bắt đầu.
+- **Đã thực hiện:** Thêm một AbortController cho mỗi accepted turn, truyền signal qua create session và stream. Stop control và unmount/navigation cleanup abort idempotent; không abort terminal turn và không retry request. Cancel giữ exact partial content, gán `PARTIAL|FAILED` cùng safe `RAG_STREAM_CANCELLED` đúng backend disconnect semantics; transport failure dùng `CLIENT_STREAM_ERROR`. `finally` luôn unlock generation. Composer hiển thị Stop button accessible khi đang stream. Không sửa backend/dependency hoặc thêm timeout policy.
+- **Files thay đổi:** `frontend/lib/chat/controller.ts`, `frontend/components/chat/{chat-composer,chat-preview}.tsx`, `frontend/tests/chat-controller.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ các thay đổi F3-01/F3-02 sẵn có.
+- **Kiểm thử:** targeted cancel/recovery/state fixtures PASS 8/8; combined API/parser/stream/state PASS 58/58; contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Live browser SSE/cancel/CORS/backend/provider smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Browser runtime cần `NEXT_PUBLIC_API_BASE_URL` và backend CORS phù hợp. Live cancel/persistence reconciliation và history refresh chưa chạy; session/history UI thuộc F4.
+- **Tiếp theo:** `F4-01` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-13] [FRONTEND/F3-02] — Chat state/UI integration
+
+- **Trạng thái:** COMPLETED; F3 IN PROGRESS, F3-03 chưa bắt đầu.
+- **Đã thực hiện:** Thay Chat fixture preview bằng controlled composer và `ChatController` immutable snapshots. `/chat` tạo persistent session qua POST `/sessions` body `{}` trước stream; route có ID tái dùng ID đó. Controller khóa duplicate submit trước await, map start IDs/metadata/citation/usage, exact-append delta content và cập nhật COMPLETED/PARTIAL/FAILED. Session response được runtime-check HTTP 201; UI hiển thị draft/status/safe error và fail-closed khi thiếu `NEXT_PUBLIC_API_BASE_URL`. Không history, retry/cancel/timeout, backend change hoặc dependency mới.
+- **Files thay đổi:** `frontend/lib/api/sessions.ts`, `frontend/lib/chat/controller.ts`, `frontend/components/chat/{chat-composer,chat-message,chat-preview}.tsx`, `frontend/app/chat/{page,[sessionId]/page}.tsx`, `frontend/tests/chat-controller.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ các thay đổi F3-01 sẵn có.
+- **Kiểm thử:** targeted state/session fixtures PASS 4/4; combined API/parser/stream/state PASS 54/54; contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Live browser SSE/CORS/backend/provider smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Browser runtime cần `NEXT_PUBLIC_API_BASE_URL` và backend CORS phù hợp. URL chưa đổi sau create và history chưa load thuộc F4; AbortController/unmount/navigation/recovery/timeout UX thuộc F3-03.
+- **Tiếp theo:** `F3-03` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-13] [FRONTEND/F3-01] — Stream client
+
+- **Trạng thái:** COMPLETED; F3 IN PROGRESS, F3-02/F3-03 chưa bắt đầu.
+- **Đã thực hiện:** Triển khai `createChatStreamClient` POST `/chat/stream`, đọc ReadableStream và tái dùng parser F1-03. Validator incremental giữ typed events/sequence/start IDs/metadata/citations/deltas/terminal/usage, exact-concatenate delta content và áp toàn bộ backend transcript order/provenance/terminal rules. `onEvent` nhận logical events độc lập network chunks. Safe error model tách before-response HTTP/network/pre-abort khỏi post-200 response/transport/abort/protocol/incomplete/consumer; valid SSE error là terminal result. Không retry, UI integration, timeout policy, backend change hoặc dependency mới.
+- **Files thay đổi:** `frontend/lib/api/chat.ts`, `frontend/tests/chat-stream-client.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md` (archive entry cũ nguyên vẹn để giữ 15 entry); giữ các thay đổi sẵn có.
+- **Kiểm thử:** targeted mock stream PASS 12/12; combined API/parser/stream PASS 50/50; contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Live backend/browser/UI/provider smoke NOT RUN; mock fetch/ReadableStream only, Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker F3-01. API base URL/CORS browser còn chưa cấu hình. F3-02 mới nối stream events vào Chat state/UI; F3-03 mới quản lý AbortController Stop/unmount/navigation/recovery và timeout UX.
+- **Tiếp theo:** `F3-02` NOT STARTED; dừng, không tự động triển khai.
 
 ### [2026-10-13] [FRONTEND/F2-03] — Documents static components
 
@@ -132,33 +159,6 @@
 - **Kiểm thử:** Focused scope/budget/rewrite/retriever/JSON/SSE — PASS 48/48; toàn bộ unit/API/in-memory regression — PASS 147/147; `compileall`, Python 3.10.11 và `pip check` — PASS. Live Atlas/Qdrant scoped smoke — PASS 1 active version, 5 sources, 1 whole history turn, citation provenance và exact cleanup. Live `/chat` — PASS HTTP 200/COMPLETED/5 sources. Live `/chat/stream` lần đầu terminal `RAG_STREAM_ERROR` an toàn do provider tạm thời; retry hữu hạn PASS HTTP 200, 204 deltas, terminal `done`, 5 sources. Không in credential/raw provider response.
 - **Tồn đọng / quyết định:** Context token count vẫn là xấp xỉ. Scope được snapshot theo active versions lúc prepare; version đổi giữa prepare và provider completion không làm nới scope nhưng có thể khiến response dựa trên version vừa hết active. Streaming realtime citations vẫn rỗng theo contract citation-before-delta hiện tại; terminal persistence recompute citations từ answer/source. Multi-turn quality/eval, topic switching và long-session comparison thuộc P5-05.
 - **Tiếp theo:** `P5-05` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-05.
-
-### [2026-10-12] P4-02 — Live Groq verification hoàn tất
-
-- **Trạng thái:** COMPLETED; Giai đoạn 4 COMPLETED.
-- **Đã thực hiện:** Xác minh secret-safe `.env` dùng `GROQ_API_KEY`, official Groq OpenAI-compatible base và `LLM_MODEL=openai/gpt-oss-120b`; không còn biến OpenRouter. Kiểm tra read-only Groq model catalog xác nhận authentication và model availability, sau đó chạy provider smoke qua đúng LangChain `ChatOpenAI.astream()` runtime path. Không thay đổi API, retrieval pipeline, MongoDB/Qdrant data hay P5 runtime.
-- **Files thay đổi:** `.env` (người dùng đổi model), `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** Groq `/models` — PASS auth HTTP 200 và configured model listed; live `smoke_provider_stream.py` — PASS 14 valid text deltas, usage metadata present; focused provider/stream/query/context — PASS 34/34; toàn bộ unit/API/in-memory regression — PASS 145/145; `compileall`, Python 3.10.11 và `pip check` — PASS. Không in credential hoặc raw provider response.
-- **Tồn đọng / quyết định:** P4-02 không còn blocker. Model availability/quota vẫn là phụ thuộc vận hành bên ngoài và smoke script có thể dùng lại để kiểm tra. P5-04 vẫn chưa bắt đầu.
-- **Tiếp theo:** `P5-04` — chỉ triển khai khi được giao riêng; `M-06` tiếp tục IN PROGRESS.
-
-### [2026-10-12] P4-02 — Chuyển provider sang Groq (xác minh live)
-
-- **Trạng thái:** BLOCKED — implementation, cấu hình và regression PASS; live text delta chưa phát được do model không khả dụng.
-- **Đã thực hiện:** Thay OpenRouter adapter bằng LangChain `ChatOpenAI` trỏ tới Groq OpenAI-compatible API; dùng `GROQ_API_KEY` dạng `SecretStr`, `OPENAI_BASE_URL` được kiểm tra đúng HTTPS host/path Groq và `LLM_MODEL` qua environment settings. Thay dependency manifest bằng `langchain-openai`, cập nhật smoke/test/docs và sửa `.env` từ website root sang API base chính thức mà không đọc/in credential. Khôi phục đúng CPython 3.10.11 cho `.venv`. Không thay retrieval, MongoDB/Qdrant data hay API contract.
-- **Files thay đổi:** `.env`, `.env.example`, `backend/requirements.txt`, `backend/app/config.py`, `backend/app/rag/llm.py`, `backend/app/rag/chain.py`, `backend/app/rag/pipeline.py`, `backend/scripts/smoke_provider_stream.py`, `backend/tests/test_llm.py`, `backend/tests/test_cloud_connections.py`, `backend/tests/test_context_budget.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** Kiểm tra cấu hình secret-safe — PASS key/base/model present, official Groq API base, không còn biến OpenRouter; Python 3.10.11 và `pip check` — PASS; focused provider/stream/query/context — PASS 34/34; toàn bộ unit/API/in-memory regression — PASS 145/145; `compileall` — PASS. Groq `/models` read-only — auth PASS HTTP 200 nhưng configured model không listed. Live `smoke_provider_stream.py` — BLOCKED `OpenAIModelNotFoundError`, không in raw response/credential.
-- **Tồn đọng / quyết định:** Giữ nguyên model người dùng chọn, không tự đổi model. `llama-3.3-70b-versatile` hiện không khả dụng cho API/tier này; cần đổi `LLM_MODEL` sang model đang listed (mặc định tài liệu mẫu là `openai/gpt-oss-120b`) rồi chạy lại live smoke. Chỉ tích P4-02 khi nhận được text delta thật. P5-04 vẫn tạm dừng.
-- **Tiếp theo:** Người dùng chọn/cấu hình một Groq model khả dụng; chạy lại P4-02 live smoke và regression liên quan. Không tự động triển khai P5-04.
-
-### [2026-10-12] P5-03 — Query rewriting
-
-- **Trạng thái:** COMPLETED; Giai đoạn 5 IN PROGRESS. P4-02 tiếp tục tạm bỏ qua/BLOCKED.
-- **Đã thực hiện:** Thêm lexical dependency detector chỉ gọi provider khi query có tham chiếu context và có selected whole-turn history. Thêm LangChain `ainvoke` adapter với prompt cấm answer/thêm fact, timeout riêng và output một dòng. Result luôn giữ `original_query` cho final generation, tách `retrieval_query`; candidate phải khác original, đúng giới hạn và pass lexical provenance guard từ original/history, đồng thời phải mang antecedent từ history. Entity/số/fact mới, multiline, unchanged, oversized, provider error/timeout đều fallback original an toàn. Metrics ghi provider call, added latency, input/output/total token cost và `usage_source=provider|estimated|none`; không suy đoán USD cost. Chưa nối vào `/chat` hoặc retriever.
-- **Files thay đổi:** `.env.example`, `backend/app/config.py`, `backend/app/query_rewriting.py`, `backend/tests/test_query_rewriting.py`, `backend/tests/test_context_budget.py`, `backend/scripts/smoke_query_rewriting.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** Focused rewrite/context/history/streaming — PASS 27/27; toàn bộ unit/API/in-memory regression — PASS 144/144; offline `smoke_query_rewriting.py` — PASS independent zero-call, dependent rewrite, original preservation, unsupported-fact rejection, safe fallback và token/latency metrics; `compileall`, `pip check`, `git diff --check` — PASS.
-- **Tồn đọng / quyết định:** Lexical provenance ngăn token/entity/số mới nhưng không chứng minh semantic entailment hoàn hảo; prompt guard và fallback giảm rủi ro, evaluation tiếp tục ở P5-05. Detector bảo thủ có thể bỏ sót follow-up không có marker và khi đó dùng original query. Live OpenRouter không chạy vì P4-02 vẫn bị free-tier 429; logic provider được xác minh deterministic. Runtime dùng rewritten query cho retrieval và original query cho final prompt thuộc P5-04.
-- **Tiếp theo:** `P5-04` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-04 hoặc quay lại P4-02.
 
 ## 4. Lưu trữ nhật ký cũ (archive)
 

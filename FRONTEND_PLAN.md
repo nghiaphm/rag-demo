@@ -42,14 +42,14 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 | F0 — Baseline audit | COMPLETED | F0-01 audit 2026-10-13; build/typecheck/lint FAIL, OpenAPI runtime BLOCKED; xem mục 8 |
 | F1 — Foundation/API | COMPLETED | F1-STAB và F1-01…F1-03 COMPLETED; environment/CORS browser là giới hạn đã ghi |
 | F2 — Layout/Design | COMPLETED | F2-01…F2-03 COMPLETED; interaction QA bị giới hạn bởi Browser plugin đã ghi |
-| F3 — Chat/SSE | NOT STARTED | |
+| F3 — Chat/SSE | COMPLETED | F3-01…F3-03 COMPLETED; mock stream/state/cancel regression PASS |
 | F4 — Sessions/History | NOT STARTED | |
 | F5 — Sources/Citations | NOT STARTED | |
 | F6 — Documents | NOT STARTED | |
 | F7 — UX/Resilience | NOT STARTED | |
 | F8 — Testing/E2E | NOT STARTED | |
 
-**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F2-03 — Documents static components; F2 COMPLETED. **Task tiếp theo:** F3-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker implementation; build/typecheck/lint, contract fixtures và HTTP rendered-content checks PASS. Browser interaction NOT RUN do Browser Node REPL tiếp tục không khởi tạo được trong môi trường hiện tại. Evidence mới ở mục 15.
+**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F3-03 — Cancel/recovery. **Task tiếp theo:** F4-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker implementation F3-03; fake cancel/disconnect/error, build/typecheck/lint/contract/diff PASS. Browser live SSE cần `NEXT_PUBLIC_API_BASE_URL` và CORS phù hợp, chưa chạy; không gọi backend/provider. Evidence mới ở mục 18.
 
 ## 4. Roadmap và acceptance criteria
 
@@ -72,9 +72,9 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 
 ### F3 — Chat & SSE Streaming (MVP core)
 
-- [ ] **F3-01 — Stream client:** `POST /chat/stream` bằng `fetch` + `ReadableStream`, parse `start`, `metadata`, `delta`, `done`, `error`; giữ `sequence`, request/session/message IDs, `usage` nếu có; lỗi trước HTTP 200 khác lỗi sau khi SSE đã mở. AC: mock SSE fixture tests; không coi `reader.read()` là một event; không coi delta là một token/từ.
-- [ ] **F3-02 — Chat state/UI integration:** gửi question; session ID do backend trả về hoặc tạo trước qua session API đúng contract; buffer delta giữ nguyên whitespace; cập nhật assistant draft, terminal statuses; chặn submit trùng khi đang generate. AC: successful stream fixture kết thúc COMPLETED, không ghép sai nội dung.
-- [ ] **F3-03 — Cancel/recovery:** AbortController Stop Generating, component unmount/navigation cleanup, partial text/status/error UI theo backend semantics, tránh retry tự động request đã gửi. AC: fake disconnect/error tests, không loading vô hạn.
+- [x] **F3-01 — Stream client:** `POST /chat/stream` bằng `fetch` + `ReadableStream`, parse `start`, `metadata`, `delta`, `done`, `error`; giữ `sequence`, request/session/message IDs, `usage` nếu có; lỗi trước HTTP 200 khác lỗi sau khi SSE đã mở. AC: mock SSE fixture tests; không coi `reader.read()` là một event; không coi delta là một token/từ. Evidence mục 16: targeted 12/12, combined 50/50, build/typecheck/lint/contract/diff PASS; 0 live calls.
+- [x] **F3-02 — Chat state/UI integration:** gửi question; session ID do backend trả về hoặc tạo trước qua session API đúng contract; buffer delta giữ nguyên whitespace; cập nhật assistant draft, terminal statuses; chặn submit trùng khi đang generate. AC: successful stream fixture kết thúc COMPLETED, không ghép sai nội dung. Evidence mục 17: targeted 4/4, combined 54/54, build/typecheck/lint/contract/diff PASS; 0 live calls.
+- [x] **F3-03 — Cancel/recovery:** AbortController Stop Generating, component unmount/navigation cleanup, partial text/status/error UI theo backend semantics, tránh retry tự động request đã gửi. AC: fake disconnect/error tests, không loading vô hạn. Evidence mục 18: targeted 8/8, combined 58/58, build/typecheck/lint/contract/diff PASS; 0 live calls.
 
 ### F4 — Sessions & Conversation History
 
@@ -374,3 +374,69 @@ Files changed cho F2-02: `frontend/fixtures/chat.ts`, `frontend/components/chat/
 | `git diff --check` và whitespace checks cho file mới | PASS. |
 
 Files changed cho F2-03: `frontend/fixtures/documents.ts`, `frontend/components/documents/{document-status-badge,document-dialogs,documents-preview}.tsx`, `frontend/app/documents/page.tsx`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-01.md`. **Blocker F2-03 implementation:** không có. **F3-01 NOT STARTED; dừng sau F2-03.**
+
+## 16. Evidence F3-01 — Stream client (2026-10-13)
+
+**COMPLETED.** `createChatStreamClient({baseUrl, fetch?}).stream(payload, {signal?, onEvent?})` POST JSON tới `/chat/stream` với `Accept: text/event-stream`, đọc `Response.body.getReader()` và đưa từng byte chunk qua `SSEParser` F1-03. Callback chỉ nhận logical event hoàn chỉnh sau parse/validation; một `reader.read()` có thể chứa một phần, một hoặc nhiều event và không được dùng làm event boundary.
+
+- `ChatStreamResult` giữ toàn bộ typed events theo wire order cùng `sequence`, `start` chứa request/session/user-message/assistant-message IDs và mode, metadata/citations/deltas, terminal, exact delta concatenation và terminal usage nullable. Delta được coi là arbitrary content fragment; không đếm như token hoặc từ và không trim/normalize whitespace.
+- Incremental transcript validator mirror `SSETranscript`: sequence liên tục từ 1, đúng một start đầu tiên, tối đa một metadata, metadata trước citation/delta/done, citation trước delta và tham chiếu source thật/không trùng, terminal duy nhất/cuối cùng, done cần content delta, error `FAILED` nếu chưa delta và `PARTIAL` nếu đã có delta. Unknown/malformed/frame-contract event bị từ chối; premature EOF là `incomplete`.
+- `ChatStreamClientError` phân biệt `stage=before_response` cho HTTP khác 200, network và pre-abort; `stage=stream` cho invalid content-type/body, reader transport, post-200 abort, parser/protocol/incomplete và consumer callback. Error không giữ raw response/event/question. SSE `error` hợp lệ là terminal result với safe code/status/usage, không bị đổi thành transport exception.
+- Client không retry request đã gửi, không đặt stream timeout hay nối UI state. AbortController lifecycle/recovery UX thuộc F3-03; browser base URL/CORS và UI consumption thuộc task sau. Không sửa backend/parser/types/components/manifests và không thêm dependency.
+
+| Kiểm tra (frontend/) | Kết quả |
+|---|---|
+| `node --test tests/chat-stream-client.test.mjs` | PASS 12/12: POST headers/body; one-byte chunks; arbitrary chunk/event boundaries; exact multi-delta whitespace; persistent/stateless IDs; usage; FAILED/PARTIAL terminal; HTTP/network/abort stages; invalid 200; reader failure; malformed/unknown/contract/order/sequence/terminal/citation errors; consumer failure/base URL. Mock fetch/ReadableStream only. |
+| `node --test tests/chat-stream-client.test.mjs tests/sse-parser.test.mjs tests/api-client.test.mjs` | PASS 50/50 combined regression; không external calls. |
+| `node tests/verify-api-contract.mjs` | PASS 45 REST/SSE/health schemas; network disabled. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0. |
+| `npm.cmd run build` | PASS, exit 0; compile/typecheck/prerender/finalize. |
+| Live `/chat/stream`, browser CORS, UI E2E, provider/cloud smoke | NOT RUN — ngoài F3-01; Groq=0, Gemini=0. |
+| `git diff --check` và new-file whitespace check | PASS. |
+
+Files changed: `frontend/lib/api/chat.ts`, `frontend/tests/chat-stream-client.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-02.md`. **Blocker F3-01:** không có. **F3-02 NOT STARTED; dừng sau F3-01.**
+
+## 17. Evidence F3-02 — Chat state/UI integration (2026-10-13)
+
+**COMPLETED.** Chat pages thay fixture preview bằng state/UI dùng `ChatController`. `/chat` gọi đúng `POST /sessions` body `{}` trước lượt gửi đầu rồi truyền UUID backend cấp vào stream; `/chat/[sessionId]` tái dùng route ID và không tạo session mới. `NEXT_PUBLIC_API_BASE_URL` được đọc ở server page rồi truyền rõ ràng cho client; khi thiếu cấu hình, UI hiển thị lỗi cấu hình và không phát request.
+
+- Controller tạo user `PENDING` và assistant draft `PENDING`, khóa active turn đồng bộ trước await để chặn submit trùng, rồi kiểm tra persistent `start` khớp session/request/user-message/assistant-message IDs. Metadata/model/sources, citation, usage và terminal status được gắn vào đúng assistant message.
+- Mỗi `delta.content` được append trực tiếp, không trim/chèn separator/đếm token. `done` chuyển draft sang `COMPLETED`; SSE error giữ `FAILED|PARTIAL`, safe error và usage. Lỗi trước terminal chuyển thành `FAILED` hoặc `PARTIAL` tùy đã có content và luôn mở khóa composer.
+- Composer controlled hỗ trợ Enter gửi, Shift+Enter xuống dòng, disable trong generation và label/help text accessible. Message UI hiển thị trạng thái draft/stream/completed/partial/failed, Markdown hiện có và safe error. Không load history/session list, không đổi URL sau create, không tự retry/cancel/timeout; các phần đó thuộc F3-03/F4.
+- Session create client chỉ triển khai route cần cho F3-02, yêu cầu HTTP 201 và runtime-check `SessionResponse`; không thêm dependency hoặc sửa backend. Browser live request còn phụ thuộc API base URL/CORS đã ghi từ audit.
+
+| Kiểm tra (frontend/) | Kết quả |
+|---|---|
+| `node --test tests/chat-controller.test.mjs` | PASS 4/4: create-before-stream, reuse route session, synchronous duplicate guard, exact delta whitespace/COMPLETED, PARTIAL/error, failure unlock và POST `/sessions` 201 contract. Mock services only. |
+| `node --test tests/chat-controller.test.mjs tests/chat-stream-client.test.mjs tests/sse-parser.test.mjs tests/api-client.test.mjs` | PASS 54/54 combined regression; không external calls. |
+| `node tests/verify-api-contract.mjs` | PASS 45 REST/SSE/health schemas; network disabled. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0. |
+| `npm.cmd run build` | PASS, exit 0; `/chat` static và `/chat/[sessionId]` partial prerender. |
+| Live browser SSE/CORS/backend/provider smoke | NOT RUN; cần public API base/CORS runtime. Groq=0, Gemini=0. |
+| `git diff --check` và new-file whitespace check | PASS. |
+
+Files changed: `frontend/lib/api/sessions.ts`, `frontend/lib/chat/controller.ts`, `frontend/components/chat/{chat-composer,chat-message,chat-preview}.tsx`, `frontend/app/chat/{page,[sessionId]/page}.tsx`, `frontend/tests/chat-controller.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-02.md`. **Blocker F3-02 implementation:** không có. **F3-03 NOT STARTED; dừng sau F3-02.**
+
+## 18. Evidence F3-03 — Cancel/recovery (2026-10-14)
+
+**COMPLETED.** Mỗi accepted turn sở hữu đúng một `AbortController`; cùng signal được truyền qua session creation và `createChatStreamClient.stream`. Stop button gọi `controller.stop()`, còn effect cleanup gọi `controller.dispose()` khi component unmount/navigation. Cả hai idempotent, không abort turn đã terminal và không phát request retry.
+
+- Stop trong lúc generation abort fetch/reader, giữ nguyên mọi delta đã nhận và chốt local assistant `PARTIAL`; stop trước content chốt `FAILED`. Safe local cancellation dùng `RAG_STREAM_CANCELLED`, khớp backend persistence semantics khi disconnect, với `retryable=false`.
+- Transport/disconnect không do người dùng giữ mã `CLIENT_STREAM_ERROR`, thành `PARTIAL` khi đã có content hoặc `FAILED` khi chưa có. SSE terminal từ backend tiếp tục giữ nguyên status/error/usage kể cả transport lỗi sau terminal. `finally` luôn xóa active turn và hạ `isGenerating`, nên composer không kẹt loading sau reject/abort.
+- Composer đổi send control thành keyboard-accessible Stop control trong lúc generate; textarea giữ disabled để chặn submit trùng. Sau terminal/failure/cancel, lượt gửi mới chỉ bắt đầu khi người dùng chủ động submit; không có automatic retry.
+- Backend source xác nhận disconnect finalize persistent turn với `RAG_STREAM_CANCELLED` và `PARTIAL|FAILED` theo content. Không sửa backend, không thêm dependency hoặc timeout policy mới. Browser live cancellation vẫn phụ thuộc API base/CORS runtime.
+
+| Kiểm tra (frontend/) | Kết quả |
+|---|---|
+| `node --test tests/chat-controller.test.mjs` | PASS 8/8: success/terminal, duplicate guard, Stop partial/no retry, dispose during session creation, fake disconnect partial/unlock/no retry, terminal preservation, failure recovery và session contract. |
+| `node --test tests/chat-controller.test.mjs tests/chat-stream-client.test.mjs tests/sse-parser.test.mjs tests/api-client.test.mjs` | PASS 58/58 combined regression; không external calls. |
+| `node tests/verify-api-contract.mjs` | PASS 45 REST/SSE/health schemas; network disabled. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0. |
+| `npm.cmd run build` | PASS, exit 0; `/chat` static và `/chat/[sessionId]` partial prerender. |
+| Live browser SSE/cancel/CORS/backend/provider smoke | NOT RUN; cần public API base/CORS runtime. Groq=0, Gemini=0. |
+| `git diff --check` và new-file whitespace check | PASS. |
+
+Files changed cho F3-03: `frontend/lib/chat/controller.ts`, `frontend/components/chat/{chat-composer,chat-preview}.tsx`, `frontend/tests/chat-controller.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-02.md`. **Blocker F3-03 implementation:** không có. **F4-01 NOT STARTED; dừng sau F3-03.**
