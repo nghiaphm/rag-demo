@@ -25,6 +25,24 @@
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
 
+### [2026-10-12] M-06 — Regression liên giai đoạn
+
+- **Trạng thái:** COMPLETED; workstream migration M-01…M-06 và roadmap V2 hiện tại COMPLETED.
+- **Đã thực hiện:** Audit coverage P2–P5 và bổ sung `verify_m06.py` làm gate xuyên giai đoạn trên FastAPI lifespan, MongoDB Atlas, Qdrant application collection và Gemini embedding thật. Verifier tạo đúng một session `SELECTED_DOCUMENTS` với whole-turn seed, dùng deterministic rewrite/generation để kiểm tra ổn định hai request `/chat` và `/chat/stream`: retrieval không thoát active version đã chọn, original query vẫn vào final prompt, JSON/SSE contract và usage đúng, SSE reconstruct đúng, sáu messages/request linkage/terminal status ổn định, JSON citation và terminal stream citation cùng truy ngược server source, guard được release. Script không sửa document/raw file/Qdrant point và cleanup session/messages chính xác. Thêm unit coverage cho SSE parser, scope và citation assertions; cập nhật README command/kết quả.
+- **Files thay đổi:** `backend/scripts/verify_m06.py`, `backend/tests/test_m06_verification.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
+- **Kiểm thử:** Live `verify_m06.py` — PASS 2 transports, 6 messages, 2 rewrite calls, 5 scoped sources mỗi transport, citation/persistence và cleanup; live read-only `smoke_provider_stream.py` — PASS 13 valid text deltas, usage present. Focused citation/scope/JSON/SSE/history tests PASS 42/42; toàn bộ unit/API/in-memory regression PASS 155/155; `compileall`, `pip check`, secret scan, README reference/fence check và `git diff --check` PASS. M-06 history retrieval eval với rewriter external thật — NOT RUN vì quyền chạy bị từ chối do nguy cơ gửi history/query payload sang provider; không tạo artifact và không đổi kết quả này thành PASS. Bằng chứng live P5-05 hiện có vẫn PASS 5/5.
+- **Tồn đọng / quyết định:** Không phát hiện regression runtime nên không sửa production code. Integrated verifier cố ý deterministic ở rewrite/generation để tránh quota và dữ liệu đi ra provider; provider transport được smoke riêng bằng prompt không nhạy cảm. Các giới hạn đã chốt vẫn còn: thiếu auth/multi-tenant, approximate budget, conservative rewrite guard, stale generation guard sau hard crash, chưa realtime stream citations và eval corpus nhỏ.
+- **Tiếp theo:** Không còn task chưa hoàn thành trong `PROJECT_LOG_V2.md`; chờ phạm vi mới được giao.
+
+### [2026-10-12] P5-06 — Final docs
+
+- **Trạng thái:** COMPLETED; Giai đoạn 5 COMPLETED.
+- **Đã thực hiện:** Đối chiếu README với routes, Pydantic JSON/SSE contract, settings, history loader, context budget, query rewriter, shared RAG pipeline và evaluation runner hiện tại. Bổ sung luồng history-aware end-to-end từ MongoDB history/scope qua conditional rewrite, active-version Qdrant filter, budgeted prompt đến JSON/SSE/citation; thêm `/chat/stream` vào API table, `STREAM_TIMEOUT_SECONDS`, ví dụ persistent multi-turn, quy tắc server-owned history/scope, unit/focused/cloud smoke/evaluation commands và project tree P5. Làm rõ first-run/re-run/retrieval-only eval, quota behavior, external-provider data boundary và các giới hạn scale, detector/grounding, selected scope, version snapshot, realtime SSE citation, stale guard và heuristic eval. Không thay đổi runtime code hay API.
+- **Files thay đổi:** `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
+- **Kiểm thử:** README validation — PASS: 34 code fences cân bằng, đủ 8 section/marker bắt buộc, 9/9 referenced P5 files tồn tại, không còn marker tài liệu cũ; toàn bộ unit/API/in-memory regression PASS 152/152; `compileall`, `pip check`, `git diff --check` PASS. Không chạy lại live cloud smoke vì task chỉ thay tài liệu; dùng đúng bằng chứng live P5-04/P5-05 đã lưu và không đổi code/config.
+- **Tồn đọng / quyết định:** Giai đoạn 5 đã hoàn thành nhưng các giới hạn trong README vẫn áp dụng: token estimate xấp xỉ, lexical detector/guard bảo thủ, long-session loader chưa summary, public API chưa đổi `SELECTED_DOCUMENTS`, SSE chưa phát realtime verified citations, stale guard sau hard crash, thiếu auth/multi-tenant và eval corpus nhỏ. `M-06` vẫn IN PROGRESS; không tự động nghiệm thu trong task tài liệu này.
+- **Tiếp theo:** `M-06` — chờ giao việc riêng để chạy/đối chiếu regression liên giai đoạn và quyết định trạng thái cuối.
+
 ### [2026-10-12] P5-05 — Evaluation
 
 - **Trạng thái:** COMPLETED; Giai đoạn 5 IN PROGRESS.
@@ -141,24 +159,6 @@
 - **Kiểm thử:** Focused schema/citation/persistence/concurrency — PASS 26/26; toàn bộ unit/API/in-memory regression — PASS 100/100. Live FastAPI lifespan + `/health/dependencies` + MongoDB Atlas/Qdrant Cloud compatibility lifecycle — PASS legacy projection, fallback, 2-document candidates/citations, `usage=null`, persistent forced failure/durable IDs và exact cleanup. `compileall`, `pip check`, secret scan và `git diff --check` — PASS.
 - **Tồn đọng / quyết định:** Không triển khai `/chat/stream`; runtime streaming thuộc P4. Lỗi xảy ra trước khi có logical reply vẫn dùng FastAPI `detail`, tránh tạo persistent IDs giả. M-06 chưa hoàn tất cho tới runtime SSE/history-aware gates P4–P5; stale guard recovery và thu hẹp MongoDB role vẫn là giới hạn vận hành.
 - **Tiếp theo:** `P4-01` — chưa bắt đầu; chờ giao việc riêng. Không tự động chuyển task.
-
-### [2026-10-12] P3-03 — SSE schema
-
-- **Trạng thái:** COMPLETED; Giai đoạn 3 IN PROGRESS.
-- **Đã thực hiện:** Định nghĩa typed discriminated events `start`, `metadata`, `citation`, `delta`, `done`, `error` và strict data models. `start` mang request/session/user/assistant IDs và kiểm tra stateless/persistent; metadata mang model + candidate sources; citation phải thuộc source; delta là content chunk; done chỉ `COMPLETED`; error mang safe error và `FAILED/PARTIAL`. Transcript validator buộc start đầu tiên, sequence `1…n`, metadata trước content, citation trước delta, một terminal cuối cùng, done cần delta, error status khớp partial output. Client reconstruction nối `delta.content`; encoder sinh đúng `event:` + JSON `data:` + blank line.
-- **Files thay đổi:** `backend/app/sse_schema.py`, `backend/tests/test_sse_schema.py`, `backend/scripts/smoke_sse_schema.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
-- **Kiểm thử:** Focused SSE/JSON/citation schema — PASS 20/20; toàn bộ unit/API/in-memory regression — PASS 96/96; offline `smoke_sse_schema.py` — PASS event order, stable assistant ID, JSON wire frames, terminal và reconstructed answer.
-- **Tồn đọng / quyết định:** P3-03 chỉ chốt contract; chưa tạo `/chat/stream`, chưa consume provider async stream, persist streaming lifecycle, xử lý disconnect/buffering hay metrics — các việc này thuộc P4. HTTP error compatibility còn ở P3-04.
-- **Tiếp theo:** `P3-04` — chưa bắt đầu; chờ giao việc riêng. `M-06` tiếp tục IN PROGRESS.
-
-### [2026-10-12] P3-02 — Citation mapping
-
-- **Trạng thái:** COMPLETED; Giai đoạn 3 IN PROGRESS.
-- **Đã thực hiện:** Thêm mapper server-side dùng ordinal `[n]` trong answer để chọn candidate thứ `n` từ danh sách retrieved theo thứ tự context. `sources` giữ mọi candidate; `citations` chỉ chứa candidate được nhắc, có ba UUID hợp lệ và page null/không âm; duplicate, ordinal 0/out-of-range, metadata lỗi và UUID/citation object do model tự viết bị bỏ qua. Prompt yêu cầu dùng đúng ordinal và cấm tự tạo ID. API và persistence cùng recompute verified citations từ answer + server sources; Pydantic buộc mọi citation là member của source list. Persistent Mongo history lưu đúng tập citations trả về.
-- **Files thay đổi:** `backend/app/citation_mapping.py`, `backend/app/rag/prompt.py`, `backend/app/api/chat.py`, `backend/app/conversation_service.py`, `backend/app/schemas.py`, `backend/tests/test_citation_mapping.py`, `backend/tests/test_chat_response_schema.py`, `backend/tests/test_chat_persistence.py`, `backend/scripts/smoke_response_contract.py`, `backend/scripts/smoke_citation_mapping.py`, `backend/scripts/verify_phase2.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
-- **Kiểm thử:** Focused citation/schema/persistence/retriever — PASS 22/22; toàn bộ unit/API/in-memory regression — PASS 89/89. Live HTTP/Atlas smoke — PASS 2 candidates/1 verified citation, response-history match và cleanup. Read-only real Gemini embedding → Qdrant retrieval → Mongo active-version provenance — PASS 3 candidates/1 citation. Live P2 restart/history regression — PASS và cleanup.
-- **Tồn đọng / quyết định:** Nếu provider không emit `[n]`, citations cố ý rỗng để không overclaim; sources vẫn cho biết candidates. Không parse hoặc tin UUID do model sinh. Chưa triển khai SSE/P3-03 hay unified HTTP error compatibility/P3-04.
-- **Tiếp theo:** `P3-03` — chưa bắt đầu; chờ giao việc riêng. `M-06` tiếp tục IN PROGRESS.
 
 ## 4. Lưu trữ nhật ký cũ (archive)
 

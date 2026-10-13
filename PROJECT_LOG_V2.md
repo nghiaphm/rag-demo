@@ -52,13 +52,13 @@
 | Giai đoạn 2 — Session và Message Persistence | COMPLETED — P2-01…P2-05 | Hội thoại lưu bền vững, thứ tự đúng, kiểm soát concurrent generation |
 | Giai đoạn 3 — Response Contract | COMPLETED — P3-01…P3-04 | JSON/SSE schema, compatibility và failure contract đã test |
 | Giai đoạn 4 — SSE Streaming API | COMPLETED — P4-01…P4-05 | Groq live async stream, transport, lifecycle, errors và metrics đều PASS |
-| Giai đoạn 5 — History-aware RAG | IN PROGRESS — P5-01…P5-05 COMPLETED | Multi-turn evaluation PASS; final docs P5-06 còn lại |
-| M — Migration pgvector → Qdrant Cloud | CUTOVER COMPLETED; M-06 IN PROGRESS | P2/P3/P4 và P5 evaluation PASS; final cross-phase audit còn chờ P5-06 |
+| Giai đoạn 5 — History-aware RAG | COMPLETED — P5-01…P5-06 | History loader, budget, rewrite, scoped integration, evaluation và final docs đã xác minh |
+| M — Migration pgvector → Qdrant Cloud | COMPLETED — M-01…M-06 | Cutover và regression xuyên document/session/JSON/SSE/history-aware đều PASS |
 
-- **Giai đoạn hiện tại:** Giai đoạn 5 IN PROGRESS với `P5-01`…`P5-05` COMPLETED.
-- **Task vừa hoàn thành:** `P5-05` — paired baseline/history-aware evaluation PASS 5/5 với live provider và retrieval-only fallback path.
-- **Task tiếp theo:** `P5-06` chưa bắt đầu và chỉ triển khai khi được giao riêng. `M-06` vẫn IN PROGRESS.
-- **Blockers:** Không có blocker cho P5-05. Final docs/cross-phase audit P5-06 còn lại trước khi nghiệm thu toàn giai đoạn và M-06.
+- **Giai đoạn hiện tại:** Toàn bộ Giai đoạn 1–5 và workstream `M-01`…`M-06` đã COMPLETED.
+- **Task vừa hoàn thành:** `M-06` — live cross-phase regression cho selected scope, history, JSON/SSE, citation/persistence và provider path đã PASS.
+- **Task tiếp theo:** Không còn task chưa hoàn thành trong roadmap V2 hiện tại; chờ phạm vi mới được giao.
+- **Blockers:** Không có blocker nghiệm thu. Các giới hạn vận hành còn lại đã ghi trong README, không bị trình bày như chức năng đã có.
 - **Chi tiết nhật ký:** [`CURRENT_CHANGE.md`](./CURRENT_CHANGE.md).
 
 ## 3. Quy ước kỹ thuật chung
@@ -144,7 +144,7 @@
 - [x] **P5-03 — Query rewriting:** chỉ rewrite câu phụ thuộc context khi cần; giữ original query cho final generation, không thêm facts thiếu căn cứ; đo chi phí/latency phát sinh.
 - [x] **P5-04 — RAG integration:** retrieval chỉ tài liệu active/đúng scope; citation truy ngược Qdrant/MongoDB; stream và non-stream dùng chung retrieval/context builder. Unit/full regression, live scoped Atlas/Qdrant smoke và live JSON/SSE transport đã PASS.
 - [x] **P5-05 — Evaluation:** test pronoun/follow-up, chuyển chủ đề, long session, out-of-document và cross-document; paired baseline/history-aware live PASS 5/5, retrieval/answer/grounding proxy/fallback/referent/budget đều đạt; ghi latency/token, retry hữu hạn và retrieval-only path xử lý provider quota.
-- [ ] **P5-06 — Final docs:** cập nhật README, kiến trúc, API example, test instructions và giới hạn còn tồn tại.
+- [x] **P5-06 — Final docs:** README đã đối chiếu runtime và cập nhật luồng history-aware, JSON/SSE/persistent examples, cấu hình, unit/smoke/eval instructions, project structure và giới hạn còn tồn tại; docs validation cùng full regression 152/152 PASS.
 
 **Điều kiện kết thúc:** Multi-turn tests đúng referent; scope/citation đúng; không vượt budget; stream/non-stream nhất quán.
 
@@ -157,17 +157,17 @@
 - [x] **M-03 — Vector adapter:** add/upsert/query/delete/filter với ID hợp lệ, metadata/chunk text; cô lập sau interface để đổi backend.
 - [x] **M-04 — Data migration:** re-parse/re-embed raw demo corpus vào Qdrant Cloud; quản lý per-version/status; không nhận đã migrate nếu chưa kiểm chứng.
 - [x] **M-05 — Cutover:** so sánh document/chunk counts, retrieval Q&A, delete, page metadata, active-version filter và eval isolation; rồi mới gỡ runtime path/dependencies pgvector, cập nhật compose/config/docs; ghi rollback.
-- [ ] **M-06 — Regression liên giai đoạn:** xác minh citation/scope với session, response, stream và history-aware; ghi và sửa regression. **IN PROGRESS:** P2-01…P2-05 PASS; P3-01…P3-04 PASS; P4-01…P4-05 PASS gồm live Groq provider; P5-01…P5-05 history/budget/rewrite/shared scoped integration và paired evaluation PASS; final cross-phase audit còn chờ P5-06.
+- [x] **M-06 — Regression liên giai đoạn:** live Atlas/Qdrant/embedding verifier PASS selected session scope, whole-turn history, conditional rewrite, JSON/SSE response, citation provenance/persistence và exact cleanup; Groq async provider smoke PASS; focused 42/42, full regression 155/155, compile/dependencies/secret/diff checks PASS. Không phát hiện regression runtime cần sửa.
 
 ## 10. Kiểm thử và nghiệm thu tối thiểu (mọi giai đoạn)
 
-- [ ] Không lỗi import/startup; chạy lint/type-check nếu project có.
-- [ ] Unit tests cho service/adapter và failure modes mới.
-- [ ] Integration/smoke tests với **MongoDB Atlas cloud + Qdrant Cloud** khi môi trường sẵn sàng; phân biệt lỗi DNS, allowlist, credential, TLS, timeout; không đưa URI vào log.
-- [ ] Kiểm tra regression chat/evaluation V1, hoặc ghi rõ BLOCKED/NOT RUN.
-- [ ] Không log/commit secrets (đặc biệt MongoDB Atlas connection string, `QDRANT_URL` thực và `QDRANT_API_KEY`) hoặc raw file nhạy cảm.
-- [ ] README, `.env.example`, checklist và `CURRENT_CHANGE.md` phản ánh code thực tế.
-- [ ] Điều kiện nghiệm thu phase đạt; các hạn chế/lỗi tồn đọng được ghi.
+- [x] Không lỗi import/startup; `compileall`, FastAPI lifespan và dependency readiness PASS; project không cấu hình lint/type-check riêng.
+- [x] Unit tests cho service/adapter và failure modes mới — full regression PASS 155/155.
+- [x] Integration/smoke tests với **MongoDB Atlas cloud + Qdrant Cloud** PASS; timeout/auth/network errors dùng contract an toàn, không đưa URI vào log.
+- [x] Regression chat/evaluation V1 và history-aware đã PASS qua M-05/P5-05/M-06; lần chạy external-history bổ sung ở M-06 ghi `NOT RUN` do không được cấp quyền gửi payload sang provider.
+- [x] Không log/commit secrets hoặc raw file nhạy cảm; secret scan cho files M-06 PASS.
+- [x] README, `.env.example`, checklist và `CURRENT_CHANGE.md` phản ánh code thực tế.
+- [x] Điều kiện nghiệm thu các phase đạt; hạn chế vận hành còn lại được ghi trong README/CURRENT_CHANGE.
 
 **Lệnh baseline tham khảo, Agent phải kiểm tra trước khi dùng:** không chạy MongoDB/Qdrant bằng Docker; kiểm tra kết nối đến hai dịch vụ cloud bằng script/smoke test an toàn; trong `backend/` chạy `uvicorn app.main:app --reload --port 8000`; từ root chạy `python backend/scripts/eval_cli.py`. Điều chỉnh theo source sau migration; không tự nhận test PASS.
 
