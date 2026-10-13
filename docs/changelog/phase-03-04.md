@@ -38,6 +38,15 @@
 - **Tồn đọng / quyết định:** Native `EventSource` không gửi POST body, README hướng dẫn `fetch`/`ReadableStream`. Async provider token deltas thuộc P4-02; persistent message lifecycle P4-03; post-header error, cancel/disconnect P4-04; metrics sâu P4-05.
 - **Tiếp theo:** `P4-02` — chưa bắt đầu; chờ giao việc riêng. Không tự động chuyển task.
 
+### [2026-10-12] P4-05 — Metrics/tests
+
+- **Trạng thái:** COMPLETED; Giai đoạn 4 vẫn IN PROGRESS vì P4-02 đang DEFERRED/BLOCKED.
+- **Đã thực hiện:** Thêm monotonic one-shot tracker đo từ đầu request qua retrieval/persistence tới logical terminal: `first_event_ms`, nullable `first_content_ms`, `total_latency_ms`, `delta_count`, request ID, mode và safe outcome. Production ghi structured log không chứa question/answer/sources/credentials; lỗi metrics không ảnh hưởng response. Mở rộng endpoint tests cho success reconstruction, output rỗng, lỗi giữa stream, timeout, persistence failure, cancel/disconnect và durable lifecycle; metric chỉ ghi một lần ở success/error/cancel/pre-header failure.
+- **Files thay đổi:** `backend/app/stream_metrics.py`, `backend/app/api/chat.py`, `backend/tests/test_stream_metrics.py`, `backend/tests/test_chat_stream.py`, `backend/scripts/smoke_stream_metrics.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
+- **Kiểm thử:** Focused metrics/stream/lifecycle/SSE/provider — PASS 38/38; toàn bộ unit/API/in-memory regression — PASS 120/120; live `smoke_stream_metrics.py` — PASS first-event/first-content/total latency, success/empty/partial transcripts, client reconstruction, Atlas terminal states/guard release và exact cleanup; `compileall`, `pip check`, `git diff --check` — PASS.
+- **Tồn đọng / quyết định:** Metric là structured application log, chưa có Prometheus/exporter/dashboard. Total latency kết thúc tại logical terminal trước khi terminal frame được network flush; đây là server-side processing metric, không phải browser-perceived latency. P4-02 giữ deferred cho tới khi người dùng yêu cầu chạy lại.
+- **Tiếp theo:** `P5-01` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai hoặc quay lại P4-02.
+
 ### [2026-10-12] P3-04 — Compatibility/tests
 
 - **Trạng thái:** COMPLETED; Giai đoạn 3 COMPLETED; M-06 tiếp tục IN PROGRESS.

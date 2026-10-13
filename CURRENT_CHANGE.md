@@ -4,11 +4,11 @@
 
 ## 1. Trạng thái gần nhất
 
-- **Giai đoạn:** Frontend F0/F1 COMPLETED; F1-STAB và F1-01…F1-03 COMPLETED; backend roadmap giữ nguyên.
-- **Task vừa hoàn thành:** `[FRONTEND/F1-03]` — SSE parser foundation, 2026-10-13.
-- **Task tiếp theo:** `F2-01` — NOT STARTED; chờ giao việc riêng.
-- **Blocker:** Không có cho F1-03; browser CORS/environment và stream transport/UI chưa triển khai/xác minh.
-- **Lần cập nhật:** Parser 18/18, frontend regression 38/38, 45-schema contract, build/typecheck/lint/diff PASS; chi tiết FRONTEND_PLAN mục 12. Groq/Gemini live calls = 0.
+- **Giai đoạn:** Frontend F0/F1/F2 COMPLETED; F2-01…F2-03 COMPLETED; backend roadmap giữ nguyên.
+- **Task vừa hoàn thành:** `[FRONTEND/F2-03]` — Documents static components, 2026-10-13.
+- **Task tiếp theo:** `F3-01` — NOT STARTED; chờ giao việc riêng.
+- **Blocker:** Không có cho implementation F2-03. Browser interaction QA BLOCKED bởi Node REPL của Browser plugin; HTTP rendered-content checks đã PASS.
+- **Lần cập nhật:** Build/typecheck/lint, regression 38/38, contract 45 schemas, fixture-only document HTTP checks và diff PASS; chi tiết FRONTEND_PLAN mục 15. Groq/Gemini live calls = 0.
 
 > **Quyết định hạ tầng:** MongoDB Atlas cloud, không dùng MongoDB container; Qdrant Cloud (người dùng đã tạo cluster), không dùng Qdrant Docker; raw files lưu local. IP Access List Atlas hiện `0.0.0.0/0` theo xác nhận người dùng — chỉ phù hợp tạm cho development, cần thu hẹp khi có thể. Agent cần kiểm tra `QDRANT_URL` và `QDRANT_API_KEY` đã có trong `.env`, không in/copy giá trị vào log; `.env.example` chỉ dùng placeholder. Không lưu MongoDB URI/Qdrant URL thực/credentials trong file này. Đây là cập nhật tài liệu, **không phải bằng chứng P1-02 hoặc M-02 đã triển khai**.
 
@@ -24,6 +24,33 @@
 ## 3. Nhật ký thay đổi (mới nhất ở trên)
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
+
+### [2026-10-13] [FRONTEND/F2-03] — Documents static components
+
+- **Trạng thái:** COMPLETED; F2 COMPLETED, F3-01 chưa bắt đầu.
+- **Đã thực hiện:** Thêm document fixtures typed theo `DocumentDetail` và responsive list/detail preview. Hiển thị status, active version, chunks/version count, immutable version history và state notices. Thêm upload/new-version dialogs đúng extensions/ingestion-sync contract, delete confirmation đúng soft-delete/cleanup/raw-retention semantics; file không được đọc/gửi, upload/re-index/delete CTA đều disabled. Local list selection là UI-only; không fetch/API call/backend mutation, progress/poll/download giả hoặc dependency mới.
+- **Files thay đổi:** `frontend/fixtures/documents.ts`, `frontend/components/documents/{document-status-badge,document-dialogs,documents-preview}.tsx`, `frontend/app/documents/page.tsx`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md` (archive entry cũ nguyên vẹn để giữ 15 entry); giữ các thay đổi sẵn có.
+- **Kiểm thử:** build/typecheck/lint PASS, 0 warnings; API/SSE regression PASS 38/38; contract verifier PASS 45 schemas; dev HTTP `/documents` PASS 200 với list/selection/detail/status/active-version/history và action triggers trong HTML; `git diff --check`/new-file whitespace PASS. Browser click/dialog/viewport interaction BLOCKED/NOT RUN vì Node REPL của Browser plugin lỗi path; không đánh dấu PASS. Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Cần rerun list selection, dialog keyboard/focus và responsive visual QA khi Browser plugin hoạt động. Domain document API client vẫn chưa triển khai; live mutation thuộc F6.
+- **Tiếp theo:** `F3-01` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-13] [FRONTEND/F2-02] — Chat static components
+
+- **Trạng thái:** COMPLETED; F2 IN PROGRESS, F2-03 chưa bắt đầu.
+- **Đã thực hiện:** Thêm fixture-only Chat preview dùng chung cho `/chat` và `/chat/[sessionId]`: user/assistant bubbles, avatar, Markdown/GFM renderer, composer không submit, cùng conversation/empty/loading/error states chuyển bằng accessible button group. Loading có aria-busy/Skeleton, error có role=alert; control giả gửi/thử lại disabled và UI ghi rõ chưa kết nối API. Fixture type tách khỏi API DTO. Không fetch/API/SSE hook, backend change hoặc dependency mới.
+- **Files thay đổi:** `frontend/fixtures/chat.ts`, `frontend/components/chat/{chat-message,chat-composer,chat-preview}.tsx`, `frontend/app/chat/page.tsx`, `frontend/app/chat/[sessionId]/page.tsx`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md` (archive entry cũ nguyên vẹn để giữ 15 entry); giữ các thay đổi sẵn có.
+- **Kiểm thử:** build/typecheck/lint PASS; API/SSE regression PASS 38/38; contract verifier PASS 45 schemas; dev HTTP `/chat` và `/chat/demo-session` PASS 200 với bubble labels, Markdown list, composer disabled và state controls trong HTML; `git diff --check`/new-file whitespace PASS. Browser click/viewport interaction BLOCKED/NOT RUN vì Node REPL của Browser plugin lỗi path; không đánh dấu PASS. Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Cần rerun visual/state-switch/keyboard QA khi Browser plugin hoạt động. Composer và retry cố ý không thực thi; stream/state integration thuộc F3.
+- **Tiếp theo:** `F2-03` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-13] [FRONTEND/F2-01] — Application shell
+
+- **Trạng thái:** COMPLETED; F2 IN PROGRESS, F2-02/F2-03 chưa bắt đầu.
+- **Đã thực hiện:** Tạo root application shell bằng shadcn Sidebar/Sheet hiện có: sidebar responsive, sticky header, content area, active App Router navigation cho `/chat`, `/chat/[sessionId]` và `/documents`; `/` redirect sang `/chat`. Thêm skip link, một main landmark, named nav, `aria-current`, labelled headings/trigger, focus styles, đóng menu sau mobile navigation và Ctrl/Cmd+B. Cô lập `usePathname` dưới Suspense cho Next 16 cacheComponents. Các route chỉ có shell-level placeholder; không Chat UI, Documents UI, API/SSE integration hoặc dependency mới.
+- **Files thay đổi:** `frontend/components/layout/app-shell.tsx`, `frontend/app/layout.tsx`, `frontend/app/page.tsx`, `frontend/app/chat/page.tsx`, `frontend/app/chat/[sessionId]/page.tsx`, `frontend/app/documents/page.tsx`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-03-04.md` (archive entry cũ nguyên vẹn để giữ 15 entry); giữ các thay đổi sẵn có.
+- **Kiểm thử:** `npm.cmd run build` PASS (static routes và partial-prerender dynamic route); typecheck PASS; lint PASS; API/SSE regression PASS 38/38; contract verifier PASS 45 schemas; dev HTTP PASS `/` 307→`/chat`, ba representative routes 200 và rendered accessibility semantics; `git diff --check` PASS. Browser desktop/mobile/keyboard interaction BLOCKED/NOT RUN do Browser Node REPL lỗi khởi tạo path; không đánh dấu PASS. Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Cần rerun viewport/click/tab visual QA khi Browser plugin hoạt động. Shell không tải session/document data; placeholder functional UI thuộc task sau.
+- **Tiếp theo:** `F2-02` NOT STARTED; dừng, không tự động triển khai.
 
 ### [2026-10-13] [FRONTEND/F1-03] — SSE parser foundation
 
@@ -132,33 +159,6 @@
 - **Kiểm thử:** Focused rewrite/context/history/streaming — PASS 27/27; toàn bộ unit/API/in-memory regression — PASS 144/144; offline `smoke_query_rewriting.py` — PASS independent zero-call, dependent rewrite, original preservation, unsupported-fact rejection, safe fallback và token/latency metrics; `compileall`, `pip check`, `git diff --check` — PASS.
 - **Tồn đọng / quyết định:** Lexical provenance ngăn token/entity/số mới nhưng không chứng minh semantic entailment hoàn hảo; prompt guard và fallback giảm rủi ro, evaluation tiếp tục ở P5-05. Detector bảo thủ có thể bỏ sót follow-up không có marker và khi đó dùng original query. Live OpenRouter không chạy vì P4-02 vẫn bị free-tier 429; logic provider được xác minh deterministic. Runtime dùng rewritten query cho retrieval và original query cho final prompt thuộc P5-04.
 - **Tiếp theo:** `P5-04` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-04 hoặc quay lại P4-02.
-
-### [2026-10-12] P5-02 — Context budget
-
-- **Trạng thái:** COMPLETED; Giai đoạn 5 IN PROGRESS. P4-02 tiếp tục tạm bỏ qua/BLOCKED.
-- **Đã thực hiện:** Thêm settings cho context window và allocation system/history/chunks/query/output reserve; startup validation chặn tổng vượt window. Thêm `ContextBudgetBuilder` dùng approximate counter sẵn có của `langchain-core` với hệ số chars/token cấu hình được. System instruction vượt allocation bị từ chối thay vì cắt. History chọn strict suffix các whole turns gần nhất và không cắt turn. Chunks giữ retrieval rank, prefix-truncate tối đa chunk cuối vừa budget rồi dừng. Query dùng deterministic head–tail marker; output reserve luôn được tính vào tổng. Contract trả usage từng phần, cờ truncate và số turn/chunk bị bỏ. Chưa nối vào `/chat`, prompt hoặc retriever.
-- **Files thay đổi:** `.env.example`, `backend/app/config.py`, `backend/app/context_budget.py`, `backend/tests/test_context_budget.py`, `backend/scripts/smoke_context_budget.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
-- **Kiểm thử:** Focused context/history/streaming — PASS 18/18; toàn bộ unit/API/in-memory regression — PASS 135/135; offline `smoke_context_budget.py` — PASS 5 allocations, total window, recent whole turns, query/chunk truncation; `compileall`, `pip check`, `git diff --check` — PASS.
-- **Tồn đọng / quyết định:** Counter là xấp xỉ, mặc định bảo thủ hơn English ở 3 chars/token nhưng không bảo đảm khớp tokenizer riêng của mọi OpenRouter model. Strict recent suffix có thể trả history rỗng nếu turn mới nhất tự nó vượt allocation; không lùi qua turn đó để lấy turn cũ hơn. Chunk input phải được caller format kèm source header để header được tính; wiring thuộc P5-04. Query rewriting thuộc P5-03.
-- **Tiếp theo:** `P5-03` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-03/P5-04 hoặc quay lại P4-02.
-
-### [2026-10-12] P5-01 — History loader
-
-- **Trạng thái:** COMPLETED; Giai đoạn 5 IN PROGRESS. P4-02 được tạm bỏ qua và vẫn BLOCKED, không tính là PASS.
-- **Đã thực hiện:** Thêm `ConversationHistoryLoader` qua repository protocol, trả session record/retrieval scope cùng các `HistoryTurn` theo stable sequence. Loader phân trang toàn bộ message, ghép đúng hai record cùng `request_id`, yêu cầu user `COMPLETED` và assistant đứng ngay sequence kế tiếp. Mặc định chỉ assistant `COMPLETED` được nhận; `PARTIAL/FAILED/PENDING/STREAMING`, orphan, cross-session, group thừa hoặc pair không liên tiếp đều bị loại cả lượt. Diagnostic caller có thể opt-in terminal `PARTIAL/FAILED`; active messages luôn bị loại. Chưa thay prompt, retrieval hoặc `/chat`.
-- **Files thay đổi:** `backend/app/history.py`, `backend/tests/test_history.py`, `backend/scripts/smoke_history_loader.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
-- **Kiểm thử:** Focused history/models/session/persistence — PASS 35/35; toàn bộ unit/API/in-memory regression — PASS 126/126; live `smoke_history_loader.py` trên Atlas — PASS session identity, selected-document scope, stable order, multi-page load, default/diagnostic whole-turn filtering và exact cleanup; `compileall`, `pip check`, `git diff --check` — PASS.
-- **Tồn đọng / quyết định:** Loader hiện đọc toàn bộ persisted history để giữ semantic đầy đủ; chưa chọn recent turns, tính token hay truncate — thuộc P5-02. Chưa dùng history cho query rewrite/prompt/retrieval/stream — thuộc P5-03/P5-04. Opt-in failed turn có thể chứa assistant content rỗng và chỉ dành cho diagnostic, không phải default generation context.
-- **Tiếp theo:** `P5-02` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-02 hoặc quay lại P4-02.
-
-### [2026-10-12] P4-05 — Metrics/tests
-
-- **Trạng thái:** COMPLETED; Giai đoạn 4 vẫn IN PROGRESS vì P4-02 đang DEFERRED/BLOCKED.
-- **Đã thực hiện:** Thêm monotonic one-shot tracker đo từ đầu request qua retrieval/persistence tới logical terminal: `first_event_ms`, nullable `first_content_ms`, `total_latency_ms`, `delta_count`, request ID, mode và safe outcome. Production ghi structured log không chứa question/answer/sources/credentials; lỗi metrics không ảnh hưởng response. Mở rộng endpoint tests cho success reconstruction, output rỗng, lỗi giữa stream, timeout, persistence failure, cancel/disconnect và durable lifecycle; metric chỉ ghi một lần ở success/error/cancel/pre-header failure.
-- **Files thay đổi:** `backend/app/stream_metrics.py`, `backend/app/api/chat.py`, `backend/tests/test_stream_metrics.py`, `backend/tests/test_chat_stream.py`, `backend/scripts/smoke_stream_metrics.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-01.md`.
-- **Kiểm thử:** Focused metrics/stream/lifecycle/SSE/provider — PASS 38/38; toàn bộ unit/API/in-memory regression — PASS 120/120; live `smoke_stream_metrics.py` — PASS first-event/first-content/total latency, success/empty/partial transcripts, client reconstruction, Atlas terminal states/guard release và exact cleanup; `compileall`, `pip check`, `git diff --check` — PASS.
-- **Tồn đọng / quyết định:** Metric là structured application log, chưa có Prometheus/exporter/dashboard. Total latency kết thúc tại logical terminal trước khi terminal frame được network flush; đây là server-side processing metric, không phải browser-perceived latency. P4-02 giữ deferred cho tới khi người dùng yêu cầu chạy lại.
-- **Tiếp theo:** `P5-01` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai hoặc quay lại P4-02.
 
 ## 4. Lưu trữ nhật ký cũ (archive)
 

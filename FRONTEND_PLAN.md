@@ -41,7 +41,7 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 | --- | --- | --- |
 | F0 — Baseline audit | COMPLETED | F0-01 audit 2026-10-13; build/typecheck/lint FAIL, OpenAPI runtime BLOCKED; xem mục 8 |
 | F1 — Foundation/API | COMPLETED | F1-STAB và F1-01…F1-03 COMPLETED; environment/CORS browser là giới hạn đã ghi |
-| F2 — Layout/Design | NOT STARTED | |
+| F2 — Layout/Design | COMPLETED | F2-01…F2-03 COMPLETED; interaction QA bị giới hạn bởi Browser plugin đã ghi |
 | F3 — Chat/SSE | NOT STARTED | |
 | F4 — Sessions/History | NOT STARTED | |
 | F5 — Sources/Citations | NOT STARTED | |
@@ -49,7 +49,7 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 | F7 — UX/Resilience | NOT STARTED | |
 | F8 — Testing/E2E | NOT STARTED | |
 
-**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F1-03 — SSE parser foundation. **Task tiếp theo:** F2-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker F1-03; parser/fixtures/build/typecheck/lint PASS. Browser CORS/API environment và end-to-end stream transport chưa cấu hình/xác minh; transcript lifecycle validation thuộc F3-01. Evidence mới ở mục 12.
+**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F2-03 — Documents static components; F2 COMPLETED. **Task tiếp theo:** F3-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker implementation; build/typecheck/lint, contract fixtures và HTTP rendered-content checks PASS. Browser interaction NOT RUN do Browser Node REPL tiếp tục không khởi tạo được trong môi trường hiện tại. Evidence mới ở mục 15.
 
 ## 4. Roadmap và acceptance criteria
 
@@ -66,9 +66,9 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 
 ### F2 — Layout & Design System
 
-- [ ] **F2-01 — Application shell:** responsive sidebar/header/content area, routes Chat và Documents theo Next.js App Router; tận dụng shadcn/ui có sẵn, không lắp cả thư viện vô cớ. AC: desktop/mobile usable, keyboard accessible.
-- [ ] **F2-02 — Chat static components:** composer, user/assistant bubbles, Markdown/content placeholders, empty/loading/error mock states. AC: UI chỉ dùng fixtures, chưa live generation.
-- [ ] **F2-03 — Documents static components:** list/detail/upload/status/confirm/dialog placeholders dựa trên backend contract. AC: responsive, chưa mutate backend.
+- [x] **F2-01 — Application shell:** responsive sidebar/header/content area, routes Chat và Documents theo Next.js App Router; tận dụng shadcn/ui có sẵn, không lắp cả thư viện vô cớ. AC: desktop/mobile usable, keyboard accessible. Evidence mục 13: build/typecheck/lint, route/semantic HTTP checks PASS; Browser interaction BLOCKED bởi Node REPL của công cụ.
+- [x] **F2-02 — Chat static components:** composer, user/assistant bubbles, Markdown/content placeholders, empty/loading/error mock states. AC: UI chỉ dùng fixtures, chưa live generation. Evidence mục 14: component/fixture boundaries, build/typecheck/lint/regression/HTTP checks PASS; Browser interaction BLOCKED bởi Node REPL của công cụ.
+- [x] **F2-03 — Documents static components:** list/detail/upload/status/confirm/dialog placeholders dựa trên backend contract. AC: responsive, chưa mutate backend. Evidence mục 15: typed fixtures, disabled mutation actions, build/typecheck/lint/regression/HTTP checks PASS; Browser interaction BLOCKED bởi Node REPL của công cụ.
 
 ### F3 — Chat & SSE Streaming (MVP core)
 
@@ -308,3 +308,69 @@ Files changed: `frontend/lib/api/client.ts`, `frontend/tests/api-client.test.mjs
 | Live `/chat/stream`, browser/UI E2E, provider/cloud smoke | NOT RUN — ngoài F1-03; Groq=0, Gemini=0. |
 
 Files changed: `frontend/lib/sse/parser.ts`, `frontend/tests/sse-parser.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-03-04.md` (entry cũ giữ nguyên, nhật ký 15 entry). **Blocker F1-03:** không có. **F2-01 NOT STARTED; dừng sau F1-03.**
+
+## 13. Evidence F2-01 — Application shell (2026-10-13)
+
+**COMPLETED.** Root layout dùng application shell chung với shadcn `SidebarProvider`, `Sidebar`, `SidebarInset`, menu và trigger đã có sẵn; không cài hoặc sinh lại component/dependency. Desktop có sidebar thu gọn và phím Ctrl/Cmd+B; breakpoint mobile dùng `Sheet` do component hiện hữu cung cấp, trigger luôn nằm trong header và menu tự đóng khi chọn route. Header sticky, content co giãn với `min-w-0`, padding responsive và mỗi route có vùng nội dung giới hạn chiều rộng.
+
+- Thêm App Router route `/chat`, giữ `/chat/[sessionId]`, giữ `/documents`; `/` redirect 307 sang `/chat`. Sidebar dùng `next/link`, active state theo `usePathname`, `aria-current="page"`; hai phần đọc URL nằm dưới `Suspense` nhỏ để tương thích Next 16 `cacheComponents` và partial prerender route động.
+- Keyboard/accessibility: có skip link tới một `main#main-content`, `nav` có accessible name, heading/section liên kết bằng `aria-labelledby`, trigger có nhãn tiếng Việt, focus-visible styles từ shadcn và icon trang trí `aria-hidden`. Root metadata và `lang="vi"` thay scaffold mặc định.
+- `/chat` và `/documents` chỉ là placeholder shell-level. Không tạo composer, message bubble, session list, upload/list/detail document, API hook, SSE transport hoặc backend mutation; F2-02/F2-03 và các phase tích hợp chưa bắt đầu.
+- Không sửa component shadcn hiện có, manifests, API/SSE code hoặc backend; live Groq/Gemini calls = 0.
+
+| Kiểm tra (frontend/) | Kết quả |
+|---|---|
+| `npm.cmd run build` | PASS, exit 0; `/`, `/chat`, `/documents` static và `/chat/[sessionId]` partial-prerender. Lần đầu FAIL có ghi nhận do `usePathname` ngoài Suspense; đã sửa đúng hướng dẫn Next 16 và rerun PASS. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0. |
+| `node --test tests/api-client.test.mjs tests/sse-parser.test.mjs` | PASS 38/38 regression; không external calls. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| Dev HTTP route smoke | PASS: `/` 307 → `/chat`; `/chat`, `/documents`, `/chat/demo-session` HTTP 200. Rendered HTML có `lang=vi`, skip link, named nav, `main#main-content`, active `aria-current` và route heading. |
+| Browser desktop/mobile/keyboard interaction | BLOCKED/NOT RUN: Browser plugin Node REPL lỗi khởi tạo môi trường `The system cannot find the path specified` ngay cả với lệnh tối thiểu; không đánh dấu PASS. Responsive behavior được cung cấp bởi shadcn Sidebar/Sheet source đã audit, nhưng viewport/click/tab visual QA vẫn cần rerun khi công cụ hoạt động. |
+| `git diff --check` | PASS. |
+
+Files changed: `frontend/components/layout/app-shell.tsx`, `frontend/app/layout.tsx`, `frontend/app/page.tsx`, `frontend/app/chat/page.tsx`, `frontend/app/chat/[sessionId]/page.tsx`, `frontend/app/documents/page.tsx`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-03-04.md`. **Blocker F2-01 implementation:** không có. **F2-02 NOT STARTED; dừng sau F2-01.**
+
+## 14. Evidence F2-02 — Chat static components (2026-10-13)
+
+**COMPLETED.** `/chat` và `/chat/[sessionId]` dùng chung `ChatPreview`, chỉ đọc fixture cục bộ. Preview có bốn trạng thái chuyển bằng nhóm button có `aria-pressed`: hội thoại, trống, đang tải và lỗi. Không fetch, không import API client/SSE parser, không dùng session hook và không gọi backend/provider.
+
+- Hội thoại mẫu tách `ChatMessage` với bubble user/assistant, avatar/icon và accessible label. Assistant content render Markdown/GFM bằng `react-markdown` + `remark-gfm` đã có sẵn; mapping paragraph/list/blockquote/code/pre/link cung cấp style cơ bản mà không thêm plugin/dependency.
+- `ChatComposer` là client boundary nhỏ: textarea có label/help text, nhận nhập liệu local DOM, form chặn submit và nút gửi luôn disabled. Loading fixture disable textarea; error retry cũng disabled. UI ghi rõ đây là bản xem trước chưa kết nối API.
+- Empty/loading/error fixtures có heading/copy riêng; loading dùng `aria-busy` và Skeleton hiện có, error dùng `role=alert`. Chat surface responsive, có vùng cuộn riêng và composer cố định ở đáy panel.
+- Fixture type nằm riêng trong `frontend/fixtures/chat.ts`, không trộn với API DTO. Không sửa contract, API/SSE libraries, shadcn components, manifests hoặc backend; live Groq/Gemini calls = 0.
+
+| Kiểm tra (frontend/) | Kết quả |
+|---|---|
+| `npm.cmd run build` | PASS, exit 0; `/chat` static và `/chat/[sessionId]` partial-prerender. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0. |
+| `node --test tests/api-client.test.mjs tests/sse-parser.test.mjs` | PASS 38/38 regression; không external calls. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| Dev HTTP rendered-content smoke | PASS: `/chat` và `/chat/demo-session` HTTP 200; default fixture render badge, user/assistant accessible labels, Markdown ordered list, composer, disabled submit và state-selector group. |
+| Browser state switching/responsive interaction | BLOCKED/NOT RUN: Browser plugin Node REPL vẫn lỗi khởi tạo path trước khi chạy browser code; không đánh dấu PASS. Static state implementations được typecheck/lint/build nhưng click/visual QA cần rerun khi công cụ hoạt động. |
+| `git diff --check` và whitespace checks cho file mới | PASS. |
+
+Files changed cho F2-02: `frontend/fixtures/chat.ts`, `frontend/components/chat/{chat-message,chat-composer,chat-preview}.tsx`, `frontend/app/chat/page.tsx`, `frontend/app/chat/[sessionId]/page.tsx`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-01.md`. **Blocker F2-02 implementation:** không có. **F2-03 NOT STARTED; dừng sau F2-02.**
+
+## 15. Evidence F2-03 — Documents static components (2026-10-13)
+
+**COMPLETED.** `/documents` dùng `DocumentsPreview` với ba `DocumentDetail` fixtures typed trực tiếp theo contract F1-01. Responsive master/detail layout xếp một cột dưới `lg`, hai cột từ `lg`; danh sách là các button chọn local có `aria-pressed`, detail cập nhật client-side mà không fetch hay mutate backend.
+
+- List hiển thị file name, `DocumentStatus`, active `chunk_count` và `version_count`. Detail tách `active_version_id`, thời gian cập nhật, trạng thái retrieval, các version bất biến, size, chunk count, indexed timestamp và version ID; không nhầm `num_chunks` response ingestion với `chunk_count` list/version.
+- `DocumentStatusBadge` hỗ trợ đủ `UPLOADED|PROCESSING|INDEXED|FAILED|DELETED`. Fixture thể hiện indexed, processing và failed; processing copy ghi rõ backend đồng bộ và không có polling API, failed không tự bịa raw error.
+- Dialog upload/create-version dùng file accept đúng `.pdf/.md/.markdown/.txt/.xlsx`, không invent max size; file input không được đọc/gửi và CTA mutation disabled. Re-index disabled. Delete confirmation mô tả đúng soft-delete/unpublish, Qdrant cleanup có thể pending và raw/audit retention; nút xác nhận disabled.
+- Không tạo progress percentage, polling/download route, status filter hoặc total envelope chưa có trong contract. Không sửa API client/types, shadcn components, manifests hoặc backend; live Groq/Gemini calls = 0.
+
+| Kiểm tra (frontend/) | Kết quả |
+|---|---|
+| `npm.cmd run build` | PASS, exit 0; `/documents` static. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0; fixtures satisfy `DocumentDetail[]`. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings sau khi tách `role=listitem` khỏi toggle button. |
+| `node --test tests/api-client.test.mjs tests/sse-parser.test.mjs` | PASS 38/38 regression; không external calls. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| Dev HTTP rendered-content smoke | PASS: `/documents` HTTP 200; fixture badge, document list/selected item, indexed status, detail, active version, version history, upload/new-version/delete triggers và disabled re-index đều render. |
+| Browser list/dialog/responsive interaction | BLOCKED/NOT RUN: Browser plugin Node REPL vẫn lỗi khởi tạo path trước browser code; không đánh dấu PASS. Local interaction source được typecheck/lint/build nhưng click/dialog/viewport visual QA cần rerun khi công cụ hoạt động. |
+| `git diff --check` và whitespace checks cho file mới | PASS. |
+
+Files changed cho F2-03: `frontend/fixtures/documents.ts`, `frontend/components/documents/{document-status-badge,document-dialogs,documents-preview}.tsx`, `frontend/app/documents/page.tsx`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-01.md`. **Blocker F2-03 implementation:** không có. **F3-01 NOT STARTED; dừng sau F2-03.**
