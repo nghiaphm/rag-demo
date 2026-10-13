@@ -4,11 +4,11 @@
 
 ## 1. Trạng thái gần nhất
 
-- **Giai đoạn:** Giai đoạn 5 — IN PROGRESS; `P5-01`…`P5-04` COMPLETED
-- **Task vừa hoàn thành:** `P5-04` — RAG integration
-- **Task tiếp theo:** `P5-05` chưa bắt đầu; chờ giao việc riêng
-- **Blocker:** Không có blocker cho P5-04; M-06 còn chờ P5 evaluation
-- **Lần cập nhật:** P5-04 focused 48/48, full 147/147, live scoped smoke và JSON/SSE transport PASS
+- **Giai đoạn:** Frontend F0 COMPLETED; backend V2/M-01…M-06 COMPLETED theo roadmap và entry M-06 hiện có (không kiểm thử lại backend trong lượt này).
+- **Task vừa hoàn thành:** `[FRONTEND/F0-01]` — Baseline Audit, 2026-10-13.
+- **Task tiếp theo:** `F1-01` — NOT STARTED; chờ giao việc riêng.
+- **Blocker:** Build/typecheck FAIL do hai route rỗng; lint FAIL use-mobile; runtime OpenAPI BLOCKED do Python của `.venv` không tồn tại. Audit đã hoàn thành.
+- **Lần cập nhật:** Inventory và source-contract mapping hoàn tất; kết quả chi tiết tại mục 8 FRONTEND_PLAN; Groq/Gemini live calls = 0.
 
 > **Quyết định hạ tầng:** MongoDB Atlas cloud, không dùng MongoDB container; Qdrant Cloud (người dùng đã tạo cluster), không dùng Qdrant Docker; raw files lưu local. IP Access List Atlas hiện `0.0.0.0/0` theo xác nhận người dùng — chỉ phù hợp tạm cho development, cần thu hẹp khi có thể. Agent cần kiểm tra `QDRANT_URL` và `QDRANT_API_KEY` đã có trong `.env`, không in/copy giá trị vào log; `.env.example` chỉ dùng placeholder. Không lưu MongoDB URI/Qdrant URL thực/credentials trong file này. Đây là cập nhật tài liệu, **không phải bằng chứng P1-02 hoặc M-02 đã triển khai**.
 
@@ -24,6 +24,15 @@
 ## 3. Nhật ký thay đổi (mới nhất ở trên)
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
+
+### [2026-10-13] [FRONTEND/F0-01] — Baseline Audit
+
+- **Trạng thái:** COMPLETED — audit có evidence, baseline quality gates chưa đạt.
+- **Đã thực hiện:** Audit source/tree/config/scripts/git/env names và dependency thực cài; Next 16.4.0, React 19.3.0, TS 5.9.3, Tailwind 4.3.3, shadcn 4.21.4, 14 UI components. API/types/parser/business hooks và chat/documents routes là file rỗng. Đối chiếu FastAPI routes/Pydantic/SSE với scaffold, ghi bảng đã có/thiếu/giới hạn và đề xuất F1-01 tại FRONTEND_PLAN mục 8. Không đổi chức năng/component/config, không cài dependency, không sửa backend; giữ thay đổi Git sẵn có.
+- **Files thay đổi:** `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`.
+- **Kiểm thử:** `npm.cmd ls --depth=0` PASS; `npm.cmd run build` FAIL sau compile thành công, TS2306/TS2344 vì hai page.tsx rỗng; `node node_modules/typescript/bin/tsc --noEmit --incremental false` FAIL sau build (lần trước generated route types PASS, không đại diện kết quả cuối); `npm.cmd run lint` FAIL 1 error/0 warnings tại use-mobile.ts:14, react-hooks/set-state-in-effect. `.venv/Scripts/python.exe` để sinh app.openapi() với network chặn BLOCKED vì thiếu Python310 interpreter; source contract audit hoàn tất. UI/E2E/backend/live smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng:** Chưa có API base URL/env example/CORS/proxy; history chỉ có citations, không có sources/ordinal mapping; stream không phát citation realtime; document list là array, upload/index đồng bộ, chưa có progress/download API/max-size contract. Sửa route/hook/interpreter cần phạm vi riêng; không che lỗi kiểm tra. Phần trạng thái cũ P5-04 đã đồng bộ với entry M-06/backend roadmap hiện có, không sửa PROJECT_LOG_V2.
+- **Tiếp theo:** `F1-01` NOT STARTED. Dừng sau F0-01 theo yêu cầu.
 
 ### [2026-10-12] M-06 — Regression liên giai đoạn
 
