@@ -4,11 +4,11 @@
 
 ## 1. Trạng thái gần nhất
 
-- **Giai đoạn:** Frontend F0/F1/F2/F3/F4 COMPLETED; backend roadmap giữ nguyên.
-- **Task vừa hoàn thành:** `[FRONTEND/F4-03]` — Multi-turn integration, 2026-10-14.
-- **Task tiếp theo:** `F5-01` — NOT STARTED; chờ giao việc riêng.
-- **Blocker:** Không có cho implementation F4-03; browser/live smoke chưa chạy, cần base URL/CORS và quyền live provider. History thiếu `sources`/snapshot pagination.
-- **Lần cập nhật:** Full frontend regression 80/80 (9 multi-turn tests), 45-schema contract, build/typecheck/lint/diff PASS; chi tiết FRONTEND_PLAN mục 21. Groq/Gemini live calls = 0.
+- **Giai đoạn:** Frontend F0/F1/F2/F3/F4/F5/F6 COMPLETED; backend roadmap giữ nguyên.
+- **Task vừa hoàn thành:** `[FRONTEND/F6-03]` — Versions/reindex/delete, 2026-10-14.
+- **Task tiếp theo:** `F7-01` — NOT STARTED; chờ giao việc riêng.
+- **Blocker:** Không blocker implementation; browser/live mutation smoke chưa chạy. API chưa atomic revision/If-Match; raw files giữ theo soft-delete contract.
+- **Lần cập nhật:** Full regression 139/139 (13 document-action tests), 45-schema contract, build/typecheck/lint/diff PASS; chi tiết FRONTEND_PLAN mục 26. Groq/Gemini live calls = 0.
 
 > **Quyết định hạ tầng:** MongoDB Atlas cloud, không dùng MongoDB container; Qdrant Cloud (người dùng đã tạo cluster), không dùng Qdrant Docker; raw files lưu local. IP Access List Atlas hiện `0.0.0.0/0` theo xác nhận người dùng — chỉ phù hợp tạm cho development, cần thu hẹp khi có thể. Agent cần kiểm tra `QDRANT_URL` và `QDRANT_API_KEY` đã có trong `.env`, không in/copy giá trị vào log; `.env.example` chỉ dùng placeholder. Không lưu MongoDB URI/Qdrant URL thực/credentials trong file này. Đây là cập nhật tài liệu, **không phải bằng chứng P1-02 hoặc M-02 đã triển khai**.
 
@@ -24,6 +24,51 @@
 ## 3. Nhật ký thay đổi (mới nhất ở trên)
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
+
+### [2026-10-14] [FRONTEND/F6-03] — Versions/reindex/delete
+
+- **Trạng thái:** COMPLETED; F6 COMPLETED, F7-01 chưa bắt đầu.
+- **Đã thực hiện:** PUT multipart new-version/POST re-index/DELETE clients đúng routes/status/ownership, giữ 200/202 cleanup và raw-retention DTO. Detail toolbar/dialog explicit confirmations với shared controller, duplicate guard và preflight stale snapshot checks. Post-action/error GET reconciliation không optimistic-promote active, failed version giữ old active, selected/list stale responses không apply. DELETE202 pending cho confirmation mới retry cleanup idempotent; UI nói giữ raw/history, không fake hard-delete. Refresh failure/uncertain outcomes/abort không tự retry mutation. Không backend/dependency/live changes.
+- **Files thay đổi:** `frontend/lib/api/documents.ts`, `frontend/lib/documents/{actions-controller,controller}.ts`, `frontend/components/documents/{document-actions,documents-preview}.tsx`, `frontend/tests/document-actions.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ thay đổi sẵn có.
+- **Kiểm thử:** Full frontend regression PASS 139/139 gồm 13 protected-action/stale-state/API/SSR tests; build/typecheck/lint (0 warnings)/contract 45 schemas/diff/new-file whitespace PASS. Browser DOM confirmations/focus/mobile/live version/reindex/delete/provider smoke NOT RUN; chưa có quyền live mutation/provider. Groq=0, Gemini=0, không tạo/xóa live artifacts.
+- **Tồn đọng / blocker:** Không blocker implementation. Preflight GET không atomic do API chưa If-Match; backend vẫn quyết định conflict/activation. Action error sau gửi có thể đã thay đổi persisted state; reconcile GET, không retry tự động. Soft-delete không xóa raw files; cleanup pending cần người dùng xác nhận DELETE lại. Browser/live QA vẫn cần chạy khi có quyền/công cụ phù hợp.
+- **Tiếp theo:** `F7-01` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-14] [FRONTEND/F6-02] — Upload/progress
+
+- **Trạng thái:** COMPLETED; F6 IN PROGRESS, F6-03 chưa bắt đầu.
+- **Đã thực hiện:** Create upload dialog POST `/documents/upload`, FormData field `file`/browser boundary và runtime HTTP201/index DTO guards. File extension/basename/nonempty size khớp backend, không đặt max bytes/MIME policy giả. Controller khóa duplicate submit, status receipt/activated tách biệt, pending không giả percent/UPLOADED/PROCESSING. Error không giả persisted FAILED, uncertain timeout/network/5xx/malformed response hướng refresh trước reselect/repost, không automatic retry. Client wait 5 phút; Dừng chờ/unmount abort không hứa backend rollback, late success bị bỏ qua. Valid receipt refresh list GET. Version/delete/reindex còn placeholders; không backend/dependency changes.
+- **Files thay đổi:** `frontend/lib/api/documents.ts`, `frontend/lib/documents/{upload-validation,upload-controller}.ts`, `frontend/components/documents/{document-upload,documents-preview}.tsx`, `frontend/tests/document-upload.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ thay đổi sẵn có.
+- **Kiểm thử:** Full regression PASS 126/126 gồm 13 upload multipart/validation/state/success/failure/abort/SSR tests và offline FastAPI filename/extension parity, network blocked. Build/typecheck/lint (0 warnings)/contract 45 schemas/diff/new-file whitespace PASS. Browser upload interaction/live file embedding/index/storage smoke NOT RUN — chưa có quyền live provider/mutation. Groq=0, Gemini=0, không tạo live artifact.
+- **Tồn đọng / blocker:** Không blocker implementation. Backend chưa max-size/progress/polling; synchronous current runtime trả INDEXED hoặc HTTP error không có document IDs. Timeout/abort có thể vẫn ingest ở server, frontend không tự retry; cần kiểm tra list/cleanup backend thật trong live test khi được phép.
+- **Tiếp theo:** `F6-03` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-14] [FRONTEND/F6-01] — List/detail/status
+
+- **Trạng thái:** COMPLETED; F6 IN PROGRESS, F6-02/F6-03 chưa bắt đầu.
+- **Đã thực hiện:** Runtime-validated GET document list/detail clients, external-store controller/hook và Documents UI từ backend thay fixtures. Pagination 20/page, include_deleted filter đúng route, Tải thêm dựa raw page length, không giả total/status query. Loading/empty/error/retry riêng list/detail, 404 missing, config fail-closed, abort/stale guards khi filter/select/refresh/unmount. Status và active version riêng, giữ old active khi PROCESSING/FAILED, version badges, DELETED/cleanup notice. Mutation dialogs còn placeholders/disabled, không provider/backend/dependency changes.
+- **Files thay đổi:** `frontend/lib/api/documents.ts`, `frontend/lib/documents/controller.ts`, `frontend/hooks/use-documents.ts`, `frontend/components/documents/documents-preview.tsx`, `frontend/app/documents/page.tsx`, `frontend/tests/documents.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ thay đổi sẵn có.
+- **Kiểm thử:** Documents mock/client/controller/SSR PASS 12/12; full frontend regression PASS 113/113; build/typecheck/lint (0 warnings)/contract 45 schemas/diff/new-file whitespace PASS. Browser/live document GET/CORS/cloud smoke NOT RUN. Groq=0, Gemini=0; GET-only mock API, không mutation.
+- **Tồn đọng / blocker:** Không blocker implementation. API trả array không total, nên full last page cần thêm empty probe; không server status filter/snapshot/cursor, concurrent updates có thể gây overlap (báo lỗi, không tự retry). API runtime cần public base/CORS; chưa browser smoke. Upload/progress và lifecycle actions thuộc F6-02/F6-03.
+- **Tiếp theo:** `F6-02` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-14] [FRONTEND/F5-02] — Citation UI
+
+- **Trạng thái:** COMPLETED; F5 COMPLETED, F6-01 chưa bắt đầu.
+- **Đã thực hiện:** Assistant Markdown dùng text-node Rehype citation plugin và message-local labelled SheetTriggers. Click callback resolve đúng metadata/source identity; code/link giữ marker nguyên văn, streaming marker chưa hoàn chỉnh giữ text. Drawer shadcn có close/title/description, responsive width/scroll, nhóm document/version/file/page và ưu tiên/highlight selected source. Kết hợp persisted citations để history vẫn có nguồn đã lưu; ordinal thiếu metadata giữ unavailable/fallback, không đoán từ citations order. Không giả URL/download/preview, backend change hoặc dependency mới.
+- **Files thay đổi:** `frontend/components/chat/{chat-message,citation-content}.tsx`, `frontend/lib/chat/{citation-panel,citation-markdown}.ts`, `frontend/tests/citation-ui.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ F5-01 và thay đổi sẵn có.
+- **Kiểm thử:** Full regression PASS 101/101 gồm 10 citation UI callback/ReactMarkdown/SSR/history/integration/streaming tests; build/typecheck/lint (0 warnings)/contract 45 schemas/diff/new-file whitespace PASS. Browser skill được áp dụng, bootstrap FAIL trước browser session nên DOM click/Escape/focus/mobile QA BLOCKED/NOT RUN; không đánh dấu PASS. Live provider smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Cần rerun browser click/keyboard/focus/viewport khi công cụ hoạt động. REST history hiện không expose sources order nên inline ordinal không thể resolve sau refresh; persisted citation list vẫn hiển thị đúng IDs/file/page, không dùng localStorage làm nguồn dữ liệu.
+- **Tiếp theo:** `F6-01` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-14] [FRONTEND/F5-01] — Source mapper
+
+- **Trạng thái:** COMPLETED; F5 IN PROGRESS, F5-02 chưa bắt đầu.
+- **Đã thực hiện:** Pure mapper resolve `[n]` theo sources[n-1] của đúng assistant, giữ owner key/message ID, marker offsets, resolved/unavailable reason và source IDs/file/page. Sparse ordinals không bị renumber; repeated occurrences giữ riêng nhưng citations deduplicate chunk ID theo first mention như backend. Xác minh PDF loader page 0-based, giữ raw page và cộng 1 chỉ cho PDF display; loader khác không suy đoán. Không tạo URL từ source path/model text hoặc đoán ordinal từ history citations; không UI/backend/dependency mới.
+- **Files thay đổi:** `frontend/lib/chat/source-mapper.ts`, `frontend/tests/source-mapper.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ mọi thay đổi sẵn có.
+- **Kiểm thử:** targeted mapper PASS 11/11 gồm offline backend ordinal parity và real PDF loader 2 trang [0,1], network blocked; full frontend regression PASS 91/91; contract verifier PASS 45 schemas; build/typecheck/lint (0 warnings)/diff/new-file whitespace PASS. Browser citation UI/live smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. History thiếu sources/ordinal mapping, mapper trả missing_metadata. PDF page_label không expose; Markdown AST/click/source drawer/fallback UI thuộc F5-02.
+- **Tiếp theo:** `F5-02` NOT STARTED; dừng, không tự động triển khai.
 
 ### [2026-10-14] [FRONTEND/F4-03] — Multi-turn integration
 
@@ -114,51 +159,6 @@
 - **Kiểm thử:** parser PASS 18/18 gồm fixture trực tiếp từ backend `encode_sse_event` với network blocked; API client + parser regression PASS 38/38; contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Live stream/browser/UI/cloud/provider smoke NOT RUN; Groq=0, Gemini=0.
 - **Tồn đọng / blocker:** Không blocker F1-03. Runtime hiện không emit citation event; parser vẫn hỗ trợ schema. Transcript sequence/order/single terminal/error-state/provenance và aggregate size policy chờ F3/F7; browser CORS/environment vẫn chưa xác minh. hooks/use-chat-stream và domain clients còn rỗng.
 - **Tiếp theo:** `F2-01` NOT STARTED; dừng, không tự động triển khai.
-
-### [2026-10-13] [FRONTEND/F1-02] — API client/errors
-
-- **Trạng thái:** COMPLETED; F0-01/F1-STAB/F1-01 giữ COMPLETED.
-- **Đã thực hiện:** Wrapper REST fetch với explicit baseUrl, generic data/status/headers, JSON hoặc FormData, timeout bao gồm đọc body, caller AbortSignal/cleanup và default cache no-store. ApiClientError phân biệt HTTP/network/timeout/abort/invalid response, giữ HTTP status kể cả malformed error body; safe generic messages, chỉ lấy ChatError code/retryable, không lưu raw body/answer/detail/input/ctx. Không retry, không endpoint integration/UI/SSE/provider calls hoặc dependency mới.
-- **Files thay đổi:** `frontend/lib/api/client.ts`, `frontend/tests/api-client.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-03-04.md` (archive entry cũ nguyên vẹn để giữ 15 entry); giữ các thay đổi có sẵn.
-- **Kiểm thử:** `node --test tests/api-client.test.mjs` PASS 20/20 fake cases; `npm.cmd run build` PASS; typecheck sau build PASS; `npm.cmd run lint` PASS; `git diff --check`/new-file whitespace PASS. Một real GET `http://127.0.0.1:8000/health` qua client PASS HTTP 200/expected fields, không gọi dependencies/chat/documents. Browser CORS/UI/cloud/provider smoke NOT RUN; Groq=0, Gemini=0.
-- **Tồn đọng / blocker:** Không blocker F1-02. baseUrl do caller cung cấp; env/CORS chưa cấu hình, Node health không chứng minh browser connectivity. Success DTO vẫn compile-time generic, chưa runtime validation; timeout 30s mặc định cần override cho ingestion đồng bộ sau này. Domain clients và parser giữ rỗng.
-- **Tiếp theo:** `F1-03` NOT STARTED; dừng, không tự động triển khai.
-
-### [2026-10-13] [FRONTEND/F1-01] — API Contract & TypeScript Types
-
-- **Trạng thái:** COMPLETED theo phạm vi types được giao; F0-01/F1-STAB giữ COMPLETED.
-- **Đã thực hiện:** Đối chiếu REST OpenAPI 11 paths/32 schemas, routers/Pydantic và SSE source; điền bốn types files cho health/dependencies, sessions/messages/history, chat/source/citation/usage/error, SSE event-discriminated union, documents/versions/ingestion/multipart và API errors. REST optionality theo OpenAPI required lists, required nullable giữ bắt buộc; wire SSE event/done.status luôn có. Thêm verifier offline dùng TypeScript có sẵn, không dependency mới. Không API client/parser/UI/backend logic/environment configuration hoặc provider calls.
-- **Files thay đổi:** `frontend/types/{api,chat,document,sessions}.ts`, `frontend/tests/verify-api-contract.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-03-04.md` (archive entry cũ nguyên vẹn để giữ 15 entry). Giữ thay đổi stabilization đã có trong working tree.
-- **Kiểm thử:** `node tests/verify-api-contract.mjs` PASS 45 schemas + keys/queries/multipart/list/narrowing/nullability/negative fixtures và mocked health/dependency status 200/503, network blocked; TypeScript check sau build PASS; `npm.cmd run build` PASS; `npm.cmd run lint` PASS; `git diff --check` PASS. UI E2E/cloud/provider smoke NOT RUN; Groq=0, Gemini=0.
-- **Contract gaps / blocker:** Không blocker F1-01. History không có sources/ordinal mapping, không map citations array index vào `[n]`; runtime SSE không emit citation realtime. OpenAPI thiếu chi tiết health/SSE và dynamic 202/HTTPException statuses; error body có detail string, validation detail array hoặc full ChatResponse. Chưa progress/poll/download/size/scope-mutation APIs; API base URL/CORS/env example chưa triển khai theo phạm vi types lần này. Chi tiết và route mapping ở FRONTEND_PLAN mục 10.
-- **Tiếp theo:** `F1-02` NOT STARTED; dừng, không tự động triển khai.
-
-### [2026-10-13] [FRONTEND/F1-STAB] — Baseline Stabilization
-
-- **Trạng thái:** COMPLETED; F0-01 giữ COMPLETED, F1-01 chưa bắt đầu.
-- **Đã thực hiện:** Thêm default-export placeholder tối thiểu cho hai page.tsx; sửa use-mobile bằng useSyncExternalStore/matchMedia subscription, SSR snapshot false và cleanup listener. Không thay component/config/dependencies hay disable ESLint. Xác nhận Python 3.10.11 qua pyvenv.cfg/README/changelog và requirements hiện tại; khôi phục interpreter chính thức vào `.venv/runtime/python310`, backup cfg cũ và sửa home local; giữ nguyên site-packages. Không sửa FastAPI/database/RAG, không gọi provider.
-- **Files thay đổi:** `frontend/app/chat/[sessionId]/page.tsx`, `frontend/app/documents/page.tsx`, `frontend/hooks/use-mobile.ts`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-03-04.md` (archive hai entry cũ nguyên vẹn). Ignored local environment: `.venv/pyvenv.cfg`, cfg backup, runtime interpreter/archive; không commit môi trường.
-- **Kiểm thử:** `npm.cmd run build` PASS; `node node_modules/typescript/bin/tsc --noEmit --incremental false` sau build PASS; `npm.cmd run lint` PASS; Node inline hook SSR/snapshot/change/cleanup verification PASS; `git diff --check` PASS. Python version/prefix/SSL PASS 3.10.11 AMD64; `python -m pip check` PASS; requirements metadata/constraints PASS 18/18; import app/OpenAPI với network bị chặn PASS 11 paths/32 schemas. Browser E2E/backend full suite/cloud smoke NOT RUN. Groq=0, Gemini=0.
-- **Tồn đọng:** Không còn blocker stabilization. Local interpreter home gắn workspace hiện tại; đổi đường dẫn cần cấu hình lại. Chưa có API base URL/CORS/client/types/parser, Chat UI/Document Management; giới hạn contract ở F0 chưa thay đổi. Nhật ký giữ 15 entry, lịch sử P4-01/P3-04 đã archive.
-- **Tiếp theo:** `F1-01` NOT STARTED; dừng, không tự động chuyển task.
-
-### [2026-10-13] [FRONTEND/F0-01] — Baseline Audit
-
-- **Trạng thái:** COMPLETED — audit có evidence, baseline quality gates chưa đạt.
-- **Đã thực hiện:** Audit source/tree/config/scripts/git/env names và dependency thực cài; Next 16.4.0, React 19.3.0, TS 5.9.3, Tailwind 4.3.3, shadcn 4.21.4, 14 UI components. API/types/parser/business hooks và chat/documents routes là file rỗng. Đối chiếu FastAPI routes/Pydantic/SSE với scaffold, ghi bảng đã có/thiếu/giới hạn và đề xuất F1-01 tại FRONTEND_PLAN mục 8. Không đổi chức năng/component/config, không cài dependency, không sửa backend; giữ thay đổi Git sẵn có.
-- **Files thay đổi:** `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`.
-- **Kiểm thử:** `npm.cmd ls --depth=0` PASS; `npm.cmd run build` FAIL sau compile thành công, TS2306/TS2344 vì hai page.tsx rỗng; `node node_modules/typescript/bin/tsc --noEmit --incremental false` FAIL sau build (lần trước generated route types PASS, không đại diện kết quả cuối); `npm.cmd run lint` FAIL 1 error/0 warnings tại use-mobile.ts:14, react-hooks/set-state-in-effect. `.venv/Scripts/python.exe` để sinh app.openapi() với network chặn BLOCKED vì thiếu Python310 interpreter; source contract audit hoàn tất. UI/E2E/backend/live smoke NOT RUN; Groq=0, Gemini=0.
-- **Tồn đọng:** Chưa có API base URL/env example/CORS/proxy; history chỉ có citations, không có sources/ordinal mapping; stream không phát citation realtime; document list là array, upload/index đồng bộ, chưa có progress/download API/max-size contract. Sửa route/hook/interpreter cần phạm vi riêng; không che lỗi kiểm tra. Phần trạng thái cũ P5-04 đã đồng bộ với entry M-06/backend roadmap hiện có, không sửa PROJECT_LOG_V2.
-- **Tiếp theo:** `F1-01` NOT STARTED. Dừng sau F0-01 theo yêu cầu.
-
-### [2026-10-12] M-06 — Regression liên giai đoạn
-
-- **Trạng thái:** COMPLETED; workstream migration M-01…M-06 và roadmap V2 hiện tại COMPLETED.
-- **Đã thực hiện:** Audit coverage P2–P5 và bổ sung `verify_m06.py` làm gate xuyên giai đoạn trên FastAPI lifespan, MongoDB Atlas, Qdrant application collection và Gemini embedding thật. Verifier tạo đúng một session `SELECTED_DOCUMENTS` với whole-turn seed, dùng deterministic rewrite/generation để kiểm tra ổn định hai request `/chat` và `/chat/stream`: retrieval không thoát active version đã chọn, original query vẫn vào final prompt, JSON/SSE contract và usage đúng, SSE reconstruct đúng, sáu messages/request linkage/terminal status ổn định, JSON citation và terminal stream citation cùng truy ngược server source, guard được release. Script không sửa document/raw file/Qdrant point và cleanup session/messages chính xác. Thêm unit coverage cho SSE parser, scope và citation assertions; cập nhật README command/kết quả.
-- **Files thay đổi:** `backend/scripts/verify_m06.py`, `backend/tests/test_m06_verification.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** Live `verify_m06.py` — PASS 2 transports, 6 messages, 2 rewrite calls, 5 scoped sources mỗi transport, citation/persistence và cleanup; live read-only `smoke_provider_stream.py` — PASS 13 valid text deltas, usage present. Focused citation/scope/JSON/SSE/history tests PASS 42/42; toàn bộ unit/API/in-memory regression PASS 155/155; `compileall`, `pip check`, secret scan, README reference/fence check và `git diff --check` PASS. M-06 history retrieval eval với rewriter external thật — NOT RUN vì quyền chạy bị từ chối do nguy cơ gửi history/query payload sang provider; không tạo artifact và không đổi kết quả này thành PASS. Bằng chứng live P5-05 hiện có vẫn PASS 5/5.
-- **Tồn đọng / quyết định:** Không phát hiện regression runtime nên không sửa production code. Integrated verifier cố ý deterministic ở rewrite/generation để tránh quota và dữ liệu đi ra provider; provider transport được smoke riêng bằng prompt không nhạy cảm. Các giới hạn đã chốt vẫn còn: thiếu auth/multi-tenant, approximate budget, conservative rewrite guard, stale generation guard sau hard crash, chưa realtime stream citations và eval corpus nhỏ.
-- **Tiếp theo:** Không còn task chưa hoàn thành trong `PROJECT_LOG_V2.md`; chờ phạm vi mới được giao.
 
 ## 4. Lưu trữ nhật ký cũ (archive)
 

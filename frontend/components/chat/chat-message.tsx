@@ -1,6 +1,5 @@
 import { Bot, LoaderCircle, UserRound } from "lucide-react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { CitationContent } from "@/components/chat/citation-content"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -55,46 +54,7 @@ export function ChatMessage({ message }: { message: ChatViewMessage }) {
         {isUser ? (
           <p className="whitespace-pre-wrap">{message.content}</p>
         ) : message.content ? (
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-              ol: ({ children }) => (
-                <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>
-              ),
-              ul: ({ children }) => (
-                <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>
-              ),
-              blockquote: ({ children }) => (
-                <blockquote className="mt-3 border-l-2 border-primary/40 pl-3 text-muted-foreground">
-                  {children}
-                </blockquote>
-              ),
-              code: ({ children, className, ...props }) => (
-                <code
-                  className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)}
-                  {...props}
-                >
-                  {children}
-                </code>
-              ),
-              pre: ({ children }) => (
-                <pre className="my-3 overflow-x-auto rounded-lg bg-muted p-3 text-xs">{children}</pre>
-              ),
-              a: ({ children, href }) => (
-                <a
-                  href={href}
-                  className="font-medium underline underline-offset-4"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {children}
-                </a>
-              ),
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+          <CitationContent key={message.key} message={message} />
         ) : (
           <p className="text-muted-foreground">
             {message.status === "FAILED" ? "Không có nội dung trả lời." : "Đang chuẩn bị câu trả lời…"}

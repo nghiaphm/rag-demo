@@ -44,12 +44,12 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 | F2 — Layout/Design | COMPLETED | F2-01…F2-03 COMPLETED; interaction QA bị giới hạn bởi Browser plugin đã ghi |
 | F3 — Chat/SSE | COMPLETED | F3-01…F3-03 COMPLETED; mock stream/state/cancel regression PASS |
 | F4 — Sessions/History | COMPLETED | F4-01…F4-03 COMPLETED; scripted multi-turn HTTP mock PASS, live smoke chưa chạy |
-| F5 — Sources/Citations | NOT STARTED | |
-| F6 — Documents | NOT STARTED | |
+| F5 — Sources/Citations | COMPLETED | F5-01/F5-02 COMPLETED; callback/Markdown/history fixtures PASS; browser interaction BLOCKED |
+| F6 — Documents | COMPLETED | F6-01…F6-03 COMPLETED; protected-action/stale-state mocks PASS; live mutation chưa chạy |
 | F7 — UX/Resilience | NOT STARTED | |
 | F8 — Testing/E2E | NOT STARTED | |
 
-**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F4-03 — Multi-turn integration. **Task tiếp theo:** F5-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker implementation F4-03; scripted HTTP mock E2E/regression, build/typecheck/lint/contract/diff PASS. Browser/live smoke chưa chạy, cần public API base/CORS và quyền live provider riêng. Backend history không trả `sources`; pagination không có snapshot/cursor. Evidence mới ở mục 21.
+**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F6-03 — Versions/reindex/delete. **Task tiếp theo:** F7-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker implementation; protected-action/stale-state/mock/SSR regression và build/typecheck/lint/contract/diff PASS. Browser/live mutation smoke NOT RUN. API chưa có If-Match/atomic revision precondition; preflight stale check không thay thế transaction guard backend. Raw files giữ theo soft-delete policy. Evidence mới ở mục 26.
 
 ## 4. Roadmap và acceptance criteria
 
@@ -84,14 +84,14 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 
 ### F5 — Sources & Citations
 
-- [ ] **F5-01 — Source mapper:** mapping `[1]` → source position trong metadata của **đúng assistant message** (không phải `chunk_index`); lưu `document_id`, `version_id`, `chunk_id`, `file_name`, `page`; xác minh backend page convention 0/1-based. AC: test sparse/repeated/out-of-range citations; không tạo link giả.
-- [ ] **F5-02 — Citation UI:** clickable citations/source drawer, grouped file/page, state fallback khi metadata thiếu; Markdown text không làm mất citation. AC: click citation đúng nguồn; refresh/history vẫn hiển thị nếu backend persist sources.
+- [x] **F5-01 — Source mapper:** mapping `[1]` → source position trong metadata của **đúng assistant message** (không phải `chunk_index`); lưu `document_id`, `version_id`, `chunk_id`, `file_name`, `page`; xác minh backend page convention 0/1-based. AC: test sparse/repeated/out-of-range citations; không tạo link giả. Evidence mục 22: targeted 11/11, combined 91/91, PDF loader thực tế xác nhận page 0-based, build/typecheck/lint/contract/diff PASS; 0 provider calls.
+- [x] **F5-02 — Citation UI:** clickable citations/source drawer, grouped file/page, state fallback khi metadata thiếu; Markdown text không làm mất citation. AC: click citation đúng nguồn; refresh/history vẫn hiển thị nếu backend persist sources. Evidence mục 23: 10 citation UI fixtures trong full 101/101 regression, build/typecheck/lint/contract/diff PASS; browser click/keyboard/viewport BLOCKED, live smoke NOT RUN; history citations hiển thị không đoán ordinal.
 
 ### F6 — Document Management
 
-- [ ] **F6-01 — List/detail/status:** fetch/pagination/filter theo routes có thật; hiển thị document status và `active_version_id` riêng biệt. AC: loading/empty/error đúng.
-- [ ] **F6-02 — Upload/progress:** file type/size validation khớp backend, `multipart/form-data` đúng schema; phản hồi UPLOADED/PROCESSING/INDEXED/FAILED thực tế, không giả lập thành công. AC: mocked success/failure, một live file test khi được phép.
-- [ ] **F6-03 — Versions/reindex/delete:** update/version flows đúng backend contract, confirmations, idempotent delete semantics, preserve active version khi version mới thất bại; không tuyên bố raw files đã xóa nếu soft-delete. AC: tests cho protected actions và stale state.
+- [x] **F6-01 — List/detail/status:** fetch/pagination/filter theo routes có thật; hiển thị document status và `active_version_id` riêng biệt. AC: loading/empty/error đúng. Evidence mục 24: targeted 12/12, combined 113/113, build/typecheck/lint/contract/diff PASS; GET-only, 0 provider calls.
+- [x] **F6-02 — Upload/progress:** file type/size validation khớp backend, `multipart/form-data` đúng schema; phản hồi UPLOADED/PROCESSING/INDEXED/FAILED thực tế, không giả lập thành công. AC: mocked success/failure, một live file test khi được phép. Evidence mục 25: upload 13 tests trong full 126/126, build/typecheck/lint/contract/diff PASS; live file test NOT RUN (chưa có quyền), 0 provider calls.
+- [x] **F6-03 — Versions/reindex/delete:** update/version flows đúng backend contract, confirmations, idempotent delete semantics, preserve active version khi version mới thất bại; không tuyên bố raw files đã xóa nếu soft-delete. AC: tests cho protected actions và stale state. Evidence mục 26: 13 action tests trong full 139/139, build/typecheck/lint/contract/diff PASS; 0 live/provider mutations.
 
 ### F7 — UX & Resilience
 
@@ -507,3 +507,119 @@ Files changed cho F4-02: `frontend/lib/api/sessions.ts`, `frontend/lib/sessions/
 | `git diff --check` và whitespace file mới | PASS. |
 
 Files changed F4-03: `frontend/lib/chat/controller.ts`, `frontend/lib/sessions/history.ts`, `frontend/components/chat/{chat-preview,session-chat}.tsx`, `frontend/tests/multi-turn.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. **Blocker implementation:** không có. **F4 COMPLETED; F5-01 NOT STARTED; dừng sau F4-03.**
+
+## 22. Evidence F5-01 — Source mapper (2026-10-14)
+
+**COMPLETED.** Pure `mapMessageSources(message)` / `resolveCitationOrdinal(message, ordinal)` tạo derived UI data từ `key`, `messageId`, `role`, `content` và **sources của chính message đó**. Không global source cache hoặc lookup qua message/session khác; không đổi DTO, chat state, Markdown renderer hoặc backend.
+
+- Backend `citation_mapping.py` dùng `[n]` → `sources[n-1]`, bỏ invalid/out-of-range/ineligible references và deduplicate theo `chunk_id`, first-mention order. `rag/prompt.py` đánh số context từ 1; `rag/pipeline.py` tạo metadata sources theo đúng selected document order sau budget. `chunk_index` là vị trí chunk trong document, không phải citation ordinal.
+- Mapper giữ mỗi marker occurrence cùng exact text offsets và discriminated resolved/unavailable result; riêng danh sách citations deduplicate theo chunk ID. Không lọc/compact metadata trước khi resolve, nên sparse ordinals và source không đủ IDs không dịch vị trí các source sau. UUID/page/file-name eligibility theo backend; IDs được canonicalize, file name trim, page giữ nguyên. Invalid ordinal, missing metadata, out-of-range, ineligible source và user message có lý do rõ.
+- `MappedSource` giữ ordinal, `document_id`, `version_id`, `chunk_id`, `file_name`, `page` và `pdf_page_number`. `rag/loader.py` dùng `PyPDFLoader(mode='page')`; installed parser enumerate pages từ 0, truyền `page_number` vào metadata. Fixture tạo PDF 2 trang rồi chạy **load_document thực tế** xác nhận `[0,1]`. Chỉ file `.pdf` có display page = raw page + 1; Excel/text/unknown hoặc page null không suy đoán convention. API không expose PDF `page_label` (nhãn in trên trang).
+- Không có href/download/preview URL trong mapper; bỏ raw `source` path và không lấy IDs từ model text. History citations không có ordinal, nên không dùng vị trí mảng citations để tái dựng `[n]`; khi history sources rỗng, result là missing_metadata. F5-02 sẽ dùng mapper cho Markdown/source drawer và fallback; chưa triển khai UI.
+
+| Kiểm tra (frontend/) | Kết quả |
+| --- | --- |
+| `node --test tests/source-mapper.test.mjs` | PASS 11/11: sparse/repeated/out-of-range/unsafe ordinals, chunk_index độc lập, message isolation, history fallback, eligibility/no renumbering, duplicate chunks, raw/display PDF pages, no fake URL/user mapping; offline parity với backend và real PDF loader, network blocked. |
+| `node --test tests/*.test.mjs` | PASS 91/91 full regression; test assertion projection sau đó được làm rõ và targeted 11/11 rerun PASS. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings sau chỉnh assertion projection. |
+| `npm.cmd run build` | PASS, exit 0. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| `git diff --check` và whitespace file mới | PASS. |
+| Browser citation UI / live backend/provider smoke | NOT RUN; ngoài F5-01. Groq=0, Gemini=0. |
+
+Files changed: `frontend/lib/chat/source-mapper.ts`, `frontend/tests/source-mapper.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-02.md`. **Blocker implementation:** không có. **F5-02 NOT STARTED; dừng sau F5-01.**
+
+## 23. Evidence F5-02 — Citation UI (2026-10-14)
+
+**COMPLETED.** `ChatMessage` render assistant content bằng `CitationContent`, giữ user text nguyên vẹn. Rehype plugin biến `[n]` trong parsed Markdown text nodes thành citation triggers; bold/list/blockquote/GFM table giữ formatting và marker. Không xử lý marker trong link/code/pre, không rewrite raw answer hoặc dùng network chunk làm citation boundary; marker streaming chưa đủ `]` vẫn hiển thị text bình thường.
+
+- Mỗi `CitationMarker` resolve trực tiếp trên message hiện tại bằng F5-01 mapper. Resolved marker là labelled keyboard button/SheetTrigger, callback chọn source identity `(document_id, version_id, chunk_id, page)`. Không có global selection; drawer state nằm trong message-keyed component. Unresolved marker giữ text và explanation, không tạo link/button tới nguồn giả.
+- Sheet/shadcn hiện có cung cấp dialog, title/description và close control `Đóng`. Drawer full width trên mobile, tối đa 28rem trên desktop, body scroll riêng; nhóm theo document/version/file và page, nên file trùng tên/version khác không bị nhập nhằng. Click target đưa group/page/source được chọn lên đầu và highlight `Đang xem`, không đổi ordinal. Raw PDF page giữ nguyên; hiển thị page +1, non-PDF không suy đoán convention.
+- `buildCitationPanel` kết hợp mapped citations với persisted citations, deduplicate source identity. Citations có metadata IDs/file/page vẫn hiển thị sau history DTO restore; khi không có ordered sources, ghi `Trích dẫn đã lưu`, ordinal=null và hiện missing mapping fallback. Không ghép vị trí citations array với `[n]`; nếu message được cung cấp ordered metadata, inline markers resolve bình thường. Với REST history hiện tại, inline click mapping sau reload **chưa thể phục hồi** vì backend không persist/expose sources order.
+- Không thêm preview/download URL, fetch source endpoint, PDF viewer, localStorage, backend logic hoặc dependency. Source identity nằm trong expandable details, không expose raw filesystem path. Drawer báo chưa có preview/link thực khi backend không cung cấp.
+
+| Kiểm tra (frontend/) | Kết quả |
+| --- | --- |
+| `node --test tests/citation-ui.test.mjs` (lần đầu) | PASS 8/8; sau đó thêm 2 integration/streaming tests, được chạy trong full suite bên dưới. |
+| `node --test tests/*.test.mjs` | PASS 101/101 gồm 10 citation UI tests: exact click callback chọn nguồn của hai assistant, real ReactMarkdown/Rehype/SSR rendering, bold/list/quote/table/code/link behavior, group/version/page/selected identity, history DTO persisted citations/fallback, restored ordered metadata, dedupe/no false ordinal, ChatMessage assistant-only integration và partial marker completion. Đây là callback/SSR tests, không phải browser DOM click E2E. |
+| `npm.cmd run build` | PASS, exit 0. |
+| `npm.cmd exec tsc -- --noEmit` (sau build) | PASS, không diagnostics. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings sau bỏ unused test import. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser desktop/mobile click, Escape, focus return, keyboard traversal/visual QA | BLOCKED/NOT RUN: Browser skill đã đọc và bootstrap đã thử; công cụ lỗi `Cannot redefine property: process` trước khi có browser session. Không cài automation khác để thay thế và không đánh dấu PASS. |
+| Live backend/provider citation smoke | NOT RUN; Groq=0, Gemini=0. |
+
+Files changed F5-02: `frontend/components/chat/{chat-message,citation-content}.tsx`, `frontend/lib/chat/{citation-panel,citation-markdown}.ts`, `frontend/tests/citation-ui.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. **Implementation blocker:** không có; browser QA còn BLOCKED. **F5 COMPLETED; F6-01 NOT STARTED; dừng sau F5-02.**
+
+## 24. Evidence F6-01 — List/detail/status (2026-10-14)
+
+**COMPLETED.** `/documents` truyền public API base cho Documents UI, bỏ fixture data khỏi live list/detail. Domain client chỉ hỗ trợ `GET /documents?offset={offset}&limit={limit}&include_deleted={boolean}` và `GET /documents/{document_id}`. Runtime-check HTTP 200, plain array/list và detail/versions DTO, enum/count/date/optional-nullable fields, ID ownership, response size/duplicate IDs và deleted filter. Không giả items/total envelope hoặc status/search route.
+
+- Source contract: `api/documents.py` offset>=0, limit 1..500 (default 100), include_deleted=false; repository sort created_at DESC, exclude DELETED mặc định. UI dùng page size 20, accumulates theo backend order và next offset là số items thực trả về. `hasMore` chỉ là tín hiệu page đầy đủ limit; trang cuối đúng limit cần thêm GET rỗng để kết thúc. Không hiển thị tổng số giả hoặc tự động tải mọi trang.
+- `DocumentsController` / `useDocuments` giữ list/detail state riêng, AbortController cleanup, immutable snapshots và request-identity guards. Đổi include_deleted/Làm mới reset pages/selection/detail, abort request cũ; chọn tài liệu xóa detail cũ trước loading. Response đến muộn không ghi đè filter hoặc selected document mới. Error tải thêm giữ items đã tải và explicit retry dùng cùng offset, không duplicate submit/retry loop. Overlap document IDs giữa pages bị báo lỗi; offset API không có snapshot nên concurrent changes vẫn là giới hạn backend.
+- List có loading/empty/error/retry, checkbox filter thật `Bao gồm tài liệu đã xóa`, Tải thêm và count `đã tải` không phải total. Detail có idle chọn tài liệu, loading, 404 missing, safe error/retry và ready từ GET; khi thiếu base URL, UI fail-closed và không phát request. Chưa có server status filter nên không thêm status query giả.
+- Status badge giữ đủ UPLOADED/PROCESSING/INDEXED/FAILED/DELETED. List/detail hiển thị status và active_version_id riêng, versions có status và active marker từ đúng ID. PROCESSING/FAILED không tự xóa active cũ, INDEXED không suy diễn có active nếu ID null; readiness notice yêu cầu active version thật INDEXED. DELETED/cleanup_pending có thông báo riêng. Làm mới chủ động, không tạo polling/progress endpoint.
+- Tận dụng Card/Badge/Button/dialogs hiện có, responsive list/detail layout. Upload/new-version/delete dialogs vẫn placeholder với mutation CTA disabled, re-index disabled; không triển khai F6-02/F6-03, không thêm dependency, không đổi backend/storage/schema/RAG.
+
+| Kiểm tra (frontend/) | Kết quả |
+| --- | --- |
+| `node --test tests/documents.test.mjs` | PASS 12/12: exact GET query/routes/plain array, input/response guards, deleted filter, optional/nullables/old active, safe mock 404/503/no mutations/retries, pagination empty final probe, filter abort, load-more retry/duplicate guard, stale selection, error recovery/dispose, SSR loading/empty/error/config, independent status/active/cleanup và overlap pages. |
+| `node --test tests/*.test.mjs` | PASS 113/113 regression; mock/offline fixtures only. |
+| `npm.cmd run build` | PASS, exit 0; `/documents` prerender static shell, data load phía client. |
+| `npm.cmd exec tsc -- --noEmit` (sau build) | PASS, exit 0; validator narrowing đã sửa đúng shape return. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser DOM/viewport interactions, live document GET/CORS/cloud smoke | NOT RUN; không dùng SSR tests làm bằng chứng browser/live API. Groq=0, Gemini=0. |
+
+Files changed F6-01: `frontend/lib/api/documents.ts`, `frontend/lib/documents/controller.ts`, `frontend/hooks/use-documents.ts`, `frontend/components/documents/documents-preview.tsx`, `frontend/app/documents/page.tsx`, `frontend/tests/documents.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và archive `docs/changelog/phase-02.md`. **Implementation blocker:** không có. **F6-02 NOT STARTED; dừng sau F6-01.**
+
+## 25. Evidence F6-02 — Upload/progress (2026-10-14)
+
+**COMPLETED.** Thêm create-document upload dialog từ UI Documents dùng `POST /documents/upload`, `FormData` chỉ chứa field `file`, giữ File/name/content; không tự đặt Content-Type để browser sinh multipart boundary. HTTP 201 và `DocumentIndexInfo` được runtime-check, giữ document/version/job IDs, file name, num_chunks, optional status và activated riêng biệt. Không triển khai PUT version/re-index/delete thuộc F6-03.
+
+- Source audit: `api/documents.py` / `ingestion.py` kiểm tra tên file/basename, suffix từ loader và content không rỗng; `_process` mark PROCESSING, parse/embed/index/verify rồi activate trước response. `_index_response` hiện trả schema default INDEXED; ingestion failure là HTTPException, có thể đã persist FAILED document/version nhưng error không trả document IDs. Không có upload max-byte setting, polling/job progress route, hoặc upload-byte progress contract.
+- `validateUploadFile` chấp nhận `.pdf/.md/.markdown/.txt/.xlsx` không phân biệt case, reject empty/invalid filename/path/extension và size<=0. MIME không được dùng như server policy, không áp max bytes tùy tiện; UI nói rõ dịch vụ chưa công bố max dung lượng. Offline fixture so khớp supported extensions và filename eligibility bằng helper FastAPI thật với network disabled.
+- `UploadController` dùng immutable external-store snapshots, guard submit/file replacement trong request, AbortSignal cleanup và không tự retry. Pending là local `submitting`, không gán giả backend UPLOADED/PROCESSING hoặc phần trăm. Response giữ status thật; optional status thiếu vẫn unknown. Chỉ status INDEXED + activated=true có thông báo index/kích hoạt. UPLOADED/PROCESSING/FAILED fixtures hiển thị status được trả về, không biến thành success hoặc polling; runtime hiện tại đồng bộ thường trả final INDEXED.
+- HTTP error hiển thị safe request failure, không giả document FAILED khi chưa có DTO. Timeout/network/5xx/malformed response là uncertain outcome; nút gửi không tự bật retry request đã gửi, hướng người dùng làm mới list trước khi chọn/gửi lại chủ động. Không hứa backend rollback hoặc request chưa đến server. Client ingestion wait deadline 5 phút thay default REST 30s, gồm upload/body read; đây là policy chờ của frontend, không phải server timeout/job cancellation.
+- Dialog có labelled file input, size/name, aria-busy/status/error, close/submit controls, nút Làm mới danh sách và Dừng chờ phản hồi. Dừng chờ/unmount abort chờ phía client và chuyển uncertain ngay; late success không kích hoạt callback/refresh. Sau valid receipt, mounted UI refresh list bằng GET; failure/uncertain dùng refresh chủ động. New-version/delete placeholders vẫn giữ; không sửa backend/dependencies/schema/RAG.
+
+| Kiểm tra (frontend/) | Kết quả |
+| --- | --- |
+| `node --test tests/document-upload.test.mjs tests/documents.test.mjs` (trước thêm late-success test) | PASS 24/24, gồm 12 upload + 12 documents. |
+| `node --test tests/*.test.mjs` (final) | PASS 126/126, gồm 13 upload tests: extension/size/no max/MIME invention, exact multipart/field/content/HTTP201/deadline, browser-generated boundary, invalid-file no POST, malformed/non201 guards, optional status, duplicate submit, returned status/activation, safe HTTP failure/no retry, uncertain outcomes, navigation abort/late success và SSR no fake percent/backend state; offline backend filename parity. |
+| `npm.cmd run build` | PASS, exit 0. |
+| `npm.cmd exec tsc -- --noEmit` (sau build) | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser picker/form/keyboard/mobile/CORS interaction | NOT RUN; SSR/controller mocks không chứng minh browser/live upload. |
+| Một live file upload/index/embed/storage smoke | NOT RUN — chưa được cho phép gọi provider hoặc mutate live test document. Groq=0, Gemini=0; không tạo live test artifact. |
+
+Files changed F6-02: `frontend/lib/api/documents.ts`, `frontend/lib/documents/{upload-validation,upload-controller}.ts`, `frontend/components/documents/{document-upload,documents-preview}.tsx`, `frontend/tests/document-upload.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. **Implementation blocker:** không có. **F6-03 NOT STARTED; dừng sau F6-02.**
+
+## 26. Evidence F6-03 — Versions/reindex/delete (2026-10-14)
+
+**COMPLETED.** Documents detail dùng `DocumentActions` với explicit confirmation cho version/re-index/delete. Client bổ sung `PUT /documents/{id}` multipart field file, `POST /documents/{id}/re-index` không body và `DELETE /documents/{id}`. Update/reindex yêu cầu HTTP201, runtime-check ingestion DTO và đúng document ID; chia sẻ validation/FormData/deadline 5 phút với F6-02. Delete giữ HTTP200/202 riêng với response DTO, runtime-check cleanup_pending/status/raw-retention/retrieval-ineligible semantics; không giả raw files đã xóa.
+
+- Backend source xác nhận update tạo immutable version, reindex đọc raw file của active version; ingestion activate sau index/verification và failure không promote candidate. DocumentService.delete unpublish trước vector cleanup, giữ raw files/history, trả cleanup_pending=true nếu vector failure; DELETE lại idempotent để retry cleanup. UI không có rollback/activate-old-version API giả.
+- `DocumentActionsController.run` chỉ chạy với confirmed=true; lock trước await, không cho duplicate/mutation khác trong cùng controller. Preflight GET kiểm tra document ID/updated_at/status/active ID/version_count/file name so với snapshot lúc mở confirmation. Stale snapshot refresh detail rồi dừng mutation, yêu cầu xem lại/xác nhận mới. Deleted/PROCESSING không được update/reindex; reindex cần active ID. Backend không có atomic If-Match nên concurrent changes giữa preflight và mutation vẫn có thể xảy ra; client không tuyên bố đã khóa backend.
+- Sau mutation response **hoặc lỗi đã gửi**, GET detail lại để reconcile từ backend. Không optimistic-promote result.version_id, không xóa active cũ khi candidate fail. Mock failure có persisted FAILED version và old active giữ nguyên. Receipt và refreshError tách riêng: GET lỗi vẫn giữ receipt nhưng nói detail là lần tải trước. Request failure sau gửi là uncertain, không tự retry; abort/navigation giữ uncertainty và late result không apply.
+- `DocumentsController.reconcile` chỉ cập nhật selected ID hiện tại, abort competing list/detail reads, cập nhật list summary hoặc bỏ soft-deleted item khỏi include_deleted=false list, giữ deleted detail/audit cho người dùng. Stale selection/list response không ghi đè detail mới. Offset giảm khi item bị bỏ; các giới hạn offset pagination/concurrent changes từ F6-01 vẫn áp dụng.
+- Confirmation hiển thị filename/document/active version snapshot và ảnh hưởng thực tế. Version có validated file input; re-index nói tạo version mới từ raw active; delete nói unpublish/vector cleanup/raw retention. Receipt202 báo pending, toolbar của deleted+pending cho `Thử cleanup lại` với confirmation mới; deleted+complete disable delete. Không polling/retry tự động. Stop waiting không đảm bảo hủy server operation. Dialog có title/description/close controls, safe status/error feedback.
+- Không sửa FastAPI/business logic, database/storage/RAG hoặc dependency. Live mutation/provider smoke chưa được cho phép và không chạy; không tạo/xóa test data thật.
+
+| Kiểm tra (frontend/) | Kết quả |
+| --- | --- |
+| `node --test tests/*.test.mjs` | PASS 139/139 gồm 13 document-action tests: exact PUT multipart/POST re-index/DELETE routes; ownership/HTTP/raw-policy guards; one-attempt conflict handling; explicit confirmation; stale revision/active/status/count; deleted/processing/no-active protection; failed-version preserve active; authoritative reconciliation; repeated DELETE202→200 with retained files/zero chunks; duplicate/abort/late result; refresh failure; stale selection/list isolation và SSR soft-delete semantics. |
+| `npm.cmd run build` | PASS, exit 0. |
+| `npm.cmd exec tsc -- --noEmit` (sau build) | PASS, exit 0. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser confirmation/click/Escape/focus/mobile interaction | NOT RUN; callback/controller/SSR tests không chứng minh browser DOM interaction. |
+| Live version/reindex/delete/storage/provider smoke | NOT RUN; chưa được cho phép live mutation/provider. Groq=0, Gemini=0. |
+
+Files changed F6-03: `frontend/lib/api/documents.ts`, `frontend/lib/documents/{actions-controller,controller}.ts`, `frontend/components/documents/{document-actions,documents-preview}.tsx`, `frontend/tests/document-actions.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. **Implementation blocker:** không có. **F6 COMPLETED; F7-01 NOT STARTED; dừng sau F6-03.**
