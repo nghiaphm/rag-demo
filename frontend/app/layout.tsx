@@ -24,6 +24,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || null;
   return (
     <html
       lang="vi"
@@ -36,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Chuyển đến nội dung chính
         </a>
-        <AppShell>{children}</AppShell>
+        <AppShell apiBaseUrl={apiBaseUrl}>{children}</AppShell>
       </body>
     </html>
   );

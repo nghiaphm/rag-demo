@@ -4,11 +4,11 @@
 
 ## 1. Trạng thái gần nhất
 
-- **Giai đoạn:** Frontend F0/F1/F2/F3 COMPLETED; backend roadmap giữ nguyên.
-- **Task vừa hoàn thành:** `[FRONTEND/F3-03]` — Cancel/recovery, 2026-10-14.
-- **Task tiếp theo:** `F4-01` — NOT STARTED; chờ giao việc riêng.
-- **Blocker:** Không có cho implementation F3-03; browser live SSE/cancel cần API base URL/CORS phù hợp và chưa chạy.
-- **Lần cập nhật:** Controller cancel/recovery fixtures 8/8, combined frontend 58/58, 45-schema contract, build/typecheck/lint/diff PASS; chi tiết FRONTEND_PLAN mục 18. Groq/Gemini live calls = 0.
+- **Giai đoạn:** Frontend F0/F1/F2/F3/F4 COMPLETED; backend roadmap giữ nguyên.
+- **Task vừa hoàn thành:** `[FRONTEND/F4-03]` — Multi-turn integration, 2026-10-14.
+- **Task tiếp theo:** `F5-01` — NOT STARTED; chờ giao việc riêng.
+- **Blocker:** Không có cho implementation F4-03; browser/live smoke chưa chạy, cần base URL/CORS và quyền live provider. History thiếu `sources`/snapshot pagination.
+- **Lần cập nhật:** Full frontend regression 80/80 (9 multi-turn tests), 45-schema contract, build/typecheck/lint/diff PASS; chi tiết FRONTEND_PLAN mục 21. Groq/Gemini live calls = 0.
 
 > **Quyết định hạ tầng:** MongoDB Atlas cloud, không dùng MongoDB container; Qdrant Cloud (người dùng đã tạo cluster), không dùng Qdrant Docker; raw files lưu local. IP Access List Atlas hiện `0.0.0.0/0` theo xác nhận người dùng — chỉ phù hợp tạm cho development, cần thu hẹp khi có thể. Agent cần kiểm tra `QDRANT_URL` và `QDRANT_API_KEY` đã có trong `.env`, không in/copy giá trị vào log; `.env.example` chỉ dùng placeholder. Không lưu MongoDB URI/Qdrant URL thực/credentials trong file này. Đây là cập nhật tài liệu, **không phải bằng chứng P1-02 hoặc M-02 đã triển khai**.
 
@@ -24,6 +24,33 @@
 ## 3. Nhật ký thay đổi (mới nhất ở trên)
 
 <!-- Agent: chèn entry mới bên dưới dòng này. Không coi template hoặc ghi chú tạo file là bằng chứng triển khai. -->
+
+### [2026-10-14] [FRONTEND/F4-03] — Multi-turn integration
+
+- **Trạng thái:** COMPLETED; F4 COMPLETED, F5-01 chưa bắt đầu.
+- **Đã thực hiện:** Key workspace/session boundary, capture active turn cho SSE callbacks và bỏ late/aborted/terminal events; unmount abort stream/history read và chặn stale URL replace. Reuse backend session ID, reject reused request/message IDs. Sau terminal đọc paginated persisted history, đối chiếu IDs/request/role/content/status/model/usage/error; success reconcile backend citations và giữ live sources theo message ID. Lỗi xác minh giữ streamed terminal/content, báo safe warning/link history, unlock composer, không retry request. Tách trạng thái verification khỏi Stop. Dùng chung history loader; không sửa backend/thêm dependency.
+- **Files thay đổi:** `frontend/lib/chat/controller.ts`, `frontend/lib/sessions/history.ts`, `frontend/components/chat/{chat-preview,session-chat}.tsx`, `frontend/tests/multi-turn.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ các thay đổi F4-01/F4-02 sẵn có.
+- **Kiểm thử:** `node --test tests/*.test.mjs` PASS 80/80 gồm 9 multi-turn tests; 3-turn production-controller/REST/SSE/parser/HTTP mock E2E có refresh/pagination/distinct IDs, switching/late callbacks và persistence guards. Contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Browser DOM E2E/live backend persistence/provider smoke NOT RUN; chưa có quyền live provider. Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Mock persisted messages không xác minh MongoDB thật. Offset pagination không có snapshot, session dài cần đọc nhiều pages sau terminal; history thiếu sources/ordinal mapping. Cancel/disconnect chưa terminal chờ mở lại để đọc persisted cleanup; không suy diễn thành công.
+- **Tiếp theo:** `F5-01` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-14] [FRONTEND/F4-02] — History/pagination
+
+- **Trạng thái:** COMPLETED; F4 IN PROGRESS, F4-03 chưa bắt đầu.
+- **Đã thực hiện:** Thêm runtime-validated message page client và history controller tự tải đủ offset/limit pages, reject mixed-session/discontinuous/duplicate/incomplete data rồi stable-sort `(sequence, message_id)`. Dynamic session route chỉ dựng Chat UI sau session lookup và full history load; retry/refresh thay state từ backend, không dùng localStorage. Chat controller nhận initial messages; lượt đầu từ `/chat` thay URL bằng backend session ID sau terminal để route canonical tải history. Mapping giữ content/status/citations/model/usage/IDs nhưng không tự dựng `sources` vì history contract không có field này. Không F4-03/backend/dependency mới.
+- **Files thay đổi:** `frontend/lib/api/sessions.ts`, `frontend/lib/sessions/history.ts`, `frontend/hooks/use-sessions.ts`, `frontend/lib/chat/controller.ts`, `frontend/components/chat/{chat-preview,session-chat,chat-message}.tsx`, `frontend/tests/sessions.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`; giữ các thay đổi F4-01 sẵn có.
+- **Kiểm thử:** targeted session/history mock API PASS 13/13; combined API/parser/stream/chat/session PASS 71/71; contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Live browser refresh/navigation/CORS/backend/provider smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Browser runtime cần `NEXT_PUBLIC_API_BASE_URL` và backend CORS phù hợp. History REST không trả sources nên refresh chưa thể dựng source metadata/citation ordinal; multi-turn switching/leak validation thuộc F4-03.
+- **Tiếp theo:** `F4-03` NOT STARTED; dừng, không tự động triển khai.
+
+### [2026-10-14] [FRONTEND/F4-01] — Session list/New Chat
+
+- **Trạng thái:** COMPLETED; F4 IN PROGRESS, F4-02/F4-03 chưa bắt đầu.
+- **Đã thực hiện:** Thêm typed/runtime-validated REST list/create/get session clients, external-store hooks/controllers có abort cleanup và safe states. Sidebar tải first page 50 phiên, có New Chat POST một lần rồi route bằng backend ID và link mở session, không nhập/tự sinh UUID. Dynamic route validate ID cục bộ, GET session và hiển thị riêng invalid, 404/410, API error/retry, missing config trước Chat UI. Không history/localStorage/title/delete/scope mutation, backend change hoặc dependency mới.
+- **Files thay đổi:** `frontend/lib/api/sessions.ts`, `frontend/lib/sessions/controller.ts`, `frontend/hooks/use-sessions.ts`, `frontend/components/layout/{app-shell,session-navigation}.tsx`, `frontend/components/chat/session-chat.tsx`, `frontend/app/{layout,chat/[sessionId]/page}.tsx`, `frontend/tests/sessions.test.mjs`, `FRONTEND_PLAN.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
+- **Kiểm thử:** targeted session mock API PASS 7/7; combined API/parser/stream/chat/session PASS 65/65; contract verifier PASS 45 schemas; build/typecheck/lint/diff/new-file whitespace PASS. Live browser session/CORS/backend/provider smoke NOT RUN; Groq=0, Gemini=0.
+- **Tồn đọng / blocker:** Không blocker implementation. Browser runtime cần `NEXT_PUBLIC_API_BASE_URL` và backend CORS phù hợp. Chỉ first page hiển thị; history/pagination/session refresh thuộc F4-02, multi-turn switching thuộc F4-03.
+- **Tiếp theo:** `F4-02` NOT STARTED; dừng, không tự động triển khai.
 
 ### [2026-10-14] [FRONTEND/F3-03] — Cancel/recovery
 
@@ -132,33 +159,6 @@
 - **Kiểm thử:** Live `verify_m06.py` — PASS 2 transports, 6 messages, 2 rewrite calls, 5 scoped sources mỗi transport, citation/persistence và cleanup; live read-only `smoke_provider_stream.py` — PASS 13 valid text deltas, usage present. Focused citation/scope/JSON/SSE/history tests PASS 42/42; toàn bộ unit/API/in-memory regression PASS 155/155; `compileall`, `pip check`, secret scan, README reference/fence check và `git diff --check` PASS. M-06 history retrieval eval với rewriter external thật — NOT RUN vì quyền chạy bị từ chối do nguy cơ gửi history/query payload sang provider; không tạo artifact và không đổi kết quả này thành PASS. Bằng chứng live P5-05 hiện có vẫn PASS 5/5.
 - **Tồn đọng / quyết định:** Không phát hiện regression runtime nên không sửa production code. Integrated verifier cố ý deterministic ở rewrite/generation để tránh quota và dữ liệu đi ra provider; provider transport được smoke riêng bằng prompt không nhạy cảm. Các giới hạn đã chốt vẫn còn: thiếu auth/multi-tenant, approximate budget, conservative rewrite guard, stale generation guard sau hard crash, chưa realtime stream citations và eval corpus nhỏ.
 - **Tiếp theo:** Không còn task chưa hoàn thành trong `PROJECT_LOG_V2.md`; chờ phạm vi mới được giao.
-
-### [2026-10-12] P5-06 — Final docs
-
-- **Trạng thái:** COMPLETED; Giai đoạn 5 COMPLETED.
-- **Đã thực hiện:** Đối chiếu README với routes, Pydantic JSON/SSE contract, settings, history loader, context budget, query rewriter, shared RAG pipeline và evaluation runner hiện tại. Bổ sung luồng history-aware end-to-end từ MongoDB history/scope qua conditional rewrite, active-version Qdrant filter, budgeted prompt đến JSON/SSE/citation; thêm `/chat/stream` vào API table, `STREAM_TIMEOUT_SECONDS`, ví dụ persistent multi-turn, quy tắc server-owned history/scope, unit/focused/cloud smoke/evaluation commands và project tree P5. Làm rõ first-run/re-run/retrieval-only eval, quota behavior, external-provider data boundary và các giới hạn scale, detector/grounding, selected scope, version snapshot, realtime SSE citation, stale guard và heuristic eval. Không thay đổi runtime code hay API.
-- **Files thay đổi:** `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** README validation — PASS: 34 code fences cân bằng, đủ 8 section/marker bắt buộc, 9/9 referenced P5 files tồn tại, không còn marker tài liệu cũ; toàn bộ unit/API/in-memory regression PASS 152/152; `compileall`, `pip check`, `git diff --check` PASS. Không chạy lại live cloud smoke vì task chỉ thay tài liệu; dùng đúng bằng chứng live P5-04/P5-05 đã lưu và không đổi code/config.
-- **Tồn đọng / quyết định:** Giai đoạn 5 đã hoàn thành nhưng các giới hạn trong README vẫn áp dụng: token estimate xấp xỉ, lexical detector/guard bảo thủ, long-session loader chưa summary, public API chưa đổi `SELECTED_DOCUMENTS`, SSE chưa phát realtime verified citations, stale guard sau hard crash, thiếu auth/multi-tenant và eval corpus nhỏ. `M-06` vẫn IN PROGRESS; không tự động nghiệm thu trong task tài liệu này.
-- **Tiếp theo:** `M-06` — chờ giao việc riêng để chạy/đối chiếu regression liên giai đoạn và quyết định trạng thái cuối.
-
-### [2026-10-12] P5-05 — Evaluation
-
-- **Trạng thái:** COMPLETED; Giai đoạn 5 IN PROGRESS.
-- **Đã thực hiện:** Thêm golden set 5 nhóm pronoun/follow-up, topic switch, long session, out-of-document và cross-document; runner chạy paired baseline không history với history-aware trên collection Qdrant eval cô lập. Tách production pipeline thành shared component seam để evaluation dùng đúng budget/rewrite/retrieval/prompt/generation runtime. Báo cáo ghi retrieval hit/recall, fact coverage, faithfulness proxy, fallback/referent accuracy, budget, latency và rewrite/generation tokens. Provider lỗi có retry hữu hạn, chỉ lưu loại lỗi; `--retrieval-only` cho phép kiểm tra retrieval/budget/rewrite khi quota generation bị chặn. Dependent query phải gọi rewriter; grounding rejection/timeout được chấp nhận như safe fallback nhưng vẫn phải độc lập vượt retrieval/answer gates.
-- **Files thay đổi:** `backend/app/rag/pipeline.py`, `backend/evaluation/history_golden_set.json`, `backend/evaluation/history_eval.py`, `backend/evaluation/results/p5_history_eval.json`, `backend/evaluation/results/p5_history_retrieval.json`, `backend/scripts/eval_history_cli.py`, `backend/tests/test_history_evaluation.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** Focused evaluation/RAG/rewrite/budget PASS 25/25; toàn bộ unit/API/in-memory regression PASS 152/152. Live retrieval-only PASS 5/5 executions, retrieval hit/recall `1.0`, mọi budget hợp lệ; referent answer accuracy là `null` vì mode này không generation. Live paired generation PASS 5/5: baseline và history-aware retrieval hit/recall, answer relevance, faithfulness proxy, fallback accuracy đều `1.0`; referent accuracy `1.0`; history-aware delta trung bình `+5873.7 ms`, tổng `+4120` tokens. Long-session rewrite timeout và cross-document grounding rejection fallback nguyên query an toàn rồi vẫn PASS. Không re-index application collection, không ghi MongoDB và không in credentials/raw provider response.
-- **Tồn đọng / quyết định:** Corpus chỉ có 5 history cases và metrics grounding/fact coverage là heuristic, không thay thế human/LLM judge. Baseline đã retrieval đúng toàn bộ in-document cases trên corpus nhỏ nên lần chạy này không cho thấy uplift retrieval; giá trị history được xác minh qua referent answer và behavior rewrite. Latency/token phụ thuộc provider và có thể biến động giữa runs. `M-06` giữ IN PROGRESS đến final cross-phase audit ở P5-06.
-- **Tiếp theo:** `P5-06` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-06 hoặc hoàn tất M-06.
-
-### [2026-10-12] P5-04 — RAG integration
-
-- **Trạng thái:** COMPLETED; Giai đoạn 5 IN PROGRESS.
-- **Đã thực hiện:** Thay hai nhánh dựng context riêng bằng shared `PreparedRagStream` builder cho `/chat` và `/chat/stream`. Với session, runtime tải default whole-turn history và scope từ MongoDB, resolve `ALL_ACTIVE`/`SELECTED_DOCUMENTS` thành snapshot active version IDs rồi filter Qdrant; document missing/deleted/inactive bị loại. Builder budget system/history/ranked chunk blocks/original query/output reserve; conditional rewriter chỉ đổi query gửi retrieval, generation luôn nhận original query. History được ghi rõ chỉ để resolve tham chiếu, không phải nguồn citation; ordinal của chunk sau budget vẫn khớp source metadata để map Qdrant chunk → Mongo active version. Non-stream chuẩn hóa usage provider giống stream.
-- **Files thay đổi:** `backend/app/rag/prompt.py`, `backend/app/rag/pipeline.py`, `backend/app/api/chat.py`, `backend/tests/test_rag_integration.py`, `backend/tests/test_chat_persistence.py`, `backend/tests/test_chat_stream.py`, `backend/scripts/smoke_rag_integration.py`, `README.md`, `PROJECT_LOG_V2.md`, `CURRENT_CHANGE.md`, `docs/changelog/phase-02.md`.
-- **Kiểm thử:** Focused scope/budget/rewrite/retriever/JSON/SSE — PASS 48/48; toàn bộ unit/API/in-memory regression — PASS 147/147; `compileall`, Python 3.10.11 và `pip check` — PASS. Live Atlas/Qdrant scoped smoke — PASS 1 active version, 5 sources, 1 whole history turn, citation provenance và exact cleanup. Live `/chat` — PASS HTTP 200/COMPLETED/5 sources. Live `/chat/stream` lần đầu terminal `RAG_STREAM_ERROR` an toàn do provider tạm thời; retry hữu hạn PASS HTTP 200, 204 deltas, terminal `done`, 5 sources. Không in credential/raw provider response.
-- **Tồn đọng / quyết định:** Context token count vẫn là xấp xỉ. Scope được snapshot theo active versions lúc prepare; version đổi giữa prepare và provider completion không làm nới scope nhưng có thể khiến response dựa trên version vừa hết active. Streaming realtime citations vẫn rỗng theo contract citation-before-delta hiện tại; terminal persistence recompute citations từ answer/source. Multi-turn quality/eval, topic switching và long-session comparison thuộc P5-05.
-- **Tiếp theo:** `P5-05` — chưa bắt đầu; chờ giao việc riêng. Không tự động triển khai P5-05.
 
 ## 4. Lưu trữ nhật ký cũ (archive)
 

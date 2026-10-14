@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { AlertCircle, MessageSquareText } from "lucide-react"
 
 import { ChatComposer } from "@/components/chat/chat-composer"
@@ -8,8 +10,9 @@ import { ChatMessage } from "@/components/chat/chat-message"
 import { Badge } from "@/components/ui/badge"
 import { createChatStreamClient } from "@/lib/api/chat"
 import { createApiClient } from "@/lib/api/client"
-import { createSession } from "@/lib/api/sessions"
-import { ChatController } from "@/lib/chat/controller"
+import { createSession, listSessionMessages } from "@/lib/api/sessions"
+import { historyMessageToViewMessage, loadMessageHistory } from "@/lib/sessions/history"
+import { ChatController, type ChatViewMessage } from "@/lib/chat/controller"
 
 function EmptyChat() {
   return (
@@ -25,7 +28,17 @@ function EmptyChat() {
   )
 }
 
-function ChatWorkspace({ apiBaseUrl, initialSessionId }: { apiBaseUrl: string; initialSessionId: string | null }) {
+function ChatWorkspace({
+  apiBaseUrl,
+  initialSessionId,
+  initialMessages,
+}: {
+  apiBaseUrl: string
+  initialSessionId: string | null
+  initialMessages: readonly ChatViewMessage[]
+}) {
+  const router = useRouter()
+  const mounted = useRef(false)
   const [question, setQuestion] = useState("")
   const [controller] = useState(() => {
     const api = createApiClient({ baseUrl: apiBaseUrl })
@@ -33,18 +46,33 @@ function ChatWorkspace({ apiBaseUrl, initialSessionId }: { apiBaseUrl: string; i
     return new ChatController({
       createSession: (signal) => createSession(api, {}, signal),
       stream: (payload, options) => streamClient.stream(payload, options),
-    }, initialSessionId)
+      loadHistory: async (id, signal) => (await loadMessageHistory(id, {
+        list: (sessionId, query, pageSignal) => listSessionMessages(api, sessionId, query, pageSignal),
+      }, signal)).map(historyMessageToViewMessage),
+    }, initialSessionId, initialMessages)
   })
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getSnapshot
   )
-  useEffect(() => () => controller.dispose(), [controller])
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      controller.dispose()
+    }
+  }, [controller])
 
   function submit() {
     if (!question.trim()) return
-    void controller.submit(question)
+    const hadSession = controller.getSnapshot().sessionId !== null
+    void controller.submit(question).then((accepted) => {
+      const sessionId = controller.getSnapshot().sessionId
+      if (mounted.current && accepted && !hadSession && sessionId && !controller.getSnapshot().persistenceError) {
+        router.replace(`/chat/${encodeURIComponent(sessionId)}`)
+      }
+    })
     setQuestion("")
   }
 
@@ -85,8 +113,21 @@ function ChatWorkspace({ apiBaseUrl, initialSessionId }: { apiBaseUrl: string; i
           onSubmit={submit}
           onStop={() => controller.stop()}
           disabled={state.isGenerating}
-          isGenerating={state.isGenerating}
+          isGenerating={state.isGenerating && !state.isVerifyingHistory}
         />
+        {state.isVerifyingHistory && (
+          <p role="status" className="border-t p-4 text-sm text-muted-foreground">Đang xác minh lịch sử đã lưu…</p>
+        )}
+        {state.persistenceError && (
+          <div role="alert" className="border-t p-4 text-sm text-destructive">
+            <p>{state.persistenceError}</p>
+            {state.sessionId && (
+              <Link className="mt-2 inline-block underline" href={`/chat/${encodeURIComponent(state.sessionId)}`}>
+                Mở lịch sử đã lưu
+              </Link>
+            )}
+          </div>
+        )}
       </div>
     </section>
   )
@@ -95,9 +136,11 @@ function ChatWorkspace({ apiBaseUrl, initialSessionId }: { apiBaseUrl: string; i
 export function ChatPreview({
   apiBaseUrl,
   initialSessionId = null,
+  initialMessages = [],
 }: {
   apiBaseUrl: string | null
   initialSessionId?: string | null
+  initialMessages?: readonly ChatViewMessage[]
 }) {
   if (!apiBaseUrl) {
     return (
@@ -113,5 +156,12 @@ export function ChatPreview({
       </section>
     )
   }
-  return <ChatWorkspace apiBaseUrl={apiBaseUrl} initialSessionId={initialSessionId} />
+  return (
+    <ChatWorkspace
+      key={`${apiBaseUrl}:${initialSessionId ?? "new"}`}
+      apiBaseUrl={apiBaseUrl}
+      initialSessionId={initialSessionId}
+      initialMessages={initialMessages}
+    />
+  )
 }

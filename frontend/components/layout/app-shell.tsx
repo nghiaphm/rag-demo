@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import { Files, MessageSquareText, Sparkles } from "lucide-react"
 import { Suspense } from "react"
 
+import { SessionNavigation } from "@/components/layout/session-navigation"
 import {
   Sidebar,
   SidebarContent,
@@ -88,7 +89,7 @@ function AppNavigation() {
   return <NavigationLinks pathname={pathname} />
 }
 
-function AppSidebar() {
+function AppSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
   const { isMobile, setOpenMobile } = useSidebar()
 
   return (
@@ -117,6 +118,8 @@ function AppSidebar() {
         <Suspense fallback={<NavigationLinks />}>
           <AppNavigation />
         </Suspense>
+        <SidebarSeparator />
+        <SessionNavigation apiBaseUrl={apiBaseUrl} />
       </SidebarContent>
       <SidebarFooter className="p-3">
         <p className="px-2 text-xs leading-5 text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
@@ -139,10 +142,10 @@ function RouteLabel() {
   return <>{getRouteLabel(pathname)}</>
 }
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, apiBaseUrl }: { children: React.ReactNode; apiBaseUrl: string | null }) {
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar apiBaseUrl={apiBaseUrl} />
       <SidebarInset id="main-content" tabIndex={-1} className="min-h-svh min-w-0">
         <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-5">
           <SidebarTrigger

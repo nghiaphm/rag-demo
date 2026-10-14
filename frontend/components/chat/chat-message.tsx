@@ -96,7 +96,9 @@ export function ChatMessage({ message }: { message: ChatViewMessage }) {
             {message.content}
           </ReactMarkdown>
         ) : (
-          <p className="text-muted-foreground">Đang chuẩn bị câu trả lời…</p>
+          <p className="text-muted-foreground">
+            {message.status === "FAILED" ? "Không có nội dung trả lời." : "Đang chuẩn bị câu trả lời…"}
+          </p>
         )}
         {!isUser && message.error && (
           <p role="alert" className="mt-3 border-t pt-3 text-sm text-destructive">
