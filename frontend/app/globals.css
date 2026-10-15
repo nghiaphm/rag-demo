@@ -128,3 +128,9 @@
     @apply font-sans;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin, .animate-pulse {
+    animation: none;
+  }
+}

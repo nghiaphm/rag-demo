@@ -302,6 +302,9 @@ export function createChatStreamClient({ baseUrl, fetch: fetchOverride }: ChatSt
       }
 
       const reader = response.body.getReader();
+      const cancelReader = () => { void reader.cancel().catch(() => {}) };
+      signal?.addEventListener("abort", cancelReader, { once: true });
+      if (signal?.aborted) cancelReader();
       const parser = new SSEParser();
       const transcript = new TranscriptValidator();
       const consume = async (parsedEvents: ParsedSSEEvent[]) => {
@@ -326,6 +329,7 @@ export function createChatStreamClient({ baseUrl, fetch: fetchOverride }: ChatSt
       try {
         while (true) {
           const { done, value } = await reader.read();
+          if (signal?.aborted) throw new Error("Stream aborted");
           if (done) break;
           await consume(parser.push(value));
         }
@@ -351,6 +355,7 @@ export function createChatStreamClient({ baseUrl, fetch: fetchOverride }: ChatSt
           response.status
         );
       } finally {
+        signal?.removeEventListener("abort", cancelReader);
         reader.releaseLock();
       }
     },

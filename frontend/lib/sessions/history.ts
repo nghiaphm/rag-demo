@@ -1,4 +1,5 @@
 import type { ChatViewMessage } from "@/lib/chat/controller";
+import { safeApiErrorMessage } from "@/lib/api/error-ux";
 import type { ListMessagesQuery, MessagePageResponse, MessageResponse } from "@/types/sessions";
 
 type Listener = () => void;
@@ -7,6 +8,7 @@ export interface HistoryState {
   status: "idle" | "loading" | "ready" | "error";
   messages: readonly MessageResponse[];
   total: number;
+  error: string | null;
 }
 
 export interface HistoryServices {
@@ -66,7 +68,7 @@ export async function loadMessageHistory(
 }
 
 export class HistoryController {
-  private state: HistoryState = { status: "idle", messages: [], total: 0 };
+  private state: HistoryState = { status: "idle", messages: [], total: 0, error: null };
   private readonly listeners = new Set<Listener>();
   private abort: AbortController | null = null;
 
@@ -96,15 +98,15 @@ export class HistoryController {
     this.abort?.abort();
     const abort = new AbortController();
     this.abort = abort;
-    this.publish({ ...this.state, status: "loading" });
+    this.publish({ ...this.state, status: "loading", error: null });
 
     try {
       const messages = await loadMessageHistory(this.sessionId, this.services, abort.signal, this.pageSize);
       if (abort.signal.aborted || this.abort !== abort) return;
-      this.publish({ status: "ready", messages, total: messages.length });
-    } catch {
+      this.publish({ status: "ready", messages, total: messages.length, error: null });
+    } catch (error) {
       if (abort.signal.aborted || this.abort !== abort) return;
-      this.publish({ status: "error", messages: [], total: 0 });
+      this.publish({ status: "error", messages: [], total: 0, error: safeApiErrorMessage(error, "Không thể tải lịch sử đầy đủ. Bạn có thể thử tải lại.") });
     } finally {
       if (this.abort === abort) this.abort = null;
     }
@@ -118,6 +120,7 @@ export class HistoryController {
 export function historyMessageToViewMessage(message: MessageResponse): ChatViewMessage {
   const hasError = message.status === "FAILED" || message.status === "PARTIAL";
   return {
+    origin: "history",
     key: `${message.session_id}:${message.message_id}`,
     messageId: message.message_id,
     requestId: message.request_id,

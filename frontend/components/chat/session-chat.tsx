@@ -5,6 +5,7 @@ import { AlertCircle, LoaderCircle } from "lucide-react"
 
 import { ChatPreview } from "@/components/chat/chat-preview"
 import { Button } from "@/components/ui/button"
+import { LoadingSkeleton } from "@/components/layout/loading-skeleton"
 import { useSession, useSessionHistory } from "@/hooks/use-sessions"
 import { isSessionId } from "@/lib/api/sessions"
 import { historyMessageToViewMessage } from "@/lib/sessions/history"
@@ -34,6 +35,7 @@ function SessionState({
         )}
         <h1 id="session-state-title" className="mt-3 text-lg font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        {loading && <div className="mt-4"><LoadingSkeleton /></div>}
         {!loading && (
           <div className="mt-4 flex flex-wrap gap-2">
             {onRetry && (
@@ -48,7 +50,7 @@ function SessionState({
 }
 
 function ConfiguredSessionChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; sessionId: string }) {
-  const { status, session, reload } = useSession(apiBaseUrl, sessionId)
+  const { status, session, error, reload } = useSession(apiBaseUrl, sessionId)
 
   if (status === "ready" && session) {
     return <SessionHistoryChat apiBaseUrl={apiBaseUrl} sessionId={session.session_id} />
@@ -65,7 +67,7 @@ function ConfiguredSessionChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; 
     return (
       <SessionState
         title="Không thể mở phiên trò chuyện"
-        description="Không thể xác minh phiên với API. Bạn có thể thử tải lại."
+        description={error ?? "Không thể xác minh phiên với API. Bạn có thể thử tải lại."}
         onRetry={() => void reload()}
       />
     )
@@ -80,7 +82,7 @@ function ConfiguredSessionChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; 
 }
 
 function SessionHistoryChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; sessionId: string }) {
-  const { status, messages, reload } = useSessionHistory(apiBaseUrl, sessionId)
+  const { status, messages, error, reload } = useSessionHistory(apiBaseUrl, sessionId)
 
   if (status === "ready") {
     return (
@@ -95,7 +97,7 @@ function SessionHistoryChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; ses
     return (
       <SessionState
         title="Không thể tải lịch sử trò chuyện"
-        description="Message history chưa được hiển thị để tránh trộn dữ liệu cũ hoặc không đầy đủ. Bạn có thể thử tải lại."
+        description={error ?? "Lịch sử chưa được tải đầy đủ. Bạn có thể thử tải lại."}
         onRetry={() => void reload()}
       />
     )

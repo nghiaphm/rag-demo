@@ -1,4 +1,5 @@
 import type { DocumentDetail, DocumentInfo, ListDocumentsQuery } from "@/types/document";
+import { safeApiErrorMessage } from "@/lib/api/error-ux";
 
 export interface DocumentsState {
   status: "idle" | "loading" | "ready" | "error";
@@ -10,6 +11,7 @@ export interface DocumentsState {
   selectedId: string | null;
   detailStatus: "idle" | "loading" | "ready" | "missing" | "error";
   detail: DocumentDetail | null;
+  detailError: string | null;
 }
 export interface DocumentsServices {
   list: (query: ListDocumentsQuery, signal: AbortSignal) => Promise<DocumentInfo[]>;
@@ -18,7 +20,7 @@ export interface DocumentsServices {
 
 export class DocumentsController {
   private state: DocumentsState = { status: "idle", items: [], includeDeleted: false, nextOffset: 0,
-    hasMore: false, error: null, selectedId: null, detailStatus: "idle", detail: null };
+    hasMore: false, error: null, selectedId: null, detailStatus: "idle", detail: null, detailError: null };
   private readonly listeners = new Set<() => void>();
   private listAbort: AbortController | null = null;
   private detailAbort: AbortController | null = null;
@@ -43,7 +45,7 @@ export class DocumentsController {
     const offset = reset ? 0 : this.state.nextOffset;
     const includeDeleted = this.state.includeDeleted;
     this.publish({ ...this.state, status: "loading", error: null,
-      ...(reset ? { items: [], nextOffset: 0, hasMore: false, selectedId: null, detail: null, detailStatus: "idle" as const } : {}) });
+      ...(reset ? { items: [], nextOffset: 0, hasMore: false, selectedId: null, detail: null, detailError: null, detailStatus: "idle" as const } : {}) });
     try {
       const items = await this.services.list({ offset, limit: this.pageSize, include_deleted: includeDeleted }, abort.signal);
       if (abort.signal.aborted || this.listAbort !== abort) return;
@@ -51,9 +53,9 @@ export class DocumentsController {
       if (new Set(combined.map(item => item.document_id)).size !== combined.length) throw new Error("Overlapping document pages.");
       this.publish({ ...this.state, status: "ready", items: combined, nextOffset: offset + items.length,
         hasMore: items.length === this.pageSize, error: null });
-    } catch {
+    } catch (error) {
       if (abort.signal.aborted || this.listAbort !== abort) return;
-      this.publish({ ...this.state, status: "error", error: "Không thể tải danh sách tài liệu. Bạn có thể thử lại." });
+      this.publish({ ...this.state, status: "error", error: safeApiErrorMessage(error, "Không thể tải danh sách tài liệu. Bạn có thể thử lại.") });
     } finally {
       if (this.listAbort === abort) this.listAbort = null;
     }
@@ -69,7 +71,7 @@ export class DocumentsController {
     this.detailAbort?.abort();
     const abort = new AbortController();
     this.detailAbort = abort;
-    this.publish({ ...this.state, selectedId: id, detail: null, detailStatus: "loading" });
+    this.publish({ ...this.state, selectedId: id, detail: null, detailStatus: "loading", detailError: null });
     try {
       const detail = await this.services.get(id, abort.signal);
       if (abort.signal.aborted || this.detailAbort !== abort) return;
@@ -78,7 +80,7 @@ export class DocumentsController {
     } catch (error) {
       if (abort.signal.aborted || this.detailAbort !== abort) return;
       const missing = typeof error === "object" && error !== null && "status" in error && error.status === 404;
-      this.publish({ ...this.state, detail: null, detailStatus: missing ? "missing" : "error" });
+      this.publish({ ...this.state, detail: null, detailStatus: missing ? "missing" : "error", detailError: safeApiErrorMessage(error, "Không thể tải chi tiết tài liệu. Bạn có thể thử lại.") });
     } finally {
       if (this.detailAbort === abort) this.detailAbort = null;
     }
@@ -88,13 +90,17 @@ export class DocumentsController {
     if (this.state.selectedId !== detail.document_id) return;
     this.detailAbort?.abort();
     this.listAbort?.abort();
+    // The stale transport may settle late. Release its slot immediately so
+    // load-more can read the new offset; existing signal/identity guards drop it.
+    this.detailAbort = null;
+    this.listAbort = null;
     const remove = detail.status === "DELETED" && !this.state.includeDeleted;
     const existed = this.state.items.some(item => item.document_id === detail.document_id);
     const items = remove ? this.state.items.filter(item => item.document_id !== detail.document_id)
       : this.state.items.map(item => item.document_id === detail.document_id ? detail : item);
     this.publish({ ...this.state, status: "ready", error: null, items,
       nextOffset: Math.max(0, this.state.nextOffset - (remove && existed ? 1 : 0)),
-      detail, detailStatus: "ready" });
+      detail, detailStatus: "ready", detailError: null });
   };
   dispose() {
     this.listAbort?.abort();

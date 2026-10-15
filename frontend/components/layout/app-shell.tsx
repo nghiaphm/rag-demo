@@ -1,4 +1,5 @@
 "use client"
+import { ServiceHealth } from "@/components/layout/service-health"
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -163,6 +164,7 @@ export function AppShell({ children, apiBaseUrl }: { children: React.ReactNode; 
               RAG Workspace
             </p>
           </div>
+          <ServiceHealth apiBaseUrl={apiBaseUrl} />
         </header>
         <div className="flex min-h-0 flex-1 flex-col bg-muted/30 p-4 sm:p-6 lg:p-8">
           {children}

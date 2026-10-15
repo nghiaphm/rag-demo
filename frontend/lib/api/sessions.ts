@@ -1,6 +1,7 @@
 import type { createApiClient } from "@/lib/api/client";
 import type {
   CreateSessionRequest,
+  DeleteSessionResponse,
   ListMessagesQuery,
   ListSessionsQuery,
   MessagePageResponse,
@@ -13,6 +14,41 @@ type ApiClient = ReturnType<typeof createApiClient>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function validateSessionTitle(title: string): string | null {
+  const value = title.trim();
+  if (!value) return "Tên phiên không được rỗng.";
+  // Python/Pydantic count Unicode code points, not UTF-16 code units.
+  if ([...value].length > 200) return "Tên phiên tối đa 200 ký tự.";
+  return null;
+}
+
+export async function updateSessionTitle(api: ApiClient, id: string, title: string, signal?: AbortSignal): Promise<SessionResponse> {
+  if (!isSessionId(id)) throw new TypeError("Session ID không hợp lệ.");
+  const error = validateSessionTitle(title);
+  if (error) throw new TypeError(error);
+  const normalized = title.trim();
+  const response = await api.request<unknown>(`/sessions/${id}`, { method: "PATCH", json: { title: normalized }, signal });
+  if (response.status !== 200 || !isSessionResponse(response.data) || response.data.session_id !== id || response.data.title !== normalized) {
+    throw new TypeError("Phản hồi đổi tên không khớp session contract.");
+  }
+  return response.data;
+}
+
+export async function deleteSession(api: ApiClient, id: string, signal?: AbortSignal): Promise<DeleteSessionResponse> {
+  if (!isSessionId(id)) throw new TypeError("Session ID không hợp lệ.");
+  const response = await api.request<unknown>(`/sessions/${id}`, { method: "DELETE", signal });
+  const value = response.data;
+  if (response.status !== 200 || !isRecord(value) || value.session_id !== id
+    || !Number.isSafeInteger(value.deleted_messages) || typeof value.deleted_messages !== "number" || value.deleted_messages < 0
+    || typeof value.already_deleted !== "boolean" || typeof value.deleted_at !== "string" || !Number.isFinite(Date.parse(value.deleted_at))
+    || (value.status !== undefined && value.status !== "DELETED")
+    || (value.message_policy !== undefined && value.message_policy !== "hard_deleted")
+    || (value.tombstone_retained !== undefined && value.tombstone_retained !== true)) {
+    throw new TypeError("Phản hồi xóa không khớp session contract.");
+  }
+  return value as unknown as DeleteSessionResponse;
 }
 
 export function isSessionId(value: unknown): value is string {
@@ -142,7 +178,9 @@ export async function listSessions(
     `/sessions?offset=${offset}&limit=${limit}`,
     { method: "GET", signal }
   );
-  if (response.status !== 200 || !isSessionPageResponse(response.data)) {
+  if (response.status !== 200 || !isSessionPageResponse(response.data)
+    || response.data.offset !== offset || response.data.limit !== limit || response.data.items.length > limit
+    || new Set(response.data.items.map(item => item.session_id)).size !== response.data.items.length) {
     throw new TypeError("Phản hồi danh sách session không khớp API contract.");
   }
   return response.data;

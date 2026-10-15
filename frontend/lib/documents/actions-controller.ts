@@ -1,6 +1,7 @@
 import type { DocumentDeleteResult } from "@/lib/api/documents";
 import type { DocumentDetail, DocumentIndexInfo } from "@/types/document";
 import { validateUploadFile } from "@/lib/documents/upload-validation";
+import { safeApiErrorMessage } from "@/lib/api/error-ux";
 
 export type DocumentAction = "version" | "reindex" | "delete";
 export type ActionReceipt = { action: "version" | "reindex"; result: DocumentIndexInfo }
@@ -64,10 +65,10 @@ export class DocumentActionsController {
     } catch (error) {
       if (abort.signal.aborted) return false;
       phase = sent ? "uncertain" : "error";
-      message = sent ? "Thao tác không hoàn tất hoặc chưa xác định kết quả. Không tự gửi lại; kiểm tra trạng thái đã lưu bên dưới."
+      message = sent ? `${safeApiErrorMessage(error, "Thao tác không hoàn tất hoặc chưa xác định kết quả.")} Không tự gửi lại; kiểm tra trạng thái đã lưu bên dưới.`
         : error instanceof Error && error.message === "STALE_DOCUMENT"
           ? "Tài liệu đã thay đổi. Chi tiết được cập nhật; hãy xem lại và xác nhận một thao tác mới."
-          : "Không thể thực hiện thao tác với trạng thái hiện tại. Hãy kiểm tra hoặc tải lại tài liệu.";
+          : safeApiErrorMessage(error, "Không thể thực hiện thao tác với trạng thái hiện tại. Hãy kiểm tra hoặc tải lại tài liệu.");
     } finally {
       let refreshError = false;
       if (sent && !abort.signal.aborted) {

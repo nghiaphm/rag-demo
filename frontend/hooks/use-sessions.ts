@@ -9,16 +9,21 @@ import {
   isSessionId,
   listSessionMessages,
   listSessions,
+  updateSessionTitle,
+  deleteSession,
 } from "@/lib/api/sessions"
 import { HistoryController } from "@/lib/sessions/history"
 import { SessionLookupController, SessionsController } from "@/lib/sessions/controller"
+import { subscribeSessionList } from "@/lib/sessions/invalidation"
 
 export function useSessions(apiBaseUrl: string) {
   const controller = useMemo(() => {
     const api = createApiClient({ baseUrl: apiBaseUrl })
     return new SessionsController({
-      list: (signal) => listSessions(api, { offset: 0, limit: 50 }, signal),
+      list: (signal, query) => listSessions(api, query ?? { offset: 0, limit: 50 }, signal),
       create: (signal) => createSession(api, {}, signal),
+      rename: (id, title, signal) => updateSessionTitle(api, id, title, signal),
+      remove: (id, signal) => deleteSession(api, id, signal),
     })
   }, [apiBaseUrl])
   const state = useSyncExternalStore(
@@ -28,11 +33,13 @@ export function useSessions(apiBaseUrl: string) {
   )
 
   useEffect(() => {
+    const unsubscribe = subscribeSessionList(apiBaseUrl, controller.invalidate)
     void controller.load()
-    return () => controller.dispose()
-  }, [controller])
+    return () => { unsubscribe(); controller.dispose() }
+  }, [controller, apiBaseUrl])
 
-  return { ...state, reload: controller.load, createNew: controller.createNew }
+  return { ...state, reload: controller.load, loadMore: controller.loadMore, createNew: controller.createNew,
+    rename: controller.rename, remove: controller.remove }
 }
 
 export function useSession(apiBaseUrl: string, sessionId: string) {

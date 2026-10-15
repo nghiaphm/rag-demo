@@ -1,4 +1,5 @@
 import type { ChatStreamRequestOptions, ChatStreamResult } from "@/lib/api/chat";
+import { safeApiErrorMessage, safeStreamErrorMessage } from "@/lib/api/error-ux";
 import type {
   ChatError,
   ChatRequest,
@@ -10,6 +11,8 @@ import type {
 import type { MessageStatus } from "@/types/sessions";
 
 export interface ChatViewMessage {
+  /** UI provenance only; never serialized into the API message DTO. */
+  origin?: "history";
   key: string;
   messageId: string | null;
   requestId: string | null;
@@ -29,6 +32,7 @@ export interface ChatState {
   isGenerating: boolean;
   isVerifyingHistory: boolean;
   persistenceError: string | null;
+  historyVerified: boolean;
 }
 
 export interface ChatControllerServices {
@@ -38,7 +42,7 @@ export interface ChatControllerServices {
 }
 
 type Listener = () => void;
-type CancellationReason = "user" | "navigation";
+type CancellationReason = "user" | "navigation" | "timeout";
 
 interface ActiveTurn {
   userKey: string;
@@ -49,22 +53,35 @@ interface ActiveTurn {
   terminal: boolean;
 }
 
-function safeGenerationError(): ChatError {
+function safeGenerationError(error: unknown): ChatError {
   return {
     code: "CLIENT_STREAM_ERROR",
-    message: "Không thể hoàn tất câu trả lời. Vui lòng thử lại.",
+    message: safeApiErrorMessage(error, "Không thể hoàn tất câu trả lời. Kiểm tra lịch sử trước khi gửi lại chủ động."),
     retryable: true,
   };
 }
 
 function safeCancellationError(reason: CancellationReason): ChatError {
   return {
-    code: "RAG_STREAM_CANCELLED",
-    message: reason === "user"
+    code: reason === "timeout" ? "CLIENT_STREAM_TIMEOUT" : "RAG_STREAM_CANCELLED",
+    message: reason === "timeout" ? "Đã hết thời gian chờ câu trả lời. Nội dung nhận được được giữ lại; kiểm tra lịch sử trước khi gửi lại."
+      : reason === "user"
       ? "Bạn đã dừng tạo câu trả lời."
       : "Luồng trả lời đã dừng khi rời trang.",
     retryable: false,
   };
+}
+
+/** Release UI even if a mock/transport ignores abort; consume late rejections safely. */
+function waitForSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const aborted = () => reject(new Error("Turn aborted"));
+    if (signal.aborted) aborted();
+    else signal.addEventListener("abort", aborted, { once: true });
+    promise.then(value => { signal.removeEventListener("abort", aborted); resolve(value); }, error => {
+      signal.removeEventListener("abort", aborted); reject(error);
+    });
+  });
 }
 
 export class ChatController {
@@ -76,14 +93,17 @@ export class ChatController {
   constructor(
     private readonly services: ChatControllerServices,
     initialSessionId: string | null = null,
-    initialMessages: readonly ChatViewMessage[] = []
+    initialMessages: readonly ChatViewMessage[] = [],
+    private readonly waitTimeoutMs = 180_000
   ) {
+    if (!Number.isInteger(waitTimeoutMs) || waitTimeoutMs < 1 || waitTimeoutMs > 2_147_483_647) throw new TypeError("Invalid chat wait timeout.");
     this.state = {
       sessionId: initialSessionId,
       messages: [...initialMessages],
       isGenerating: false,
       isVerifyingHistory: false,
       persistenceError: null,
+      historyVerified: false,
     };
   }
 
@@ -174,7 +194,7 @@ export class ChatController {
         this.updateMessage(turn.assistantKey, (message) => ({
           ...message,
           status: event.data.status,
-          error: event.data.error,
+          error: { ...event.data.error, message: safeStreamErrorMessage(event.data.error.code) },
           usage: event.data.usage,
         }));
         break;
@@ -215,10 +235,15 @@ export class ChatController {
       terminal: false,
     };
     this.activeTurn = turn;
+    const deadline = setTimeout(() => {
+      turn.cancellationReason = "timeout";
+      turn.abortController.abort();
+    }, this.waitTimeoutMs);
     this.publish({
       ...this.state,
       isGenerating: true,
       persistenceError: null,
+      historyVerified: false,
       messages: [
         ...this.state.messages,
         {
@@ -253,20 +278,20 @@ export class ChatController {
     try {
       let sessionId = this.state.sessionId;
       if (!sessionId) {
-        const session = await this.services.createSession(turn.abortController.signal);
+        const session = await waitForSignal(this.services.createSession(turn.abortController.signal), turn.abortController.signal);
         sessionId = session.session_id;
         if (turn.abortController.signal.aborted) throw new Error("Lượt chat đã bị hủy.");
         turn.sessionId = sessionId;
         this.publish({ ...this.state, sessionId });
       }
-      await this.services.stream(
+      await waitForSignal(this.services.stream(
         { question, session_id: sessionId },
         {
           signal: turn.abortController.signal,
           onEvent: (event) => this.acceptEvent(turn, event),
         }
-      );
-    } catch {
+      ), turn.abortController.signal);
+    } catch (error) {
       if (!turn.terminal) {
         this.updateMessage(assistantKey, (message) => ({
           ...message,
@@ -274,17 +299,18 @@ export class ChatController {
           error: message.error ?? (
             turn.cancellationReason
               ? safeCancellationError(turn.cancellationReason)
-              : safeGenerationError()
+              : safeGenerationError(error)
           ),
         }));
       }
+      if (!turn.terminal) this.updateMessage(userKey, (message) => message.status === "PENDING" ? { ...message, status: "FAILED" } : message);
     } finally {
       // Backend finalizes before emitting terminal SSE. Read it once; never retry
       // the submitted request or treat a history failure as generation failure.
       if (turn.terminal && turn.sessionId && this.services.loadHistory && !turn.abortController.signal.aborted) {
         this.publish({ ...this.state, isVerifyingHistory: true });
         try {
-          const history = await this.services.loadHistory(turn.sessionId, turn.abortController.signal);
+          const history = await waitForSignal(this.services.loadHistory(turn.sessionId, turn.abortController.signal), turn.abortController.signal);
           if (!turn.abortController.signal.aborted && this.activeTurn === turn) {
             const user = this.state.messages.find((message) => message.key === turn.userKey)!;
             const assistant = this.state.messages.find((message) => message.key === turn.assistantKey)!;
@@ -304,18 +330,22 @@ export class ChatController {
               }
             }
             const current = new Map(this.state.messages.map((message) => [message.messageId, message]));
-            this.publish({ ...this.state, messages: history.map((message) => ({
+            this.publish({ ...this.state, historyVerified: true, messages: history.map((message) => ({
               ...message,
               sources: current.get(message.messageId)?.sources ?? message.sources,
             })) });
           }
         } catch {
-          if (!turn.abortController.signal.aborted && this.activeTurn === turn) {
+          if ((!turn.abortController.signal.aborted || turn.cancellationReason === "timeout") && this.activeTurn === turn) {
             this.publish({ ...this.state, persistenceError:
               "Chưa xác minh được lịch sử đã lưu. Nội dung hiện tại được giữ lại; hãy tải lại phiên để kiểm tra." });
           }
         }
       }
+      if (turn.terminal && turn.cancellationReason === "timeout" && this.services.loadHistory) {
+        this.publish({ ...this.state, persistenceError: "Đã hết thời gian chờ xác minh lịch sử. Câu trả lời hiện tại được giữ lại; hãy tải lại phiên để kiểm tra." });
+      }
+      clearTimeout(deadline);
       if (this.activeTurn === turn) this.activeTurn = null;
       this.publish({ ...this.state, isGenerating: false, isVerifyingHistory: false });
     }

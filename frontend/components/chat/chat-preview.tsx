@@ -1,17 +1,17 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import Link from "next/link"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { AlertCircle, MessageSquareText } from "lucide-react"
 
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatMessage } from "@/components/chat/chat-message"
+import { ChatRecovery } from "@/components/chat/chat-recovery"
 import { Badge } from "@/components/ui/badge"
-import { createChatStreamClient } from "@/lib/api/chat"
-import { createApiClient } from "@/lib/api/client"
-import { createSession, listSessionMessages } from "@/lib/api/sessions"
-import { historyMessageToViewMessage, loadMessageHistory } from "@/lib/sessions/history"
+import { Button } from "@/components/ui/button"
+import { ChatScrollController } from "@/lib/chat/scroll"
+import { createChatServices } from "@/lib/chat/services"
+import { canonicalChatPath, isHistoricalNonterminal } from "@/lib/chat/recovery"
 import { ChatController, type ChatViewMessage } from "@/lib/chat/controller"
 
 function EmptyChat() {
@@ -40,22 +40,25 @@ function ChatWorkspace({
   const router = useRouter()
   const mounted = useRef(false)
   const [question, setQuestion] = useState("")
-  const [controller] = useState(() => {
-    const api = createApiClient({ baseUrl: apiBaseUrl })
-    const streamClient = createChatStreamClient({ baseUrl: apiBaseUrl })
-    return new ChatController({
-      createSession: (signal) => createSession(api, {}, signal),
-      stream: (payload, options) => streamClient.stream(payload, options),
-      loadHistory: async (id, signal) => (await loadMessageHistory(id, {
-        list: (sessionId, query, pageSignal) => listSessionMessages(api, sessionId, query, pageSignal),
-      }, signal)).map(historyMessageToViewMessage),
-    }, initialSessionId, initialMessages)
-  })
+  const viewport = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  const [scroll] = useState(() => new ChatScrollController())
+  const unread = useSyncExternalStore(scroll.subscribe, scroll.getSnapshot, scroll.getSnapshot)
+  useEffect(() => {
+    if (!viewport.current || !content.current) return
+    const detach = scroll.attach(viewport.current)
+    const observer = new ResizeObserver(scroll.contentChanged)
+    observer.observe(content.current)
+    observer.observe(viewport.current)
+    return () => { observer.disconnect(); detach() }
+  }, [scroll])
+  const [controller] = useState(() => new ChatController(createChatServices(apiBaseUrl), initialSessionId, initialMessages))
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
     controller.getSnapshot
   )
+  useEffect(() => { scroll.contentChanged() }, [scroll, state.messages])
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -66,12 +69,9 @@ function ChatWorkspace({
 
   function submit() {
     if (!question.trim()) return
-    const hadSession = controller.getSnapshot().sessionId !== null
     void controller.submit(question).then((accepted) => {
-      const sessionId = controller.getSnapshot().sessionId
-      if (mounted.current && accepted && !hadSession && sessionId && !controller.getSnapshot().persistenceError) {
-        router.replace(`/chat/${encodeURIComponent(sessionId)}`)
-      }
+      const path = canonicalChatPath(initialSessionId, controller.getSnapshot())
+      if (mounted.current && accepted && path) router.replace(path)
     })
     setQuestion("")
   }
@@ -91,12 +91,18 @@ function ChatWorkspace({
         </p>
       </div>
 
-      <div className="flex min-h-[34rem] flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+      <ChatRecovery state={state} initialSessionId={initialSessionId} />
+      <div className="flex h-[70dvh] min-h-80 max-h-[56rem] flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
         <div
+          ref={viewport}
+          onScroll={scroll.onScroll}
+          tabIndex={0}
+          role="region"
+          aria-label="Lịch sử trò chuyện"
           className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6"
-          aria-live="polite"
           aria-busy={state.isGenerating}
         >
+          <div ref={content}>
           {state.messages.length === 0 ? (
             <EmptyChat />
           ) : (
@@ -106,7 +112,10 @@ function ChatWorkspace({
               ))}
             </div>
           )}
+          </div>
         </div>
+        {unread && <div className="border-t px-4 py-2"><Button type="button" variant="outline" size="sm" onClick={scroll.jump}>Nội dung mới — Về cuối</Button></div>}
+        <p role="status" className="sr-only">{state.isGenerating ? "Đang xử lý câu hỏi" : state.messages.some(isHistoricalNonterminal) ? "Không có luồng trực tiếp cho tin nhắn chưa hoàn tất trong lịch sử." : state.messages.length ? "Đã kết thúc xử lý câu hỏi. Kiểm tra trạng thái câu trả lời." : "Sẵn sàng đặt câu hỏi"}</p>
         <ChatComposer
           value={question}
           onChange={setQuestion}
@@ -118,13 +127,20 @@ function ChatWorkspace({
         {state.isVerifyingHistory && (
           <p role="status" className="border-t p-4 text-sm text-muted-foreground">Đang xác minh lịch sử đã lưu…</p>
         )}
+        {!state.isGenerating && state.sessionId && state.messages.some(message => message.error) && (
+          <p className="border-t p-4 text-sm text-muted-foreground">
+            <a className="underline focus-visible:outline-2 focus-visible:outline-ring" href={`/chat/${encodeURIComponent(state.sessionId)}`}>
+              Tải lại phiên để kiểm tra lịch sử trước khi gửi lại
+            </a>
+          </p>
+        )}
         {state.persistenceError && (
           <div role="alert" className="border-t p-4 text-sm text-destructive">
             <p>{state.persistenceError}</p>
             {state.sessionId && (
-              <Link className="mt-2 inline-block underline" href={`/chat/${encodeURIComponent(state.sessionId)}`}>
+              <a className="mt-2 inline-block underline" href={`/chat/${encodeURIComponent(state.sessionId)}`}>
                 Mở lịch sử đã lưu
-              </Link>
+              </a>
             )}
           </div>
         )}

@@ -52,9 +52,10 @@ export function ChatComposer({
           className="max-h-40 min-h-20 resize-none border-0 px-2 shadow-none focus-visible:border-transparent focus-visible:ring-0"
           placeholder="Nhập câu hỏi về tài liệu…"
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => { if (!disabled) onChange(event.target.value) }}
           onKeyDown={handleKeyDown}
-          disabled={disabled}
+          readOnly={disabled}
+          aria-readonly={disabled}
         />
         <div className="flex items-end justify-between gap-3 px-1 pt-2">
           <p id="composer-help" className="text-xs leading-5 text-muted-foreground">

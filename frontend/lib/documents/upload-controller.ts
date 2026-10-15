@@ -1,5 +1,6 @@
 import type { DocumentIndexInfo } from "@/types/document";
 import { validateUploadFile } from "@/lib/documents/upload-validation";
+import { safeApiErrorMessage } from "@/lib/api/error-ux";
 
 export interface UploadState {
   phase: "idle" | "ready" | "submitting" | "received" | "error" | "uncertain";
@@ -51,7 +52,7 @@ export class UploadController {
         || kind === null || (typeof status === "number" && status >= 500);
       this.publish({ ...this.state, phase: uncertain ? "uncertain" : "error", error: uncertain
         ? "Chưa xác định được kết quả upload. Tài liệu có thể vẫn đang xử lý; hãy làm mới danh sách trước khi gửi lại."
-        : "Upload không hoàn tất. Hãy kiểm tra file và làm mới danh sách trước khi gửi lại." });
+        : `${safeApiErrorMessage(error, "Upload không hoàn tất.")} Làm mới danh sách trước khi gửi lại.` });
       return null;
     } finally {
       if (this.abort === abort) this.abort = null;

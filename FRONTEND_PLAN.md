@@ -46,10 +46,11 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 | F4 — Sessions/History | COMPLETED | F4-01…F4-03 COMPLETED; scripted multi-turn HTTP mock PASS, live smoke chưa chạy |
 | F5 — Sources/Citations | COMPLETED | F5-01/F5-02 COMPLETED; callback/Markdown/history fixtures PASS; browser interaction BLOCKED |
 | F6 — Documents | COMPLETED | F6-01…F6-03 COMPLETED; protected-action/stale-state mocks PASS; live mutation chưa chạy |
-| F7 — UX/Resilience | NOT STARTED | |
+| F7 — UX/Resilience | IN PROGRESS | F7-01 COMPLETED; F7-02 implementation xong, chờ manual acceptance |
+| F7-03 — Functional Completeness & API Integration | IN PROGRESS | F7-03-05 gate NOT PASSED: BUG-STREAM-001 terminal/history parity FAIL và browser/manual BLOCKED; task02/03/04 automated checks xong |
 | F8 — Testing/E2E | NOT STARTED | |
 
-**Task đang thực hiện:** Không có. **Task vừa hoàn thành:** F6-03 — Versions/reindex/delete. **Task tiếp theo:** F7-01 — NOT STARTED, chờ giao việc riêng. **Blocker:** Không có blocker implementation; protected-action/stale-state/mock/SSR regression và build/typecheck/lint/contract/diff PASS. Browser/live mutation smoke NOT RUN. API chưa có If-Match/atomic revision precondition; preflight stale check không thay thế transaction guard backend. Raw files giữ theo soft-delete policy. Evidence mới ở mục 26.
+**Task đang thực hiện:** F7-03-05 — Functional QA & Regression, IN PROGRESS; gate NOT PASSED, evidence mục35/[QA report](./docs/frontend-functional-qa.md). **Blockers:** BUG-STREAM-001 cần bugfix riêng; actual browser/manual NOT RUN. **Checks:** frontend193/193/build7/7/typecheck/lint/contract45/runtime OpenAPI/CORS/production HTTP PASS; backend80/81 PASS,1 FAIL parity thật. F8 NOT STARTED; không tự chuyển hoặc waive manual AC. No provider calls.
 
 ## 4. Roadmap và acceptance criteria
 
@@ -95,8 +96,18 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 
 ### F7 — UX & Resilience
 
-- [ ] **F7-01 — Error/health UX:** lỗi 422, 404, 409 nếu contract có, 429, 503 MongoDB/Qdrant/Groq, network, post-header SSE `error`; safe messages, retry có chủ đích, không request loop. AC: fixture tests và no infinite spinner.
+- [x] **F7-01 — Error/health UX:** lỗi 422, 404, 409 nếu contract có, 429, 503 MongoDB/Qdrant/Groq, network, post-header SSE `error`; safe messages, retry có chủ đích, không request loop. AC: fixture tests và no infinite spinner. Evidence mục 27: targeted 12/12, full 151/151, build/typecheck/lint/contract/diff PASS; health MongoDB/Qdrant manual, Groq readiness không suy đoán; 0 live calls.
 - [ ] **F7-02 — UI polish/accessibility:** auto-scroll tôn trọng người đang đọc, copy, responsive drawer, focus/keyboard, skeleton, markdown/code rendering, optional theme; không scope creep PDF viewer nếu backend không hỗ trợ. AC: manual UX/accessibility checklist.
+  - Implementation và automated checks PASS; manual checklist có tại `docs/frontend-accessibility-checklist.md`, manual nghiệm thu NOT RUN/BLOCKED, chưa đánh dấu COMPLETED.
+  - Browser blocker đã xác định là package/runtime incompatibility; Chrome/Edge mock-only handoff có tại `docs/frontend-browser-qa-blocker.md` và `frontend/scripts/qa-mock-api.mjs`. Tất cả manual AC vẫn NOT RUN.
+
+### F7-03 — Functional Completeness & API Integration
+
+- [x] **F7-03-01 — API Capability Audit & Functional Gap Analysis:** source/OpenAPI/client/UI/tests audit đầy đủ Session/Chat/Documents/Integration; Functional Capability Matrix, backlog có scope/dependencies/AC/tests/out-of-scope và technical debt. Evidence mục31; chỉ sửa documentation.
+- [ ] **F7-03-02 — Session Actions:** nối PATCH title/DELETE có thật, accessible menu/dialog, current-session navigation, backend409 guard, list pagination/refresh và mutation reconciliation. IN PROGRESS: implementation/checks PASS, browser keyboard/focus/mobile NOT RUN; chi tiết mục31.4/32.
+- [ ] **F7-03-03 — Chat Actions Completion:** nối session creation từ composer với sidebar, làm rõ deferred URL/recovery và history PENDING/STREAMING không có live stream; giữ Stop/copy/citations/SSE hiện có. IN PROGRESS: implementation/checks PASS; mock browser interaction NOT RUN/BLOCKED, mục33; không Edit/Regenerate/Delete Message.
+- [ ] **F7-03-04 — Document Actions Completion:** nghiệm thu và sửa gap có bằng chứng trong wired F6 actions, refresh/reconciliation/status/confirm dialogs; không triển khai lại upload/version/re-index/delete. IN PROGRESS: automated verification PASS, sửa aborted-page slot có regression; browser confirm/Escape/focus/mobile NOT RUN/BLOCKED, mục34.
+- [ ] **F7-03-05 — Functional QA & Regression:** mock end-to-end CRUD/session streaming/document lifecycle, actual browser/manual acceptance, contract/error/keyboard/mobile checks; resolve hoặc accept rõ technical debt trước F8. IN PROGRESS: frontend193/193 PASS, backend80/81 PASS/1 FAIL BUG-STREAM-001; browser/manual BLOCKED/NOT RUN; gate chưa đạt, mục35 và QA report.
 
 ### F8 — Final Verification & Demo
 
@@ -623,3 +634,493 @@ Files changed F6-02: `frontend/lib/api/documents.ts`, `frontend/lib/documents/{u
 | Live version/reindex/delete/storage/provider smoke | NOT RUN; chưa được cho phép live mutation/provider. Groq=0, Gemini=0. |
 
 Files changed F6-03: `frontend/lib/api/documents.ts`, `frontend/lib/documents/{actions-controller,controller}.ts`, `frontend/components/documents/{document-actions,documents-preview}.tsx`, `frontend/tests/document-actions.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. **Implementation blocker:** không có. **F6 COMPLETED; F7-01 NOT STARTED; dừng sau F6-03.**
+
+## 27. Evidence F7-01 — Error/health UX (2026-10-14)
+
+**COMPLETED.** Thêm safe error copy theo HTTP status/kind cho REST read/chat/mutations, safe SSE error message mapping và header `Trạng thái dịch vụ` với health check chủ động. Không sửa backend, config, credentials hoặc dependency; không polling/automatic retry.
+
+- `safeApiErrorMessage` phân biệt 400/404/409/410/422/429/502/503, network/transport/timeout/abort/protocol/incomplete/invalid-response; không dùng raw Error.message/HTTP detail/validation input/ctx. Sessions list/create/lookup/history và documents list/detail/upload/action UI giữ thông báo cụ thể thay vì bỏ HTTP status thành generic. Mutation errors tiếp tục nhắc kiểm tra persisted state, không coi failed request là rollback và không replay.
+- Chat pre-header HTTP/network failure giữ safe status-specific copy, local assistant FAILED/PARTIAL và unlock composer. User draft chưa nhận start không còn PENDING mãi, hiển thị chưa xác nhận đã xử lý. Post-header SSE error giữ backend code/retryable/usage/terminal status và exact partial content, thay arbitrary message bằng allowlisted generic copy; unknown codes không echo private text. Retried turn chỉ bắt đầu từ submit chủ động, không dùng server retryable như lệnh tự retry. Error/reconciliation warning có full route reload link để đọc backend history, không replay chat.
+- Thêm client turn wait deadline **180s**, gồm session creation/stream/post-terminal history verification; policy frontend, không giả là backend timeout. Guarded wait giải phóng state ngay cả khi mock/transport không hợp tác abort; callback của aborted/old turn không apply. Timeout abort reader/fetch, giữ content/status đúng local semantics, terminal backend không bị hạ FAILED. Hung history giữ terminal và hiển thị persistence warning, luôn hạ isGenerating/isVerifyingHistory. Stream reader có abort cancellation/listener cleanup để thoát pending reader.read(). REST vẫn có deadline 30s, upload/action 300s như F6.
+- `checkHealth` gọi GET `/health` rồi `/health/dependencies`, 20s deadline mỗi GET, runtime-check DTO/status/service/ok và consistency 200/503. REST wrapper thêm opt-in acceptedStatuses cho typed health503 body; default HTTP error handling vẫn nguyên. Kết quả UI được reconstruct theo allowlist, không giữ arbitrary dependency messages/extra fields hoặc model/config. Header manual disclosure hiển thị API, MongoDB và Qdrant readiness, safe failure reason và button check/recheck; không request trên mount/open, duplicate check bị khóa, unmount abort và bỏ late response.
+- Contract gap: `main.py` health/dependencies chỉ expose MongoDB/Qdrant và connect_all, không expose Groq health. UI ghi Groq chưa được kiểm tra; không gọi model catalog/generation/embedding để giả readiness. Generic REST503 không chỉ ra dependency, provider failure hiện có thể là pre-header502 hoặc SSE RAG_STREAM_ERROR/TIMEOUT; UI không suy đoán đó là MongoDB/Qdrant/Groq quota cụ thể. Dependency check không đảm bảo generation thành công.
+
+| Kiểm tra (frontend/) | Kết quả |
+| --- | --- |
+| `node --test tests/error-health.test.mjs` | PASS 12/12: safe status/network/prototype/unknown-code copy, exact health GETs, preserved503 degraded/invalid/default REST guards, manual/duplicate/error/unmount/no-loop state, session/document/history errors, pre-header chat failure/no resend, post-header SSE partial/usage/sanitization, hung stream/session/history deadlines và actual pending SSE reader cancellation. |
+| `node --test tests/*.test.mjs` | PASS 151/151 regression; fixture/mock/offline only. |
+| `npm.cmd run build` | PASS, exit 0, rerun sau full history reload link adjustment. |
+| `npm.cmd exec tsc -- --noEmit` | PASS, exit 0; standalone và Next build typecheck. |
+| `npm.cmd run lint` | PASS, exit 0, 0 warnings. |
+| `node tests/verify-api-contract.mjs` | PASS 45 schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser health disclosure/retry/keyboard/CORS interaction, live cloud/provider health/error smoke | NOT RUN; fixtures không chứng minh browser/live operational readiness. Groq=0, Gemini=0. |
+
+Files changed F7-01: `frontend/lib/api/{error-ux,health,client,chat}.ts`, `frontend/lib/health/controller.ts`, `frontend/lib/chat/controller.ts`, `frontend/lib/sessions/{controller,history}.ts`, `frontend/lib/documents/{controller,upload-controller,actions-controller}.ts`, `frontend/components/layout/{app-shell,service-health}.tsx`, `frontend/components/chat/{chat-preview,chat-message,session-chat}.tsx`, `frontend/components/documents/documents-preview.tsx`, `frontend/tests/{error-health,chat-controller,sessions}.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. **Implementation blocker:** không có. **F7-02 NOT STARTED; dừng sau F7-01.**
+
+## 28. Evidence F7-02 — UI polish/accessibility (2026-10-14)
+
+**IN PROGRESS — implementation hoàn tất; chờ manual acceptance.** Tái sử dụng shadcn/Base UI hiện có, không cài thư viện/config/project mới, không sửa backend hoặc thêm PDF viewer. Theme switch là optional, chưa thêm.
+
+- Chat có viewport 70dvh/min-height và vùng keyboard-scrollable. Scroll controller bám cuối khi đang theo nội dung, giữ vị trí khi người đọc cuộn lên; nút “Nội dung mới — Về cuối” bật lại follow. ResizeObserver theo content/viewport, detach/disconnect khi unmount; workspace keyed theo session. Scroll tức thời, không smooth-scroll từng delta.
+- Copy message terminal/user và code giữ nguyên chuỗi/whitespace; clipboard unavailable/denied hiển thị lỗi thay vì thành công giả; cleanup timer khi unmount. Message PENDING/STREAMING không cho copy toàn response đang phát.
+- Composer read-only khi generate, giữ focus/chọn text và chặn edit/submit; Enter/Shift+Enter/IME/Stop semantics giữ nguyên. Transcript không dùng aria-live đọc toàn nội dung mỗi delta; có status riêng.
+- Markdown có headings rõ, code block language label/copy/keyboard overflow, GFM table overflow riêng, external link focus và thông báo tab mới. Không execute raw HTML; code/link không bị thay citation marker.
+- Drawer full-width mobile/max-width desktop, long filename wrap, initial focus vào nút Đóng, dùng Base UI modal semantics cho focus trap/return/Escape (chưa browser-verified). Documents detail có labelled region/aria-controls; dialog cao giới hạn dvh và cuộn được.
+- Skeleton dùng component có sẵn, aria-hidden, giữ nhãn loading ngoài skeleton. Spinner/skeleton tắt animation khi prefers-reduced-motion.
+
+| Kiểm tra | Kết quả thực tế |
+| --- | --- |
+| `node --test tests/ui-polish.test.mjs` | PASS 6/6: scroll reader intent/resume/resize/detach, exact clipboard/error, production Markdown SSR, keyboard composer, skeleton accessibility. |
+| `node --test tests/*.test.mjs` | PASS 157/157, mock/offline fixtures; không live provider. |
+| `npm.cmd run build` | PASS, production build và các App Router routes. |
+| `node node_modules/typescript/bin/tsc --noEmit` | PASS. Dùng trực tiếp node vì npx.ps1 bị PowerShell ExecutionPolicy chặn; không thay policy. |
+| `npm.cmd run lint` | PASS; không vô hiệu hóa rules. |
+| `node tests/verify-api-contract.mjs` | PASS 45 REST/SSE/health schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Manual browser/mobile/keyboard/screen reader/clipboard | NOT RUN/BLOCKED: Browser bootstrap lỗi `Cannot redefine property: process`; troubleshooting API chưa khả dụng. Checklist `docs/frontend-accessibility-checklist.md` phân biệt unit/SSR/source review khỏi manual. |
+| Live backend/mutation/Groq/Gemini | NOT RUN; Groq=0, Gemini=0. |
+
+Files changed F7-02: `frontend/lib/chat/{scroll,clipboard}.ts`, `frontend/components/chat/{copy-button,code-block,chat-preview,chat-message,chat-composer,citation-content,session-chat}.tsx`, `frontend/components/layout/loading-skeleton.tsx`, `frontend/components/documents/{documents-preview,document-upload,document-actions}.tsx`, `frontend/app/globals.css`, `frontend/tests/ui-polish.test.mjs`, `docs/frontend-accessibility-checklist.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md`. F2-01 archive nguyên vẹn, CURRENT_CHANGE giữ 15 entries. **Implementation blocker:** không có. **Acceptance blocker:** Browser/manual QA chưa chạy. **F7-02 giữ IN PROGRESS; dừng, không triển khai F8-01.**
+
+### 28.1. Resolve Browser QA Blocker — 2026-10-14
+
+- Next.js port3000/node listener, IPv4 `/chat`200, IPv6 `/documents`200, root307→chat, invalid-session route200 và client asset200/javascript đã kiểm tra từ Agent. HTTP chứng minh delivery, không chứng minh hydration hoặc manual UX.
+- Basic execution và builtin import PASS; Browser package26.602.30954 import FAIL trước setup/navigation tại dòng33 `globalThis.process = processShim`. Runtime khóa ambient process bằng writable/configurable=false; source/stack xác nhận incompatibility tool, không phải localhost/frontend connection failure. Không patch vendor/security binding hoặc refactor UI.
+- Thêm `frontend/scripts/qa-mock-api.mjs` (127.0.0.1:4011, RAM-only, no outbound/backend/provider, mutation503/no persisted files) và `frontend/tests/qa-mock-api.test.mjs`; Chrome/Edge commands/env restore/mock scenarios/evidence template ở `docs/frontend-browser-qa-blocker.md`, linked từ checklist.
+- Lần diagnosis: mock harness4/4, full regression161/161, lint0 warnings và git diff/new-file whitespace PASS. Build/typecheck/contract NOT RUN lại; baseline PASS ở mục28 giữ nguyên. Manual browser/mobile/keyboard/screen reader **NOT RUN/BLOCKED**. Groq=0, Gemini=0.
+- Files changed chỉ QA script/test và documentation (plan/current/checklist/diagnosis/archive). Chưa thu được acceptance evidence; **F7-02 IN PROGRESS**, dừng trước F8-01.
+
+## 29. Evidence — Next.js/FastAPI development CORS (2026-10-14)
+
+**COMPLETED sau kiểm tra HTTP trên server thực có Origin và preflight.** Đây là integration fix; F7-02 manual accessibility vẫn IN PROGRESS, chưa chuyển F8.
+
+Audit trước sửa: `backend/app/main.py` không đăng ký CORSMiddleware; không có CORS config ở settings/env example. Agent tái hiện trên `127.0.0.1:8000`: GET sessions/documents200 thiếu Access-Control-Allow-Origin, OPTIONS chat/stream với Origin localhost:3000 + request-method POST + content-type trả405. API URL đúng không tự tạo quyền cross-origin trong browser.
+
+Thay đổi tối thiểu: import/register FastAPI CORSMiddleware ở entrypoint, exact allowlist `http://localhost:3000` và `http://127.0.0.1:3000`; allow GET/POST/PUT/PATCH/DELETE theo routers có thật, Content-Type theo JSON/multipart clients, credentials=false. Starlette tự thêm safelisted Accept/Accept-Language/Content-Language. Không wildcard origin/method/header, không sửa API DTO/OpenAPI/routes/RAG/frontend architecture hoặc .env. Đây là allowlist development; origins/ports khác chưa được cho phép.
+
+| Phép kiểm tra thực tế | Kết quả |
+| --- | --- |
+| GET /sessions + Origin localhost:3000 | PASS HTTP200, ACAO khớp origin, Vary Origin. |
+| GET /documents + Origin localhost:3000 | PASS HTTP200, ACAO khớp origin, Vary Origin. |
+| OPTIONS /chat/stream + Origin localhost:3000, request-method POST, request-headers content-type | PASS HTTP200, ACAO khớp, allow-methods gồm POST, allow-headers gồm Content-Type. Không gửi actual chat POST. |
+| Hai GET + OPTIONS tương tự với Origin127.0.0.1:3000 | PASS cả3 requests, HTTP200 và ACAO đúng origin tương ứng. |
+| OPTIONS với Origin localhost:3001 | PASS expected HTTP400, không ACAO. |
+| GET /documents với Origin https://example.test | PASS expected HTTP200 không ACAO; CORS không phải authentication hoặc HTTP access control. |
+| CORS regression trên actual FastAPI app | PASS6/6; GET body shapes, hai origins, preflight/no-service-call, wrong origins/scheme/port/suffix, disallowed method/header, no-Origin GET và handled503/422 headers. No lifespan/cloud/provider calls. |
+| CORS + sessions + documents + chat-stream API suites | PASS26/26, Python3.10.11; socket guard chặn external network, cho loopback IPC Windows. |
+| `node tests/verify-api-contract.mjs` | PASS45 REST/SSE/health schemas; network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Frontend build/typecheck/lint, full backend suites, browser interaction/live generation | NOT RUN lại trong CORS fix; không cần thay frontend. Groq=0, Gemini=0. |
+
+Initial runs ghi nhận FAIL: test helper dùng unittest.enterContext không có trong Python3.10 (sửa bằng ExitStack), runner block mọi socket.connect chặn asyncio Windows self-pipe (sửa guard chỉ chặn external network). Final26/26 PASS sau các sửa test/runner; không đổi middleware để che failures. Actual port8000 đã phản ánh middleware sau cập nhật source; Agent không kill/restart process thủ công.
+
+Lệnh HTTP dùng để tái hiện/xác minh (root PowerShell; `-o NUL` không in response data):
+```powershell
+curl.exe --noproxy '*' --max-time 10 -s -o NUL -D - -H 'Origin: http://localhost:3000' http://127.0.0.1:8000/sessions
+curl.exe --noproxy '*' --max-time 10 -s -o NUL -D - -H 'Origin: http://localhost:3000' http://127.0.0.1:8000/documents
+curl.exe --noproxy '*' --max-time 10 -s -o NUL -D - -X OPTIONS -H 'Origin: http://localhost:3000' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type' http://127.0.0.1:8000/chat/stream
+```
+
+Actual positive requests được kiểm tra thêm bằng Invoke-WebRequest với assertions status200/ACAO exact/POST/Content-Type cho cả2 origins; chỉ GET list và OPTIONS, không mutation/generation. Offline test suites: `tests.test_cors tests.test_sessions_api tests.test_documents_api tests.test_chat_stream` qua unittest runner với external-network guard.
+
+Files changed: `backend/app/main.py`, `backend/tests/test_cors.py`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md` (archive F2-03 nguyên vẹn, giữ15 current entries). **CORS blocker resolved.** Browser tool incompatibility và F7-02 manual AC độc lập, chưa nghiệm thu. **Dừng, không triển khai F8.**
+
+## 30. Evidence — SessionNavigation Suspense bugfix (2026-10-14)
+
+**Implementation/automated verification hoàn tất; browser smoke BLOCKED, task giữ IN PROGRESS.** F7-02 chưa có manual acceptance; không chuyển F8.
+
+Audit: `ConfiguredSessions` trong `components/layout/session-navigation.tsx` gọi `usePathname()` để set isActive/aria-current. AppShell chỉ bọc AppNavigation và RouteLabel trong các sibling Suspense boundaries; chúng không bao phủ SessionNavigation. Với cacheComponents/partialPrefetching hiện có, URL của /chat/[sessionId] không biết tại prerender, hook suspends. Local installed Next16 `use-pathname.md` mô tả đúng trường hợp dynamic params chưa có generateStaticParams.
+
+Reproduction trước sửa: production build với process-scoped NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 compile/typecheck xong nhưng prerender /chat/[sessionId] FAIL `CLIENT_HOOK_DYNAMIC`, stack chỉ tới ConfiguredSessions. Những build trước đó có thể chỉ exercise unconfigured branch; không coi build API-null là coverage cho configured sessions.
+
+Fix nhỏ nhất: SessionNavigation bọc riêng nhánh ConfiguredSessions bằng Suspense, fallback SessionNavigationFallback chỉ dùng static SidebarGroup/label/status “Đang tải điều hướng phiên…”. Fallback không đọc URL/router/session hook, không báo sai API chưa cấu hình và không có active session giả. Unconfigured branch nguyên vẹn. Không sửa AppShell/RootLayout, fetching/createNew/router.push/Link handlers/session matching, API contract, Next config, dependency hoặc whole-route dynamic/blocking rendering.
+
+| Kiểm tra | Kết quả |
+| --- | --- |
+| `node --test tests/session-navigation.test.mjs` | PASS4/4: thực thi React Suspense với pending pathname; fallback không đọc runtime URL/session state; exact active item cho từng hai session; /documents và unmatched session không false active; API-null không đọc URL/hook. Next hooks/session data mocked, không browser interaction. |
+| `node --test tests/*.test.mjs` | PASS165/165 regression, fixtures/offline/mock only. |
+| `npm.cmd run build`, API env non-null | PASS7/7 prerender, exit0. /chat/[sessionId] vẫn ◐ partial prerender; /documents vẫn ○ static. Env override chỉ trong process build, finally restore; không viết .env. |
+| `node node_modules/typescript/bin/tsc --noEmit` sau build | PASS exit0. |
+| `npm.cmd run lint` | PASS exit0, 0 warnings. |
+| GET /chat/[existing-session] và /documents, dev3000 | PASS200, main landmark, không CLIENT_HOOK_DYNAMIC trong HTML. Existing session ID đọc từ REST list, không log history/private contents. |
+| GET hai routes tương tự, temporary production3012 | PASS200/main/no hook error; HTTP delivery only, không chứng minh hydration hoặc cross-origin fetching trong browser. Production server do Agent tạo đã dừng đúng PID; dev/backend không bị kill/restart. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser trực tiếp trên hai routes | NOT RUN/BLOCKED: skill Browser bootstrap retry vẫn fail khi import `Cannot redefine property: process`, trước setup/tab/navigation. Không chạy standalone browser automation fallback. |
+| Live chat/provider, API contract verification lại | NOT RUN; không thay API. Groq=0, Gemini=0. |
+
+Initial route HTTP probe trả404 vì PowerShell array expression nối sai URL; sửa probe bằng parenthesized path list, rerun cả4 HTTP requests PASS; không sửa UI theo lỗi của probe. Test runner/browser limits được giữ rõ. Server tạm không dừng bằng Ctrl+C; PID lookup trong sandbox bị Access denied, đọc lại với escalation và Stop-Process chỉ đúng PID của helper3012 đã xác minh, session thoát. Không thay global permissions hoặc server developer.
+
+Browser handoff cho bugfix: trên dev localhost:3000, mở URL của existing session từ sidebar, hard refresh, xác nhận history/error state phù hợp và chỉ session đó aria-current=page; đổi session rồi mở /documents, session links còn dùng được và không có session nào falsely active. Kiểm tra console không có URL-data-outside-Suspense/hydration error. Dùng mock nếu cần create/generation theo `docs/frontend-browser-qa-blocker.md`, không gọi Groq/Gemini. Ghi browser/version và observations trước khi nghiệm thu browser smoke.
+
+Files changed: `frontend/components/layout/session-navigation.tsx`, `frontend/tests/session-navigation.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md` (archive F3-01 nguyên vẹn, giữ15 entries). **Không blocker code/build; browser smoke chưa chạy. Dừng sau bugfix, chưa triển khai F8.**
+
+## 31. F7-03-01 — API Capability Audit & Functional Gap Analysis (2026-10-14)
+
+**COMPLETED — audit/documentation only.** Đã đọc FRONTEND_PLAN, PROJECT_LOG_V2, CURRENT_CHANGE, README/env-example keys; audit source/test hiện tại và GET localhost8000/openapi.json. Không sửa implementation, tạo API mới, thêm library, đổi database/SSE/RAG hoặc chạy mutation/provider. Những source changes có sẵn trong worktree từ task trước được giữ nguyên.
+
+### 31.1. Quy ước evidence và kết luận contract
+
+IMPLEMENTED = có đường API/client/UI cần thiết và source/tests tương ứng; không có nghĩa đã live/browser nghiệm thu. PARTIAL = một phần capability còn thiếu hoặc giới hạn contract/coverage cụ thể. MISSING = chưa có phần cần thiết cho feature MVP. BLOCKED = có implementation nhưng phép nghiệm thu tương tác chưa chạy do công cụ. NOT REQUIRED FOR MVP = không có public API/UI tương ứng hoặc không cần cho streaming MVP; không đưa vào backlog implementation.
+
+Các mã trong matrix là links đến source/tests bên dưới. Tests hiện có và đã chạy được ghi riêng; không coi test controller/SSR là browser acceptance. Status tổng hợp feature, còn cột Backend/Client/UI ghi rõ lớp nào đã có.
+
+**Inventory từ source + OpenAPI runtime: 16 operations trên 11 paths**, không tính OPTIONS do middleware:
+- Sessions: POST/GET /sessions; GET/PATCH/DELETE /sessions/{session_id}; GET /sessions/{session_id}/messages.
+- Chat: POST /chat (JSON), POST /chat/stream (text/event-stream). Event payloads đối chiếu [E], không suy ra từ response string của OpenAPI.
+- Documents: POST /documents/upload; GET /documents; GET/PUT/DELETE /documents/{document_id}; POST /documents/{document_id}/re-index.
+- System: GET /health; GET /health/dependencies.
+- Một số errors 404/409/410/503 đến từ router/repository, không được OpenAPI khai báo đầy đủ; dùng source làm evidence, không suy đoán chỉ từ schema responses.
+
+**Rename/delete session không thiếu backend API.** PATCH title yêu cầu JSON title, min1/max200, trim và reject whitespace-only; trả SessionResponse200. DELETE trả200 DeleteSessionResponse: session tombstone retained, messages hard-deleted, deleted_messages, already_deleted, deleted_at; GET/history của tombstone trả410, unknown404, malformed UUID422, active generation409. Delete repository có atomic predicate active_generation_id=None; repeat DELETE vẫn thử xóa messages còn sót. Rename không check active generation trong predicate. Frontend đã có DTO UpdateSessionTitleRequest/DeleteSessionResponse nhưng chưa có request functions hoặc UI/actions.
+
+**Giới hạn public API:** SessionResponse không expose active_generation_id; client không thể biết lock của browser khác, backend409 là authority. Scope đọc được nhưng không có endpoint đổi scope. History có citations, không có ordered sources/citation ordinal. Document detail chứa versions, không có version-selection/rollback/failed-version-retry route. Ingestion chạy synchronous; job_id không phải polling URL. Không có raw-file download/PDF-preview route, server cancel endpoint hoặc per-message mutation API.
+
+### 31.2. Functional Capability Matrix
+
+#### Session Management
+
+| Feature | Backend API | Frontend API Client | UI | Tests | Status | Required Action |
+| --- | --- | --- | --- | --- | --- | --- |
+| Create session / New Chat | POST /sessions201, body {} hoặc title [S] [SS] | createSession, runtime validation [SF] | Sidebar createNew → router.push; composer cũng tạo trước stream [SN] [CW] | [TS] [TB] [TCHAT] PASS | IMPLEMENTED | Giữ existing flow; synchronization gap ghi riêng. |
+| List sessions | GET /sessions200, items/offset/limit/total [S] | listSessions accepts pagination [SF] | Sidebar loading/empty/error và titles [SN] | [TS] [TNAV] PASS | IMPLEMENTED | Không tạo lại list UI. |
+| Session list pagination | offset≥0, limit1..200/default50; updated_at DESC, _id DESC [S] [SR] | Có query params [SF] | Hook hardcode offset0/limit50; chỉ “Hiển thị n/total”, không Load More [SH] [SN] | [TS] chỉ load first page; chưa có sidebar >50 test | PARTIAL | F7-03-02: load more/refresh, ổn định IDs, chống overlap/reset. |
+| Get session / current URL / missing | GET /sessions/{id};404/410/422 [S] | getSession + lookup controller [SF] [SC] | SessionChat kiểm tra trước history, có invalid/missing/error; active item theo exact href [HC] [SN] | [TS] [TNAV] PASS | IMPLEMENTED | Giữ behavior, thêm integration với delete. |
+| Rename/update title | PATCH /sessions/{id}200, validated title [S] [SS] | Chỉ DTO; không update/rename function [SF] | Không action/menu/title dialog [SN] | [TB] fake-service PATCH happy path; FE tests thiếu | MISSING | F7-03-02: client+mutation state+existing dropdown/dialog, validate đúng payload. |
+| Delete session | DELETE /sessions/{id}200, tombstone/messages-hard-delete [S] [SR] [SS] | DTO có, delete function chưa có [SF] | Không confirmation/action [SN] | [TB] fake-service delete/410 có; FE/repeat-delete repo tests thiếu | MISSING | F7-03-02: typed delete/confirm/reconcile, không nhầm với document raw-file policy. |
+| Delete session đang mở | Backend contract như trên [SR] | Chưa có mutation [SF] | Chưa navigate khỏi route đã xóa hoặc clear loaded history [SN] [HC] | Chưa có FE active-delete test | MISSING | Sau confirmed200 đúng ID: abort read/draft cũ, remove list, replace /chat; xóa session khác không đổi current. |
+| Delete khi stream đang chạy / remote race | Repository rejects active lock409, atomic predicate; rename không bị cấm bởi lock [SR] | Error layer đã giữ409, chưa có session action [API] [ERR] | Sidebar không nhận ChatController isGenerating; chưa có policy action [SN] [C] | [TLOCK] cover concurrent generations/cancel; chưa thấy dedicated delete-vs-generation repo test | PARTIAL | F7-03-02: safe409/no-auto-retry; nếu biết local activity thì block delete, không invent active field; test atomic guard. |
+| Get messages/history pagination | GET messages, limit1..500/default100, stable sequence/_id [S] [SR] | listSessionMessages + loadMessageHistory load all pages, reject duplicate/mixed IDs [SF] [H] | History restored backend, không localStorage system of record [HC] | [TS] [TMULTI] PASS | IMPLEMENTED | Giữ contract; đây là eager page loading, không có infinite-scroll history UI. |
+
+#### Chat Management
+
+| Feature | Backend API | Frontend API Client | UI | Tests | Status | Required Action |
+| --- | --- | --- | --- | --- | --- | --- |
+| Session trước question / multi-turn | Optional session_id; persistent mode dùng IDs backend [B] [BC] | ChatController createSession trước stream, reuse session_id [C] | Không nhập UUID; question composer và duplicate guard [CW] | [TCHAT] [TMULTI] PASS | IMPLEMENTED | Không rebuild streaming integration. |
+| Composer-created session → sidebar | POST /sessions có thật [S] | Chat workspace gọi createSession riêng, không dùng sidebar controller [C] [SH] | Sidebar hook chỉ load mount; không invalidation/subscription với create từ composer [CW] [SN] [SH] | Chưa có cross-component sidebar test; controller tests không cover gap | PARTIAL | F7-03-03: narrowly scoped synchronization; một create/turn, cập nhật đúng session list. |
+| URL sau first question / refresh trong lượt | Backend tạo session trước headers [BC] | submit promise kết thúc sau stream+history verification [C] | router.replace trong then, còn bị chặn khi persistenceError [CW] | [TMULTI] controller persistence có; early-refresh URL chưa tested | PARTIAL | F7-03-03: make timing/recovery rõ; không naive route replace làm dispose stream. Ghi policy deferred URL nếu giữ. |
+| POST /chat/stream & events | start/metadata/delta/done/error; schema có citation nhưng runtime không emit [B] [E] | fetch ReadableStream+UTF8/SSE parser/order/sequence/IDs/usage [STREAM] | Assistant draft cập nhật incremental [C] [CW] | [TSTREAM] [TPARSER] [TBSSE] PASS | IMPLEMENTED | Giữ whitespace và không coi read chunk/delta là event/token/từ. |
+| Stop / unmount / session switch | Disconnect cleanup finalize+release guard; không có cancel REST endpoint [B] [BC] | AbortController stop/dispose + ignore late callbacks [C] [STREAM] | Stop Generating; component cleanup khi đổi route [CW] | [TCHAT] [TMULTI] [TBSTREAM] PASS | IMPLEMENTED | Stop là client abort; persisted status cần reread, không tự retry request đã gửi. |
+| Persistence / reconciliation | Persist user trước SSE; finalize assistant trước terminal, citations recomputed [BC] | Sau terminal read history và check IDs/content/status/model/usage [C] [H] | persistence warning + link reload giữ terminal text [CW] | [TMULTI] [TPERSIST] [TBSTREAM] PASS | IMPLEMENTED | Giữ nguồn backend; không giả nhận thành công khi reread fail. |
+| Empty/loading/error/terminal UI | COMPLETED/PARTIAL/FAILED và pre-header HTTP/post-header SSE errors [B] | Deadline180s, safe errors, generation lock cleanup [C] [ERR] | Empty, loading, failure/partial text, intentional recovery [CW] [M] | [TCHAT] [TERR] PASS | IMPLEMENTED | Historical nonterminal gap ghi dòng kế. |
+| Historical PENDING/STREAMING không có live stream | GET messages expose mọi MessageStatus [S] [SS] | history mapper giữ status; new ChatController isGenerating=false [H] [C] | Bubble vẫn “Đang gửi/Đang trả lời” + animate spinner dựa status; không poll history [M] | Chưa có regression phân biệt historical nonterminal/live status | PARTIAL | F7-03-03: UI-only history provenance/status explanation + explicit reload; không tự sửa backend status hoặc resume generation. |
+| Copy message/code; Markdown | Không cần endpoint | Clipboard helper giữ exact text [COPY] | Message terminal/câu hỏi và code copy, denied fallback; code/table overflow [M] [CIT] | [TPOLISH] helper/SSR PASS, clipboard browser chưa chạy | IMPLEMENTED | Browser/permission/whitespace paste QA ở F7-03-05, không tạo AI action mới. |
+| Live citations / source drawer | Metadata ordered sources; page loader0-based, persisted cited identities [B] [BC] | Ordinal [n]→metadata position, đúng assistant; không chunk_index [MAP] | Click callback đúng source, file/page grouped; no fake links [CIT] | [TMAP] [TCITE] PASS | IMPLEMENTED | Browser click/focus cần QA, không PDF viewer. |
+| Citation sau refresh/history | History chỉ citations, không sources/ordinal [SS] | sources=[] khi restore, không invent ordinal [H] [MAP] | Saved-source list+missing metadata fallback; [n] không còn clickable mapping nếu thiếu metadata [CIT] | [TS] [TCITE] [TMAP] PASS fallback | PARTIAL | Chấp nhận explicit fallback MVP; full ordinal restore cần backend contract change được giao riêng. |
+| Non-stream POST /chat UI | JSON endpoint còn nguyên [B] | DTO có; không dedicated /chat client function | UI chọn SSE transport | API backend tests; FE không có JSON chat UI | NOT REQUIRED FOR MVP | Không xây song song transport UI. |
+| Edit/Regenerate/Delete individual message | Không public route trong inventory [S] [B] | Không client | Không UI | Không tests capability này | NOT REQUIRED FOR MVP | Không đề xuất hoặc triển khai trong F7-03. |
+
+#### Document Management
+
+| Feature | Backend API | Frontend API Client | UI | Tests | Status | Required Action |
+| --- | --- | --- | --- | --- | --- | --- |
+| List / pagination / filter | GET documents plain array; offset/limit1..500/default100, include_deleted [D] | get/list runtime DTO checks [DF] | Page size20, Load More, include-deleted checkbox [DL] [DC] | [TDLIST] [TBDOC] PASS | IMPLEMENTED | Không invent status/search filter hoặc total envelope; full cuối cần empty probe. |
+| Upload multipart & file validation | POST upload201, file field; supported suffix/nonempty, không max size public [D] | uploadDocument FormData không set boundary; validator đúng extensions [DF] [VALID] | Wired UploadController/dialog, không fake progress [DU] | [TUPLOAD] [TBDOC] PASS | IMPLEMENTED | Manual mock success/failure ở F7-03-04/05; live upload chưa cho phép vì embedding. |
+| Detail / versions | GET id200, versions[] trong detail [D] | getDocument [DF] | Active-version ID tách khỏi document/version status, immutable history [DL] | [TDLIST] [TBDOC] PASS | IMPLEMENTED | Không cần versions-list API riêng. |
+| Update/new version | PUT id multipart201, immutable candidate [D] [ING] | updateDocument [DF] | Phiên bản mới + confirm, validation và duplicate guard [DA] [DAC] | [TDA] [TBING] PASS | IMPLEMENTED | Đã nối F6-03, không triển khai lại. |
+| Re-index | POST id/re-index201, raw active version → new candidate [D] [DS] | reindexDocument [DF] | Confirm; disabled PROCESSING/DELETED/no-active [DA] [DAC] | [TDA] [TBDOC] [TBING] PASS | IMPLEMENTED | Không gọi retry/version-select endpoint giả. |
+| Delete / cleanup / raw retention | DELETE id200/202, metadata unpublish, vector cleanup, raw/history retained [D] [DS] | deleteDocument validates status/cleanup_pending [DF] | Soft-delete wording, confirm, intentional cleanup retry [DA] [DAC] | [TDA] [TBDOC] [TBING] PASS | IMPLEMENTED | Giữ receipt semantics, không tuyên bố raw files đã xóa. |
+| Ingestion status vs active version | UPLOADED/PROCESSING/INDEXED/FAILED/DELETED metadata; failure không promote candidate [ING] [DS] | Optional receipt.status không default giả; reread detail [DF] [DAC] | Status badge+active ID riêng, manual refresh [DL] [DU] [DA] | [TUPLOAD] [TDLIST] [TDA] [TBING] PASS | IMPLEMENTED | Synchronous request, job_id không có polling/progress API; không chuyển background. |
+| Loading/empty/error; refresh sau mutation | List/get+safe handled errors [D] | List reset/select cancellation; action check/send/reread [DC] [DAC] | Upload success reload list; action reconcile selected detail/list, warn stale/uncertain [DL] [DU] [DA] | [TDLIST] [TUPLOAD] [TDA] PASS | IMPLEMENTED | F7-03-04 kiểm tra actual UI composition; không blind promote receipt version. |
+| Destructive confirms / stale state | Backend authoritative lifecycle [DS] | Snapshot check trước mutation; abort/unmount; no replay [DAC] | Đã có Dialog/confirmation; pending close guard + Stop waiting [DA] | [TDA] controller/receipt SSR PASS; browser chưa chạy | IMPLEMENTED | Nghiệm thu focus/Escape/mobile ở F7-03-04/05; chỉ fix khi có evidence. |
+| Rollback/select active/failed-version retry/download/PDF preview | Public routes không có; ingestion.retry là internal method [D] [ING] | Không client endpoint tương ứng | Không wired controls; source drawer ghi chưa có preview [CIT] | Không public-capability tests | NOT REQUIRED FOR MVP | Không xây API mới; recover bằng existing new-version flow khi hợp lệ. |
+| Legacy static dialog/hook files | Không liên quan router runtime | use-chat-stream.ts rỗng, không import; production dùng ChatController | document-dialogs.tsx static controls không được route hiện tại import | rg imports/source reachability | NOT REQUIRED FOR MVP | Dead scaffolding không phải missing live UI; cleanup optional sau phạm vi này. |
+
+#### Integration & UX
+
+| Feature | Backend API | Frontend API Client | UI | Tests | Status | Required Action |
+| --- | --- | --- | --- | --- | --- | --- |
+| Public API URL / configuration | Backend8000; credentials giữ server-side [MAIN] | Validate HTTP(S), no credentials/query/fragment; public base from layout/pages [API] | Missing-config state, không runtime input secrets | [TAPI] PASS; prior configured build PASS mục30 | IMPLEMENTED | Setup docs có ở mục29/30; root env.example chưa có frontend variable, frontend env-example chưa có: bổ sung placeholder/docs trong F7-03-05 nếu cần. |
+| CORS dev origins | localhost3000/127.0.0.1:3000 exact; GET/POST/PUT/PATCH/DELETE, Content-Type [MAIN] | Không cần frontend proxy/CORS bypass | Same direct Browser→FastAPI architecture | [TCORS] PASS lần audit; actual Origin/preflight PASS mục29 | IMPLEMENTED | Origins/ports khác không tự được phép; không auth assumption. |
+| HTTP/API errors / retry | source 400/404/409/410/422/429/502/503; unknown status preserved [S] [D] [B] | Safe status/kind copy; abort/deadlines; no automatic mutation replay [API] [ERR] | Loading unlock và explicit retry/reload controls | [TAPI] [TERR] PASS | IMPLEMENTED | Session action clients mới reuse wrapper; 429 không giả là Groq-specific nếu server không nói. |
+| Health UX | health/dependencies expose MongoDB/Qdrant200/503, không Groq readiness [MAIN] | checkHealth validate DTO and503 [HEALTH] | Header manual check, no mount polling | [TERR] PASS | IMPLEMENTED | Không provider call để giả readiness; health không đảm bảo generation. |
+| Create/rename/delete navigation & refresh toàn shell | API có CRUD [S] | Create local sidebar state; workspace/sidebar controllers độc lập [SC] [C] | New Chat sidebar push có; rename/delete chưa có; composer/list invalidation gap | [TS] [TNAV] cover subset; missing cross-component CRUD | PARTIAL | F7-03-02 quản lý mutation-list/current route; F7-03-03 quản lý composer event, không duplicate owner. |
+| Suspense/session active route | Backend contract không bị đổi | Runtime pathname chỉ để active links [SN] | Local boundary/fallback đã sửa; shell bố cục khác giữ nguyên | [TNAV] PASS4/4; configured build/prerender + HTTP mục30 | IMPLEMENTED | Không force-dynamic/instant=false; browser hydration vẫn chưa nghiệm thu. |
+| Responsive/keyboard/dropdown/confirm/browser | API không quyết định focus | Existing Base UI/shadcn DropdownMenu/Dialog/Sheet có sẵn | Source đã có dialogs/initial focus; session menu còn thiếu [SN] [DA] [CIT] | [TPOLISH] [TNAV] [TDA] SSR/controller only; checklist manual NOT RUN | BLOCKED | F7-03-02 tạo menu bằng existing primitives; F7-03-05 browser hoặc developer evidence, không coi SSR là focus/keyboard PASS. |
+| Auth/multi-tenant, session-scope editor, Groq health API | Không public auth/scope mutation/provider-readiness routes [S] [MAIN] | Không client | Không UI | Không MVP feature tests | NOT REQUIRED FOR MVP | Giữ single-user dev/ALL_ACTIVE creation; không mở rộng kiến trúc. |
+
+### 31.3. Gaps và technical debt trước F8
+
+**Phải xử lý chức năng/coverage:** missing session PATCH/DELETE UI/client; current-session delete navigation; 409/no replay; sidebar >50 reachability; list mutation reconciliation; composer→sidebar invalidation; historical nonterminal message không giả đang live; mock functional flow/menu/dialog/browser acceptance.
+
+**Coverage gap backend session actions:** test_sessions_api PATCH/DELETE dùng FakeConversationService; test_conversation_concurrency cover generation lock/cancel, chưa thấy direct regression cho delete_session active-lock/atomic race/repeated tombstone cleanup. Source đã implement guard, không kết luận API thiếu; thêm offline repository/transport tests trong F7-03-02/05.
+
+**Debt cần ghi rõ hoặc chốt MVP:**
+- History citation ordinal: accepted baseline fallback (mục23), không giả source link. Muốn restore exact [n] sau refresh cần persist ordered sources/ordinal với contract/schema change riêng; không nằm trong F7-03 frontend completion.
+- Session URL deferred: hiện first question ở /chat chỉ canonicalize sau submit+verification. Refresh mid-stream có thể mất route của session mới; giữ safe no-replay + recovery link. F7-03-03 phải chốt rõ timing và test, không đổi route sớm khiến keyed workspace unmount/abort.
+- History PENDING/STREAMING: status API phải được giữ; presentation tách historical state khỏi local active request. Manual reread hợp lệ; không auto-resume/generate/poll loop.
+- Upload/index đồng bộ, không byte maximum công bố, không server cancellation/job polling: giữ explicit uncertainty/no fake progress; không áp giới hạn server tưởng tượng. Nếu muốn async jobs/quota/API cancel phải giao backend scope riêng.
+- Source inference cần fixture trước khi sửa: backend SSE error dùng emitted_delta để chọn PARTIAL, còn finalize_streaming_turn dùng content.strip() để chọn persisted FAILED/PARTIAL. Whitespace-only error có khả năng khác status; chưa có test cụ thể xác minh case này. F7-03-05 bổ sung fixture parity; nếu reproduce thì mở bugfix transport/persistence được giao riêng, không sửa RAG/API trong audit.
+- History eager-load all pages có thể tốn RAM/latency với conversation dài; current stable-order/mixed-session guards đã có. Không thêm infinite history pagination UI nếu chưa có nhu cầu MVP.
+- Offset pagination trên list updated_at thay đổi có thể overlap khi có concurrent writes; reconcile/reset từ backend sau mutation, detect duplicate IDs, không tuyên bố snapshot isolation.
+- Browser/tool limitation và live mutation/provider tests chưa chạy: F7-02/Suspense browser state vẫn IN PROGRESS. Không tự nâng COMPLETED vì CORS/prerender đã sửa. Full F7 trước F8 cần manual evidence hoặc user explicitly chốt debt/coverage có thể chấp nhận.
+- Static document-dialogs.tsx và empty unused use-chat-stream.ts là scaffolding; không ưu tiên refactor/xóa ở task audit.
+
+**Không cần architectural approval để dùng PATCH/DELETE hiện có.** Giữ SSE-first, synchronous ingestion, single-user dev, MongoDB làm record. Các ý tưởng đổi citation persistence/schema, async ingestion, auth/scope editor, raw-file viewer hoặc cancellation API đều cần task/authorization riêng nếu muốn; không tự đề xuất chúng như prerequisite MVP.
+
+### 31.4. Implementation backlog đề xuất — chưa triển khai
+
+#### F7-03-02 — Session Actions (ưu tiên 1)
+
+- **Scope:** typed PATCH title/DELETE đúng existing response/error contracts; session menu+rename/confirm delete bằng DropdownMenu/Dialog/Input đã có; mutation state/duplicate guards, list pagination/refresh/reconciliation và active-route cleanup. Backend409 là authority cho active generation; không auto-cancel stream rồi replay DELETE. Rename được backend cho phép trong generation, không invent server restriction.
+- **Files dự kiến:** frontend/lib/api/sessions.ts; lib/sessions/controller.ts hoặc narrowly scoped actions-controller.ts; hooks/use-sessions.ts; components/layout/session-navigation.tsx và session-actions.tsx nếu cần; types/sessions.ts chỉ UI-only state/guards phù hợp; tests/sessions.test.mjs/session-navigation.test.mjs + session action fixtures. Backend tests/test_sessions_api.py và dedicated repo-action test nếu cần, **không sửa backend business logic**.
+- **Dependencies:** F7-03-01 complete; reuse error wrapper, CORS, local Suspense, existing shadcn. Không phụ thuộc API mới hoặc F8. Owner của list/current-session mutation nằm trong task này; composer synchronization thuộc task03.
+- **AC:** rename trim/nonempty/≤200 theo actual request contract, send one PATCH, update đúng ID/title/order từ response/reload; cancel dialog không request. Delete explicit confirm, correct returned ID, status/already_deleted/message_policy/tombstone/deleted_at preserved; success current session → /chat và không history/delta cũ, other-session delete giữ current. 404/410/409/422/429/503/network/unknown outcome rõ; không local success trước receipt, không replay. Repeat DELETE200/already_deleted được hiểu đúng; không gọi session delete là giữ messages. >50 sessions reach được bằng pagination; reset/dedupe và refresh sau mutation, stale late response không revive deleted row.
+- **Required tests:** exact PATCH/DELETE methods/JSON/200 shapes/ID validation; blank/whitespace/long/Unicode title; confirm/cancel/duplicate; current/other delete; remote409 while generating/no-replay; atomic delete-vs-generation repo fixture, repeated delete/tombstone cleanup; stale list+pagination pages; dropdown Enter/Space/arrows/Escape, dialog focus trap/return trên browser hoặc developer evidence.
+- **Out-of-scope:** backend endpoint mới, individual messages CRUD, bulk delete, search/scope/auth, global state library, auto retry/timers.
+
+#### F7-03-03 — Chat Actions Completion (ưu tiên 2)
+
+- **Scope:** synchronize session mới tạo từ composer với existing sidebar list owner; explicit first-turn URL/recovery timing; historical nonterminal status UX vs local live stream; deliberate reload history khi cần. Reuse Stop/copy/source drawer và controller generation checks đã có, sửa chỉ gap này.
+- **Files dự kiến:** components/chat/chat-preview.tsx, session-chat.tsx, chat-message.tsx; lib/chat/controller.ts; lib/sessions/history.ts; existing session hook/sidebar connection từ task02; types/UI-only provenance khi cần. Tests/chat-controller, multi-turn, sessions, citation-ui, ui-polish và component integration fixtures.
+- **Dependencies:** task02 cho list mutation/invalidation ownership; F3/F4/F5 existing contracts. Không cần event/SSE/backend schema mới. Kết nối hẹp giữa components/controller, không refactor toàn application architecture.
+- **AC:** một question tạo đúng một backend session; composer-created session xuất hiện sidebar sau reconciliation, same IDs/reuse3 turns; successful canonical URL/history refresh không mất current; deferred URL policy/recovery được hiển thị/test nếu giữ, không route change vô tình abort turn. Historical PENDING/STREAMING không hiển thị như local live connection vô hạn; preserved backend status và explicit reread, không fake COMPLETED/PARTIAL. Stop/unmount/switch không leak text/session IDs, no duplicate/no generation auto retry. Copy exact text, sources đúng assistant, history fallback ordinal giữ nguyên.
+- **Required tests:** mock shell sidebar+workspace creation/list sync; stream/verification failure và reload; refresh với historical PENDING/STREAMING/FAILED/PARTIAL; delayed backend terminal/409;3-turn reused session distinct request IDs; Stop/disconnect/route switch late deltas; citation missing/sparse/repeated/history; copy denied/exact whitespace. Browser tests dùng mock, không live providers.
+- **Out-of-scope:** Edit Message/Regenerate/Delete Individual Message, stream resume, auto resend/polling loop, persist citations ordinal/source order backend, model/theme/PDF scope.
+
+#### F7-03-04 — Document Actions Completion (ưu tiên 3, verification-first)
+
+- **Lý do điều chỉnh:** F6-02/F6-03 đã nối đầy đủ API/client/controller/UI; task này không xây lại actions, chỉ nghiệm thu assembled UI và sửa failures có evidence.
+- **Scope:** list→detail→upload/version/re-index/delete/cleanup flow bằng mock; refreshed list/detail, status/active separation, stale snapshots, uncertain response và actual dialog usability. Đảm bảo action receipts và backend read authoritative.
+- **Files dự kiến:** components/documents/documents-preview.tsx, document-upload.tsx, document-actions.tsx; lib/documents controllers và lib/api/documents.ts **chỉ nếu test chứng minh lỗi**; tests/document-upload, document-actions, documents + mock fixtures.
+- **Dependencies:** existing F6 implementation, F7-02 responsive/focus work, stable errors/CORS. Không phụ thuộc session action business logic; ưu tiên theo requested ordering nhưng verification có thể độc lập.
+- **AC:** multipart field file/boundary đúng; no empty/unsupported file request; pending status không fake%/INDEXED; actual201/status/activated và reread dùng đúng contract. Version failure preserve active cũ, re-index đúng /re-index và creates new version, delete200/202 ghi raw retention, cleanup retry explicit confirm. Selection/filter/navigation không bị late action overwrite; refresh fail warn stale. Confirm/cancel/Escape/focus/mobile hoạt động; sync upload không biến thành job polling.
+- **Required tests:** reuse13 upload +13 actions +12 list/detail fixtures, thêm composition tests nếu thiếu (upload triggers list reload, mutation updates selected detail/removes row, include_deleted/cleanup warning, busy modal/no duplicate, unmount uncertain). Browser keyboard/viewport/mock success/failure; live ingestion NOT RUN trừ task riêng cho phép Gemini.
+- **Out-of-scope:** new version endpoints, rollback/version select, retries bằng job_id, raw-file/PDF download/preview, async jobs, hard-delete raw, thêm library/refactor.
+
+#### F7-03-05 — Functional QA & Regression (ưu tiên 4, gate trước F8)
+
+- **Scope:** integration fixtures cho completed task02/03/04, source/OpenAPI/DTO drift check, HTTP CORS/prerender, browser/manual entire critical flows và technical-debt disposition. Không tự phát triển features mới.
+- **Files dự kiến:** frontend/tests existing/new functional fixtures; frontend/scripts/qa-mock-api.mjs mở rộng PATCH/DELETE/list pagination/successful mock document mutation có authoritative reads (harness hiện chưa cover các actions success này); backend selected tests, docs/frontend-accessibility-checklist.md, docs/frontend-browser-qa-blocker.md, FRONTEND_PLAN/CURRENT_CHANGE. Frontend env placeholder/setup docs nếu cần, không edit secret .env.
+- **Dependencies:** task02/03/04 hoặc recorded NOT REQUIRED decisions; Browser runtime tương thích hoặc developer Chrome/Edge evidence. Gate không được “PASS” từ SSR alone; F7-02/Suspense outstanding browser checks được tích hợp để tránh double QA tasks.
+- **AC:** complete matrix required rows không còn MISSING, PARTIAL nào giữ lại có reason/decision; create/list/load-more/rename/delete-current/other+409-stream;3-turn history/Stop/disconnect/copy/citation fallback; documents lifecycle/active preservation/cleanup+stale; clear loading/errors/no request loops; keyboard/focus/320–375px/zoom/reduced motion/screen reader checklist có actual outcomes. Expected whitespace-only error parity được fixture kiểm tra, mismatch ghi bugfix task riêng trước khi chốt; không tự sửa contract để test pass.
+- **Required tests:** frontend complete regression, targeted backend sessions/concurrency/documents/ingestion/chat/SSE,45-schema verifier, configured API build/prerender/typecheck/lint/diff; actual Origin GET sessions/documents/preflight chat, browser refresh/routing/hydration/menu/dialog. REST/SSE mocks không gọi Groq/Gemini; production/live mutation tests chờ authorization riêng.
+- **Out-of-scope:** F8 implementation/demo/publish/deploy, backend/schema/API expansion, live generation/embedding mặc định, broad refactor.
+
+### 31.5. Checks đã chạy trong audit và giới hạn
+
+| Check | Kết quả thực tế |
+| --- | --- |
+| GET localhost8000/openapi.json, chỉ print path/method inventory | PASS16 operations/11 paths khớp routers. Không đọc/in private history hoặc mutate data. |
+| node --test tests/*.test.mjs (frontend) | PASS165/165 existing regression. Không thêm/sửa test code trong audit. |
+| Selected backend unittest suites | PASS73/73: test_sessions_api, test_conversation_models, test_conversation_concurrency, test_documents_api, test_ingestion, test_chat_stream, test_chat_persistence, test_sse_schema, test_cors. External TCP connect/connect_ex blocked, loopback IPC Windows allowed; mocked/local services. |
+| node tests/verify-api-contract.mjs | PASS45 REST/SSE/health schemas, network disabled. |
+| git diff --check / new-file whitespace / source snapshot hash | PASS; tracked+untracked nonignored backend/frontend files không đổi sau documentation work. |
+| Build/typecheck/lint/browser/manual/new-feature tests/live cloud mutation/provider | NOT RUN trong audit documentation-only; previous evidence ở các mục cũ không thay thế nghiệm thu features chưa có. Groq=0, Gemini=0. |
+
+Local Qdrant fixture phát warning payload indexes không có tác dụng trên local client; tests vẫn PASS. Đây không phải verification cloud Qdrant readiness. Browser tool blocker giữ theo evidence28.1/30, không thử hoặc tự nhận khôi phục trong task audit này.
+
+Files changed chỉ FRONTEND_PLAN.md, CURRENT_CHANGE.md và docs/changelog/phase-02.md. Không đổi PROJECT_LOG_V2, source/dependencies/config/API/DB/RAG/SSE; preserved dirty changes từ task trước. F7-03-01 đáp ứng full audit/matrix/gaps/backlog/docs, **COMPLETED**; F7-03-02…05 **NOT STARTED**. Dừng, không tự triển khai actions hoặc F8.
+
+### 31.6. Source/test references dùng trong matrix
+
+Các mã source và tests trong từng ô matrix đều là links đến file thực tế của checkout. Nhóm S/SF/SH/SC/SN là sessions; B/BC/E/C/CW/H là chat/history; D/DS/ING/DF/DC/DU/DA/DAC là documents; API/ERR/MAIN/HEALTH là integration. Mã T… trỏ đúng existing test file, kết quả rerun ở mục31.5; không ám chỉ missing-feature tests đã tồn tại.
+
+[S]: ./backend/app/api/sessions.py
+[SS]: ./backend/app/conversation_schemas.py
+[SR]: ./backend/app/conversation_repository.py
+[SF]: ./frontend/lib/api/sessions.ts
+[SH]: ./frontend/hooks/use-sessions.ts
+[SC]: ./frontend/lib/sessions/controller.ts
+[SN]: ./frontend/components/layout/session-navigation.tsx
+[H]: ./frontend/lib/sessions/history.ts
+[HC]: ./frontend/components/chat/session-chat.tsx
+[B]: ./backend/app/api/chat.py
+[BC]: ./backend/app/conversation_service.py
+[E]: ./backend/app/sse_schema.py
+[C]: ./frontend/lib/chat/controller.ts
+[CW]: ./frontend/components/chat/chat-preview.tsx
+[M]: ./frontend/components/chat/chat-message.tsx
+[STREAM]: ./frontend/lib/api/chat.ts
+[COPY]: ./frontend/components/chat/copy-button.tsx
+[MAP]: ./frontend/lib/chat/source-mapper.ts
+[CIT]: ./frontend/components/chat/citation-content.tsx
+[D]: ./backend/app/api/documents.py
+[DS]: ./backend/app/document_service.py
+[ING]: ./backend/app/ingestion.py
+[DF]: ./frontend/lib/api/documents.ts
+[DC]: ./frontend/lib/documents/controller.ts
+[DL]: ./frontend/components/documents/documents-preview.tsx
+[DU]: ./frontend/components/documents/document-upload.tsx
+[DA]: ./frontend/components/documents/document-actions.tsx
+[DAC]: ./frontend/lib/documents/actions-controller.ts
+[VALID]: ./frontend/lib/documents/upload-validation.ts
+[MAIN]: ./backend/app/main.py
+[API]: ./frontend/lib/api/client.ts
+[ERR]: ./frontend/lib/api/error-ux.ts
+[HEALTH]: ./frontend/lib/api/health.ts
+[TS]: ./frontend/tests/sessions.test.mjs
+[TB]: ./backend/tests/test_sessions_api.py
+[TCHAT]: ./frontend/tests/chat-controller.test.mjs
+[TNAV]: ./frontend/tests/session-navigation.test.mjs
+[TLOCK]: ./backend/tests/test_conversation_concurrency.py
+[TMULTI]: ./frontend/tests/multi-turn.test.mjs
+[TSTREAM]: ./frontend/tests/chat-stream-client.test.mjs
+[TPARSER]: ./frontend/tests/sse-parser.test.mjs
+[TBSSE]: ./backend/tests/test_sse_schema.py
+[TBSTREAM]: ./backend/tests/test_chat_stream.py
+[TPERSIST]: ./backend/tests/test_chat_persistence.py
+[TERR]: ./frontend/tests/error-health.test.mjs
+[TPOLISH]: ./frontend/tests/ui-polish.test.mjs
+[TMAP]: ./frontend/tests/source-mapper.test.mjs
+[TCITE]: ./frontend/tests/citation-ui.test.mjs
+[TDLIST]: ./frontend/tests/documents.test.mjs
+[TBDOC]: ./backend/tests/test_documents_api.py
+[TUPLOAD]: ./frontend/tests/document-upload.test.mjs
+[TDA]: ./frontend/tests/document-actions.test.mjs
+[TBING]: ./backend/tests/test_ingestion.py
+[TAPI]: ./frontend/tests/api-client.test.mjs
+[TCORS]: ./backend/tests/test_cors.py
+
+## 32. Evidence F7-03-02 — Session Actions (2026-10-14)
+
+**Implementation/automated verification hoàn tất; IN PROGRESS cho manual menu/dialog accessibility.** Không triển khai F7-03-03 hoặc F8. Backend routes/schema/RAG/SSE và các completed tasks giữ nguyên.
+
+Audit đầu lượt thấy `frontend/lib/api/sessions.ts` đã có validateSessionTitle/updateSessionTitle/deleteSession và list DTO hardening; tái dùng, không ghi đè/nhận là code mới của lượt này. Đối chiếu PATCH title200/DELETE200 và DeleteSessionResponse hiện hữu, field defaults optional trong DTO nhưng server serialize các defaults. User/API client work có sẵn được giữ nguyên.
+
+- `SessionsController` thêm load-more offset/limit50, explicit refresh, pagination shape/duplicate/no-progress guards và stale-request abort. Mutations có busy/duplicate guards; cancel confirmation không request; receipt đúng session mới apply. Rename reorder/update rồi reread first page; delete remove row/total rồi authoritative reread, không late list revive deleted session. Create abort stale list để tránh overwrite; load/load-more bị khóa khi mutation/create active.
+- useSessions nối typed clients. Sidebar có menu theo từng session dùng existing DropdownMenu/Button, refresh/load-more; link và action button là siblings, tránh button trong anchor. Suspense boundary/fallback không đổi. Tên validate nonempty/trim/max200 code points, không giới hạn sai emoji bằng UTF-16 maxLength.
+- Controlled Dialog: rename initial focus input; delete initial focus Hủy; request pending khóa confirmation/close, safe errors giữ dialog và không tự replay; muốn retry delete phải xem lại/confirmation mới hoặc refresh. Final focus quay opener còn tồn tại, fallback New Chat/main khi row đã bị xóa. Dialog max-height/dvh và title wrap cho mobile; actual focus trap/arrows/Escape chưa được browser-tested.
+- Xóa current session chỉ router.replace('/chat') sau confirmed receipt đúng ID; other-session delete giữ current. Current pathname ref cập nhật khi route đổi để giảm stale callback navigation, UUID comparison case-insensitive. Existing Chat workspace/read unmount cleanup xử lý route exit; không sửa streaming controller. Không gọi Stop hoặc retry DELETE tự động khi backend409.
+- Backend active_generation_id không public: UI không giả rằng biết remote lock hoặc thêm field mới. DELETE409 có safe conflict message và không remove/navigate; PATCH rename trong generation được phép đúng existing repo contract. Tests mới chứng minh atomic delete predicate, repeated tombstone/message cleanup và HTTP409 mapping; không sửa repo/business logic.
+- Mock API RAM-only thêm PATCH/DELETE session, tombstone410/history-empty, idempotent receipt,409 khi mock stream active, `/many`60 sessions và CORS allow-method PATCH. Documents mock vẫn không persist mutations. Chỉ fixture requests, không live user-session writes.
+
+### 32.1. Verification
+
+| Check | Kết quả thực tế |
+| --- | --- |
+| `node --test tests/session-actions.test.mjs` | PASS7/7 (trong full run): exact PATCH/title Unicode/DELETE, invalid response ownership/status/policy, pagination>50/overlap, confirmation/duplicate/stale list,409/network/HTTP failures/no replay, dispose/late results. |
+| `node --test tests/session-navigation-ui.test.mjs` | PASS2/2: named menu/refresh/load-more/no nested buttons trong links; actual parent onDeleted callback navigate current, other-session giữ route. Mock hooks/dialog, SSR/callback evidence only. |
+| `node --test tests/qa-mock-api.test.mjs` | PASS6/6 sau final mock CORS PATCH adjustment; production REST/SSE clients,60-session pagination, rename/idempotent delete/410-history, actual local HTTP409 while stream and PATCH allowed. Không browser enforcement. |
+| `node --test tests/*.test.mjs` | PASS176/176 regression. Final mock-only header/assert adjustment được kiểm tra lại bằng6/6 harness; không thay UI behavior trong adjustment. |
+| `python -m unittest tests.test_session_actions tests.test_sessions_api tests.test_conversation_concurrency` (backend/.venv Python3.10.11) | PASS11/11, in-memory/mocked: active lock/no deletion, atomic race, repeat DELETE cleanup/tombstone, rename preserves generation guard, router409; existing CRUD/concurrency. |
+| configured API `npm.cmd run build` | PASS7/7 prerender; chat dynamic partial prerender/documents static giữ nguyên. Process env override restore, không viết .env. |
+| `node node_modules/typescript/bin/tsc --noEmit` | PASS, sau build. |
+| `npm.cmd run lint` | PASS0 warnings. |
+| `node tests/verify-api-contract.mjs` | PASS45 schemas, network disabled. |
+| `git diff --check` và new-file whitespace | PASS. |
+| Browser menu/dialog keyboard/mobile/focus/screen reader; live session PATCH/DELETE/provider | NOT RUN/BLOCKED: Browser import retry lỗi `Cannot redefine property: process` trước navigation. Groq=0, Gemini=0. |
+
+Menu/dialog source sử dụng Base UI semantics và focus refs không phải bằng chứng manual PASS. `docs/frontend-browser-qa-blocker.md` có extension F7-03-02: chạy local mock với API base `http://127.0.0.1:4011/many`, keyboard/arrows/Escape/focus-return, rename/cancel, delete current/other, pending request/back navigation, DELETE409 trong mock stream và mobile320/375px. Chưa tự đánh dấu các AC browser đã nghiệm thu.
+
+### 32.2. Browser acceptance retry (2026-10-14)
+
+Tiếp tục đúng F7-03-02, không triển khai lại code đã PASS. Bootstrap Browser chính thức thất bại tại bước import với `TypeError: Cannot redefine property: process`; reset phiên công cụ rồi retry vẫn cùng lỗi, trước setup/connection/navigation. Basic execution trả2 và builtin platform trảwin32. Packaged troubleshooting không có cách phục hồi lỗi này trong workspace; không sửa plugin/runtime hoặc dùng cơ chế browser-control thay thế.
+
+- HTTP từ Agent: `127.0.0.1:3000/chat` và `localhost:3000/documents` đều200. Đây là delivery evidence, không phải hydration/accessibility acceptance.
+- Rerun `node --test tests/session-actions.test.mjs tests/session-navigation-ui.test.mjs tests/qa-mock-api.test.mjs`: PASS15/15, gồm production-client mock HTTP,409/idempotence/pagination/reconciliation và SSR/navigation callbacks.
+- Keyboard/focus/mobile/menu/dialog trong browser: **NOT RUN/BLOCKED**. Build/typecheck/lint/backend/contract không chạy lại trong lượt retry chỉ cập nhật docs; evidence trước ở32.1 giữ nguyên.
+- Không sửa UI/API/config, không restart/kill server developer, không live mutations hoặc Groq/Gemini. Task giữ **IN PROGRESS**; handoff Chrome/Edge với mock `/many` và evidence template trong `docs/frontend-browser-qa-blocker.md` vẫn áp dụng. Không chuyển F7-03-03/F8.
+
+### 32.3. Current capability delta so với audit snapshot mục31
+
+| Capability | Implementation hiện tại | Remaining acceptance |
+| --- | --- | --- |
+| PATCH title/DELETE client → UI | Wired, safe validated receipt/state | Browser menu/dialog QA |
+| Current vs other session deletion | Confirmation/callback routing implemented/tested | Browser hydration/Back/session switching |
+| Active-generation delete/idempotence | Backend behavior preserved, repository/router/mock regression PASS | Manual mock conflict/recovery |
+| Session list>50/refresh/mutation reconciliation | Implemented/tested | Browser long list/loading/mobile |
+| Composer-created session → sidebar/history nonterminal/URL timing | Chưa đổi | F7-03-03 NOT STARTED |
+
+Files changed: `frontend/lib/sessions/controller.ts`, `frontend/hooks/use-sessions.ts`, `frontend/components/layout/{session-navigation,session-actions}.tsx`, `frontend/tests/{session-actions,session-navigation-ui,qa-mock-api}.test.mjs`, `frontend/scripts/qa-mock-api.mjs`, `backend/tests/test_session_actions.py`, `docs/frontend-browser-qa-blocker.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md và `docs/changelog/phase-02.md` (F3-03 archive nguyên vẹn,15 entries). API client source đã có đầu lượt được tái dùng; không thêm library hoặc đổi backend logic. **Dừng ở F7-03-02; chờ manual evidence, chưa chuyển F7-03-03/F8.**
+
+## 33. Evidence F7-03-03 — Chat Actions Completion (2026-10-15)
+
+**IN PROGRESS chỉ ở browser acceptance; implementation/automated checks PASS.** Người dùng giao task03 riêng, không coi task02/browser acceptance cũ là COMPLETED. Matrix mục31 và evidence mục32 là snapshot lịch sử; phần này ghi current delta.
+
+- Composer dùng `createChatServices`: POST `/sessions` đúng client/DTO có sẵn, một lần trước turn đầu; confirmed creation phát scoped in-memory list invalidation. `useSessions` vẫn sở hữu sidebar list, subscribe trước initial load và unsubscribe/dispose khi unmount. List được reread sau stream kết thúc/thất bại; không cache session/localStorage, không replay POST. Invalidation khi sidebar create/mutation đang pending được coalesce và xử lý sau mutation, không bị bỏ mất hoặc ghi đè receipt bằng stale read. Không thêm Context/provider/state library.
+- Giữ policy **deferred URL** vì route mới remount keyed workspace, có thể abort stream. Chỉ replace `/chat/{id}` sau terminal + persisted-history verification thành công; `historyVerified` là UI state, reset mỗi accepted turn. Stop/disconnect/pre-header error/failed verification không tự chuyển URL. Một turn chủ động tiếp theo xác minh thành công vẫn canonicalize được, sửa gap `hadSession` trước đó. Mounted guard/unmount cleanup và turn-ID guards giữ nguyên.
+- Banner ngay khi có confirmed session ID: giải thích refresh `/chat` giữa lượt không restore route; link đúng ID mở tab mới để đọc/lưu lịch sử mà không abort tab đang stream. Không claim tab mới có thể resume. Error/persistence recovery links cũ giữ nguyên. ID chưa nhận do create response uncertainty vẫn phải dùng sidebar reload chủ động, không tự tạo lại.
+- `ChatViewMessage.origin=history` chỉ ở UI mapper, không đổi API DTO. Historical PENDING/STREAMING giữ status/content/request/message IDs, hiển thị nhãn snapshot + giải thích không có live connection, không spinner/“Đang chuẩn bị” vô hạn. Explicit full-page “Tải lại lịch sử”, ẩn trong local generation/verification; không polling, auto-resume hoặc fake terminal status. Backend có thể còn xử lý từ tab/client khác; submit chủ động vẫn để backend409 quyết định.
+- Stop/copy/citation/Markdown/SSE implementation giữ nguyên; chỉ đổi nonterminal presentation. Sources còn được preserve theo đúng message khi verification; history REST vẫn không expose ordered sources, ordinal fallback không suy đoán. Empty terminal response không còn ghi “Đang chuẩn bị”. Không thêm Edit/Regenerate/Delete Message, model/theme/PDF, backend/schema/RAG/dependency/config.
+- RAM-only mock bổ sung409 trước SSE headers khi session đã STREAMING, đúng existing FastAPI chat409 contract. Không live writes/generation, Groq=0, Gemini=0.
+
+### 33.1. Verification thực tế
+
+| Check | Kết quả |
+| --- | --- |
+| `node --test tests/chat-actions.test.mjs tests/chat-workspace.test.mjs` | PASS7/7: real hook subscription + workspace submit/SSR/effect harness + production REST/SSE/local HTTP, sidebar before terminal, no duplicate create,3-turn distinct request IDs/history refresh, invalidation scopes/queue/dispose, Stop/disconnect/verification failure/recovery, delayed terminal/remote409 and preserved history statuses. Không phải DOM hydration/browser E2E. |
+| `node --test tests/*.test.mjs` | PASS183/183 ngoài sandbox. First sandbox run180/183;3 Python-dependent fixture tests FAIL vì sandbox không truy cập interpreter ngoài workspace. Không đổi/cài lại Python; existing3.10.11 dùng được khi escalation. |
+| `node tests/verify-api-contract.mjs` | PASS45 schemas, offline/network blocked, ngoài sandbox. First sandbox attempt FAIL103 do cùng interpreter access. |
+| Configured API `npm.cmd run build` | PASS7/7 prerender, exit0. Initial sandbox run FAIL Google Fonts fetch; rerun ngoài sandbox PASS, không sửa font/config. Process-only mock base env override đã restore; không gọi mock/backend trong build. Chat route vẫn partial prerender, documents static. |
+| `node node_modules/typescript/bin/tsc --noEmit` | PASS sau production build. |
+| `npm.cmd run lint` | PASS0 warnings sau sửa conditional React.useState trong test harness; không disable rule. Harness rerun1/1 PASS sau chỉnh test-only, application source không đổi sau full regression/build. |
+| `git diff --check`, new-file whitespace và log archive | PASS; F4-01 archive exact text trước khi bỏ khỏi CURRENT_CHANGE, giữ15 entries. |
+| Browser bootstrap | FAIL import `Cannot redefine property: process`, trước setup/connection/navigation; troubleshooting đã đọc. Mock browser keyboard/focus/mobile/URL interactions NOT RUN. |
+| Live backend/provider smoke | NOT RUN; không có outbound provider calls. |
+
+Files changed trong task03: `frontend/lib/chat/{controller,recovery,services}.ts`, `frontend/lib/sessions/{controller,history,invalidation}.ts`, `frontend/hooks/use-sessions.ts`, `frontend/components/chat/{chat-preview,chat-message,chat-recovery}.tsx`, `frontend/scripts/qa-mock-api.mjs`, `frontend/tests/{chat-actions,chat-workspace}.test.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/frontend-browser-qa-blocker.md`, `docs/changelog/phase-02.md`. Giữ toàn bộ dirty work có trước; không sửa backend hoặc session navigation/action dialogs.
+
+Remaining acceptance: Chrome/Edge mock extension F7-03-03 trong browser QA doc; URL/new-tab/reload/route switching, keyboard/focus/mobile và copy/source drawer trực tiếp. Rủi ro đã công bố: refresh `/chat` trước canonical URL mất current route; cần mở/lưu link hoặc chọn sidebar; uncertain POST creation không thể suy ra receipt bị mất; offset list/history không có snapshot; history thiếu ordered sources. **Dừng tại F7-03-03; chưa triển khai F7-03-04/05/F8.**
+
+## 34. Evidence F7-03-04 — Document Actions Completion (2026-10-15)
+
+**IN PROGRESS cho browser acceptance; automated verification/bugfix hoàn tất.** Verification-first: không triển khai lại upload/version/re-index/delete, không sửa components/UI/client/backend/contracts/RAG/dependencies/config. Existing F6 và task02/03 browser states giữ nguyên; chưa chuyển F7-03-05/F8.
+
+### 34.1. Audit và gap có bằng chứng
+
+Audit documents-preview/document-upload/document-actions, hooks/controllers/client, FastAPI document router/Pydantic và repository failure semantics xác nhận:
+
+- Existing POST upload/PUT version dùng multipart `file`,201; POST `/re-index` không body tạo version mới; DELETE200/202 có retained raw-file policy. File validation/sync pending không fake progress, receipt không suy ra current detail.
+- Existing callbacks: upload receipt→controller.reload; action get preflight + mutation + authoritative get→reconcile selected detail/list; stale snapshot chặn mutation, failed reread giữ receipt + stale warning; delete bỏ row khỏi default list nhưng giữ tombstone detail để cleanup confirm mới. Không cần viết lại các flows.
+- **Reproduced bug:** list đã có page đầu, load-more đang chờ; action reconcile abort list cũ và điều chỉnh offset sau delete. State trở lại ready nhưng `listAbort` vẫn giữ request cũ đến khi transport settle, nên loadMore tiếp theo âm thầm return. Test kỳ vọng offsets `[0,2,1]` nhận `[0,2]` → FAIL.
+- **Minimal fix:** `DocumentsController.reconcile` abort rồi clear list/detail request slots ngay. Existing signal + identity guards vẫn drop stale results/finally; load-more mới đọc đúng offset trong khi response cũ chưa settle. Regression chuyển PASS, old response không revive deleted row hoặc clear request slot mới. Không đổi retry/API/pagination strategy.
+
+### 34.2. Verification fixtures và coverage
+
+Thêm opt-in `/lifecycle` vào loopback QA mock, helper `qa-document-lifecycle.mjs`: metadata RAM-only, real multipart decoder, exact routes/status/GET rereads, version failure giữ active cũ theo repository, first DELETE202/explicit second200. Synthetic filename `qa-fail.txt` gây500 với persisted FAILED version; default document mutation503 giữ nguyên. Không filesystem raw-file storage, backend/provider import, outbound proxy, parse/embed/index thật hoặc job polling. Body cap2MiB chỉ thuộc mock. Handler mới phục vụ task04 acceptance, không thực thi task05.
+
+`document-lifecycle.test.mjs` dùng actual DocumentsDataView/DocumentDetailPanel props, configured upload/actions callbacks + hook/effect harness + real production clients/controller/local HTTP. Harness mô phỏng parent props mới sau reconciliation; không chứng minh DOM/portal/focus/hydration. Test-only initial failures do giữ props cũ đã được sửa trong harness, không đổi implementation để che test.
+
+| Check | Kết quả thực tế |
+| --- | --- |
+| New reconciliation regression | FAIL trước fix, PASS sau fix: canceled page slot, adjusted offset, stale response/no deleted-row revival. |
+| Existing list/detail/actions | PASS26/26 với new regression, gồm12 list/detail +13 actions. |
+| New lifecycle composition | PASS7/7 trong full run: upload callback/list refresh/multipart201; cancel/duplicate/busy close guards; version/re-index authoritative detail/list; failed version active preservation/delete202/confirmed cleanup200/include_deleted; stale preflight/failed reread warning; selection/filter unmount/late response; isolated profile/default503/invalid multipart; upload unmount ignores late201/no refresh/replay. |
+| `node --test tests/*.test.mjs` | PASS191/191, gồm existing13 upload +13 actions +12 list/detail và8 new tests. Ngoài sandbox để offline Python fixtures truy cập existing interpreter, không cài lại environment. |
+| Configured-API `npm.cmd run build` | PASS7/7 prerender, exit0; mock lifecycle base chỉ process env, restore sau build, không .env edit. Ngoài sandbox để tải Google Fonts. |
+| `node node_modules/typescript/bin/tsc --noEmit` | PASS sau build. |
+| `npm.cmd run lint` | PASS0 warnings sau bỏ unused binding trong mock helper; không disable rule. |
+| `node tests/verify-api-contract.mjs` | PASS45 schemas, offline/network disabled. |
+| `git diff --check`, new-file whitespace, archive | PASS; F4-02 archive exact text đã xác minh trước khi remove entry cũ, CURRENT_CHANGE giữ15 entries. |
+| Browser bootstrap | FAIL import `Cannot redefine property: process`, trước setup/connection/navigation. Keyboard/Escape/focus/mobile/hydration/mock browser flows NOT RUN/BLOCKED. |
+| Backend suites/live ingestion/provider | NOT RUN trong task04; source/schema đối chiếu và offline fixtures không thay live integration. Groq=0, Gemini=0. |
+
+Files changed riêng task04: `frontend/lib/documents/controller.ts` (clear aborted slots), `frontend/tests/{document-reconciliation,document-lifecycle}.test.mjs`, `frontend/scripts/{qa-mock-api,qa-document-lifecycle}.mjs`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/frontend-browser-qa-blocker.md`, `docs/changelog/phase-02.md`. Giữ dirty work có trước.
+
+Remaining acceptance: Chrome/Edge mock `/lifecycle` checklist trong browser QA doc. Actual confirm/cancel/Escape/focus return/trap/mobile/layout không suy luận PASS từ callbacks/SSR. Mock version/raw retention counters không chứng minh ingestion/cloud/filesystem thật. Sync API không có progress/job polling/snapshot; uncertain mutations cần reread và confirmation mới, không auto-retry. **Dừng tại F7-03-04; chưa triển khai F7-03-05/F8.**
+
+## 35. Evidence F7-03-05 — Functional QA & Regression (2026-10-15)
+
+**IN PROGRESS; gate trước F8 NOT PASSED.** Current capability matrix/technical-debt disposition và exact commands nằm tại [docs/frontend-functional-qa.md](./docs/frontend-functional-qa.md). Không phát triển feature mới hoặc sửa frontend/backend application logic/config/API/schema/RAG trong task này. Giữ task02/03/04/F7-02/Suspense manual acceptance như cũ.
+
+| Check | Actual result |
+| --- | --- |
+| Full frontend `node --test tests/*.test.mjs` | PASS193/193. New combined local HTTP workspace exercises session CRUD/rename/idempotent delete/3-turn SSE/distinct IDs/history isolation + document upload/version/re-index/delete202/cleanup200. New whitespace mismatch frontend fixture preserves exact content/PARTIAL, warns verification, unlocks/no replay/no canonical navigation. Existing action/keyboard-handler/error/clipboard/citation/deadline/controller/SSR/effect tests retained. Không DOM browser E2E. |
+| Guarded backend `verify_frontend_functional_qa.py` | **FAIL:80/81 pass,1 fail**, includes sessions/action repository/concurrency/models/documents/ingestion/chat persistence/stream/SSE/CORS. External TCP blocked, loopback IPC allowed. New parity fixture compares real encoder→real ConversationService→in-memory repository; no real provider/cloud. Local Qdrant payload-index warning là fixture limitation. |
+| Offline `verify-api-contract.mjs` | PASS45 schemas, network disabled. |
+| `verify-local-integration.mjs` | PASS runtime/source OpenAPI paths+schemas,11 paths; actual two frontend origins × GET sessions/documents200 exact ACAO/Vary, two OPTIONS chat/stream200 with POST/content-type; disallowed localhost3001 preflight400/noACAO. GET/OPTIONS only, không print session/document body. |
+| Configured API production build/prerender | PASS7/7, exit0. Process mock lifecycle base restore, no .env edits; partial session route/static documents retained. |
+| `verify-production-delivery.mjs` | PASS production `/chat`, `/chat/{fixture ID}`, `/documents`200/main and client JS200; owned ephemeral loopback server stopped/exit verified. Existing developer servers untouched. HTTP không chứng minh hydration/active routing. |
+| Standalone TypeScript / ESLint | PASS sau build / PASS0 warnings; không disabled rules. |
+| git diff --check / new-file whitespace / log archive | PASS; F4-03 archive exact text trước khi remove entry cũ, CURRENT_CHANGE giữ15 entries. |
+| Browser bootstrap | FAIL import `Cannot redefine property: process`, trước setup/connection/navigation; packaged troubleshooting workflow read. Actual keyboard/focus/mobile/zoom/reduced-motion/AT/hydration NOT RUN/BLOCKED. |
+| Live providers/ingestion/user mutations | NOT RUN; Groq=0/Gemini=0. Mutation fixtures RAM/temp in-memory only; actual backend probes read-only. |
+
+### 35.1. Reproduced blocking defect
+
+**[BUG-STREAM-001 — terminal/history parity](./docs/bugs/stream-terminal-parity.md):** một delta chỉ chứa space/newline/tab rồi provider error → SSE PARTIAL, persisted FAILED cho cùng message/content/error code. Encoder dùng emitted_delta, persistence dùng content.strip(). Non-whitespace-error và no-delta-error control cases PASS. Frontend cảnh báo và không replay/trim/hide discrepancy; điều đó không làm backend parity PASS.
+
+Regression equality assertion được giữ **FAIL**, không skip/xfail/đổi expected để xanh. Separate follow-up **BUGFIX — Stream terminal/persistence parity NOT STARTED**; task05 đã quy định mismatch phải ghi bugfix riêng, không tự sửa semantics/RAG/API trong QA. Defect chưa được chấp nhận/waive, gate còn chặn.
+
+### 35.2. Technical debt và remaining acceptance
+
+Current QA matrix không còn missing REST/action wiring được xác định ở audit task01; rows browser vẫn PARTIAL/BLOCKED. Matrix mục31 là snapshot lịch sử, current disposition trong QA report:
+
+- Keep previously accepted citation-history fallback; không đoán ordered sources/ordinal hoặc link. Backend persistence expansion cần task riêng.
+- Keep explicit deferred URL/new-tab recovery; historical nonterminal snapshot/manual reload resolved trong UI, actual browser acceptance chưa có evidence.
+- Keep synchronous ingestion/no public size cap/job polling/cancel API; uncertainty/no fake progress/no replay. Offset pagination/eager history là giới hạn được ghi rõ, không claim snapshot isolation/large-history scalability.
+- Auth/scope/model/theme/message editing/rollback/PDF/scaffolding cleanup không required trong MVP scope; không thêm features để làm đẹp matrix.
+- Browser/manual và BUG-STREAM-001 là **blockers không waive**. Live cloud/provider/ingestion NOT RUN theo scope, mocks không thay thế live proof. F8 NOT STARTED.
+
+Files changed: `backend/tests/test_stream_terminal_parity.py`, `backend/scripts/verify_frontend_functional_qa.py`, `frontend/tests/functional-regression.test.mjs`, `frontend/scripts/{verify-local-integration,verify-production-delivery}.mjs`, `docs/frontend-functional-qa.md`, `docs/bugs/stream-terminal-parity.md`, `docs/frontend-{accessibility-checklist,browser-qa-blocker}.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md`. Không sửa application implementation; dirty changes từ trước giữ nguyên. **Dừng F7-03-05, không đánh dấu COMPLETED hoặc chuyển F8.**

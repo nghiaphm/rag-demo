@@ -63,7 +63,7 @@ function ConfiguredActions({ document, apiBaseUrl, reconcile }: {
         {document.status === "DELETED" ? document.cleanup_pending ? "Thử cleanup lại" : "Đã soft-delete" : "Xóa tài liệu"}
       </DialogTrigger>
     </div>
-    <DialogContent showCloseButton={false}>
+    <DialogContent showCloseButton={false} className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{proposal ? titles[proposal.action] : "Thao tác tài liệu"}</DialogTitle>
         <DialogDescription>

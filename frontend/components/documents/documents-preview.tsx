@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { LoadingSkeleton } from "@/components/layout/loading-skeleton"
 import { useDocuments } from "@/hooks/use-documents"
 import type { DocumentsController, DocumentsState } from "@/lib/documents/controller"
 import { cn } from "@/lib/utils"
@@ -62,6 +63,7 @@ function DocumentList({
                 <button
                   type="button"
                   aria-pressed={isSelected}
+                  aria-controls="document-detail-region"
                   onClick={() => onSelect(document)}
                   className={cn(
                     "flex w-full items-start gap-3 rounded-lg p-3 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring",
@@ -249,7 +251,7 @@ export function DocumentsDataView({ state, controller, apiBaseUrl = null }: {
       </label>
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.5fr)]">
         <div className="min-w-0 space-y-3" aria-busy={state.status === "loading"}>
-          <DocumentList documents={state.items} selectedId={state.selectedId} onSelect={document => void controller.select(document.document_id)} />
+          {state.items.length === 0 && (state.status === "idle" || state.status === "loading") ? <LoadingSkeleton /> : <DocumentList documents={state.items} selectedId={state.selectedId} onSelect={document => void controller.select(document.document_id)} />}
           {(state.status === "idle" || state.status === "loading") && <p role="status" className="text-sm text-muted-foreground">Đang tải danh sách tài liệu…</p>}
           {state.status === "ready" && state.items.length === 0 && <p role="status" className="rounded-lg border p-4 text-sm text-muted-foreground">Chưa có tài liệu trong danh sách này.</p>}
           {state.status === "error" && <div role="alert" className="rounded-lg border border-destructive/25 p-4 text-sm">
@@ -258,7 +260,8 @@ export function DocumentsDataView({ state, controller, apiBaseUrl = null }: {
           {state.hasMore && state.status !== "error" && <Button type="button" variant="outline" disabled={state.status === "loading"} onClick={() => void controller.loadMore()}>Tải thêm tài liệu</Button>}
           {state.status === "ready" && !state.hasMore && state.items.length > 0 && <p className="text-xs text-muted-foreground">Đã tải hết danh sách hiện tại.</p>}
         </div>
-        <div className="min-w-0" aria-busy={state.detailStatus === "loading"}>
+        <div id="document-detail-region" role="region" aria-label="Chi tiết tài liệu" className="min-w-0" aria-busy={state.detailStatus === "loading"}>
+          {state.detailStatus === "loading" && <LoadingSkeleton />}
           {state.detailStatus === "ready" && state.detail ? <DocumentDetailPanel document={state.detail} apiBaseUrl={apiBaseUrl} reconcile={controller.reconcile} />
             : <DocumentDetailState state={state} onRetry={() => state.selectedId && void controller.select(state.selectedId)} />}
         </div>
@@ -271,7 +274,7 @@ function DocumentDetailState({ state, onRetry }: { state: DocumentsState; onRetr
   const messages = { idle: "Chọn tài liệu để xem chi tiết.", loading: "Đang tải chi tiết tài liệu…",
     missing: "Tài liệu này không còn tồn tại. Hãy làm mới danh sách.", error: "Không thể tải chi tiết tài liệu. Bạn có thể thử lại.", ready: "Chưa có chi tiết tài liệu." }
   return <div role={state.detailStatus === "error" || state.detailStatus === "missing" ? "alert" : "status"} className="rounded-xl border bg-background p-5 text-sm text-muted-foreground">
-    <p>{messages[state.detailStatus]}</p>
+    <p>{state.detailStatus === "error" ? state.detailError ?? messages.error : messages[state.detailStatus]}</p>
     {state.detailStatus === "error" && <Button className="mt-3" type="button" variant="outline" onClick={onRetry}>Thử lại chi tiết</Button>}
   </div>
 }

@@ -52,7 +52,7 @@ function ConfiguredUpload({ apiBaseUrl, onUploaded, onRefresh }: {
   }
   return <Dialog open={open} onOpenChange={next => { if (!submitting) setOpen(next) }}>
     <DialogTrigger render={<Button type="button" />}><Upload aria-hidden="true" />Thêm tài liệu</DialogTrigger>
-    <DialogContent>
+    <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>Thêm tài liệu</DialogTitle>
         <DialogDescription>Chọn PDF, Markdown, TXT hoặc XLSX. Chờ dịch vụ xử lý và xác nhận kết quả trước khi gửi thêm.</DialogDescription>

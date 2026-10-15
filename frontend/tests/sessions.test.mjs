@@ -11,6 +11,7 @@ function loadTypescriptModule(relativePath) {
   }).outputText;
   const exports = {};
   new Function("exports", "require", output)(exports, specifier => {
+    if (specifier.startsWith("@/")) return loadTypescriptModule(`../${specifier.slice(2)}.ts`);
     throw new Error(`Unexpected runtime import: ${specifier}`);
   });
   return exports;
@@ -146,7 +147,8 @@ test("session controller exposes safe list/create errors and clears loading", as
   assert.equal(controller.getSnapshot().error, "Không thể tải danh sách phiên trò chuyện.");
   assert.equal(await controller.createNew(), null);
   assert.equal(controller.getSnapshot().isCreating, false);
-  assert.equal(controller.getSnapshot().error, "Không thể tạo phiên trò chuyện mới.");
+  assert.match(controller.getSnapshot().error, /Không thể tạo phiên trò chuyện mới/);
+  assert.match(controller.getSnapshot().error, /Kiểm tra danh sách/);
 });
 
 test("opening a valid session resolves it through the mock API", async () => {

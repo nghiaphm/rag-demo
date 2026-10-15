@@ -11,6 +11,7 @@ function loadTypescriptModule(relativePath) {
   }).outputText;
   const exports = {};
   new Function("exports", "require", output)(exports, specifier => {
+    if (specifier.startsWith("@/")) return loadTypescriptModule(`../${specifier.slice(2)}.ts`);
     throw new Error(`Unexpected runtime import: ${specifier}`);
   });
   return exports;

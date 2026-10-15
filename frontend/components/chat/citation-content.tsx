@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
+import { CodeBlock } from "@/components/chat/code-block"
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import type { ChatViewMessage } from "@/lib/chat/controller"
 import { buildCitationPanel, prioritizeSourceGroups, sourceKey, type CitationSource, type SourceGroup } from "@/lib/chat/citation-panel"
@@ -74,6 +75,7 @@ export function SourceGroups({ groups, selectedKey }: { groups: SourceGroup[]; s
 
 export function CitationContent({ message }: { message: ChatViewMessage }) {
   const [selected, setSelected] = useState<CitationSource | null>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
   const panel = buildCitationPanel(message)
   // Selected identity is message-local. If metadata disappears, don't keep a stale target.
   const active = selected && panel.sources.find(source => source.key === selected.key)
@@ -90,9 +92,15 @@ export function CitationContent({ message }: { message: ChatViewMessage }) {
           ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
           ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
           blockquote: ({ children }) => <blockquote className="mt-3 border-l-2 border-primary/40 pl-3 text-muted-foreground">{children}</blockquote>,
-          code: ({ children, className, ...props }) => <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)} {...props}>{children}</code>,
-          pre: ({ children }) => <pre className="my-3 overflow-x-auto rounded-lg bg-muted p-3 text-xs">{children}</pre>,
-          a: ({ children, href }) => <a href={href} className="font-medium underline underline-offset-4" target="_blank" rel="noreferrer">{children}</a>,
+          code: ({ children, className }) => <code className={cn("rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]", className)}>{children}</code>,
+          pre: ({ node, children }) => node ? <CodeBlock node={node} /> : <pre>{children}</pre>,
+          table: ({ children }) => <div role="region" aria-label="Bảng trong câu trả lời" tabIndex={0} className="my-3 max-w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring"><table className="w-full border-collapse text-left">{children}</table></div>,
+          th: ({ children }) => <th className="border bg-muted p-2 font-semibold">{children}</th>,
+          td: ({ children }) => <td className="border p-2">{children}</td>,
+          h1: ({ children }) => <h3 className="my-3 text-lg font-semibold">{children}</h3>,
+          h2: ({ children }) => <h3 className="my-3 text-base font-semibold">{children}</h3>,
+          h3: ({ children }) => <h4 className="my-2 font-semibold">{children}</h4>,
+          a: ({ children, href }) => <a href={href} className="break-all font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" target="_blank" rel="noreferrer">{children}<span className="sr-only"> (mở tab mới)</span></a>,
         }}
       >{message.content}</ReactMarkdown>
       {panel.missingMetadata && (
@@ -105,15 +113,15 @@ export function CitationContent({ message }: { message: ChatViewMessage }) {
           </SheetTrigger>
         </div>
       )}
-      <SheetContent className="w-full sm:w-[28rem] sm:max-w-[28rem]" showCloseButton={false}>
+      <SheetContent initialFocus={closeButton} className="w-full max-w-[100vw] sm:w-[28rem] sm:max-w-[28rem]" showCloseButton={false}>
         <SheetHeader className="pr-16">
           <SheetTitle>Nguồn của câu trả lời</SheetTitle>
-          <SheetDescription>
+          <SheetDescription className="break-words">
             {active ? `${active.file_name ?? "Tài liệu chưa có tên"}${active.pdf_page_number !== null ? ` — Trang ${active.pdf_page_number}` : ""}`
               : "Các nguồn trích dẫn thuộc câu trả lời này, nhóm theo tài liệu và trang."}
           </SheetDescription>
         </SheetHeader>
-        <SheetClose render={<Button variant="ghost" size="sm" className="absolute right-3 top-3" />}>Đóng</SheetClose>
+        <SheetClose render={<Button ref={closeButton} variant="ghost" size="sm" className="absolute right-3 top-3" />}>Đóng</SheetClose>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
           {panel.missingMetadata && <p className="mb-4 text-sm text-muted-foreground">Lịch sử có thể lưu trích dẫn nhưng chưa đủ thông tin để xác định số [n]. Các trích dẫn đã lưu được hiển thị bên dưới.</p>}
           {groups.length > 0 ? <SourceGroups groups={groups} selectedKey={active?.key ?? null} />

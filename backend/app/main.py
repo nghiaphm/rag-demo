@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api import chat, documents, sessions
@@ -38,6 +39,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="RAG Demo API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    # Exact development origins; localhost and 127.0.0.1 are distinct origins.
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Content-Type"],
+)
 app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(sessions.router)

@@ -29,6 +29,8 @@ type RequestOptionsBase = Omit<RequestInit, "body" | "signal"> & {
   signal?: AbortSignal;
   /** Total fetch + body-read deadline; 0 disables timeout. Default 30 seconds. */
   timeoutMs?: number;
+  /** Explicit alternate response codes for endpoints with typed non-2xx bodies (health only). */
+  acceptedStatuses?: readonly number[];
 };
 
 export type ApiRequestOptions = RequestOptionsBase & (
@@ -92,7 +94,10 @@ export function createApiClient({ baseUrl, timeoutMs = 30_000, fetch: fetchOverr
       if (basePath && !url.pathname.startsWith(`${basePath}/`)) {
         throw new TypeError("API path phải nằm trong baseUrl.");
       }
-      const { json, body, signal, timeoutMs: requestTimeout = timeoutMs, ...init } = options;
+      const { json, body, signal, acceptedStatuses = [], timeoutMs: requestTimeout = timeoutMs, ...init } = options;
+      if (acceptedStatuses.some(status => !Number.isInteger(status) || status < 400 || status > 599)) {
+        throw new TypeError("acceptedStatuses phải là HTTP error status hợp lệ.");
+      }
       if (json !== undefined && body !== undefined) throw new TypeError("Chỉ dùng json hoặc body.");
       validateTimeout(requestTimeout);
       const headers = new Headers(init.headers);
@@ -124,11 +129,11 @@ export function createApiClient({ baseUrl, timeoutMs = 30_000, fetch: fetchOverr
           try {
             data = JSON.parse(text);
           } catch {
-            if (!response.ok) throw httpError(response.status);
+            if (!response.ok && !acceptedStatuses.includes(response.status)) throw httpError(response.status);
             throw new ApiClientError("invalid_response", "API trả về dữ liệu JSON không hợp lệ.", response.status);
           }
         }
-        if (!response.ok) throw httpError(response.status, data);
+        if (!response.ok && !acceptedStatuses.includes(response.status)) throw httpError(response.status, data);
         return { data: data as T | undefined, status: response.status, headers: response.headers };
       } catch (error) {
         if (controller.signal.aborted) {
