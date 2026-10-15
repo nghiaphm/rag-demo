@@ -205,6 +205,10 @@ async def _encode_provider_stream_impl(
                 pass
 
     content = "".join(content_parts)
+    # Terminal states follow MessageRecord's existing meaningful-content rule;
+    # retain every emitted whitespace character in the wire and stored content.
+    if error_code is None and not content.strip():
+        error_code = "RAG_STREAM_EMPTY"
     if turn is not None and service is not None:
         try:
             await run_in_threadpool(
@@ -235,7 +239,7 @@ async def _encode_provider_stream_impl(
             SSEErrorEvent(
                 data=SSEErrorData(
                     sequence=sequence,
-                    status="PARTIAL" if emitted_delta else "FAILED",
+                    status="PARTIAL" if content.strip() else "FAILED",
                     error=ChatError(
                         code=error_code,
                         message="Luồng tạo câu trả lời không thể hoàn tất.",

@@ -132,6 +132,7 @@ class TranscriptValidator {
   private readonly events: SSEEvent[] = [];
   private readonly citations: SSECitationEvent[] = [];
   private readonly deltas: SSEDeltaEvent[] = [];
+  private hasMeaningfulContent = false;
   private readonly sourceReferences = new Set<string>();
   private readonly citationReferences = new Set<string>();
   private startEvent: SSEStartEvent | null = null;
@@ -184,6 +185,9 @@ class TranscriptValidator {
           throw protocolError("protocol", "Delta phải đứng sau metadata.");
         }
         this.deltas.push(event);
+        // Match MessageRecord's Python str.strip whitespace set, including NEL
+        // and excluding BOM; this classifies status without changing any delta.
+        this.hasMeaningfulContent ||= /[^\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/u.test(event.data.content);
         break;
       case "done":
         if (!this.metadataEvent || this.deltas.length === 0) {
@@ -192,8 +196,10 @@ class TranscriptValidator {
         this.terminalEvent = event;
         break;
       case "error": {
-        const expectedStatus = this.deltas.length > 0 ? "PARTIAL" : "FAILED";
-        if (event.data.status !== expectedStatus) {
+        // FAILED may follow whitespace deltas; retain legacy PARTIAL support so
+        // history verification still detects an older server's parity mismatch.
+        if ((event.data.status === "FAILED" && this.hasMeaningfulContent)
+          || (event.data.status === "PARTIAL" && this.deltas.length === 0)) {
           throw protocolError("protocol", "Error status không khớp nội dung đã phát.");
         }
         this.terminalEvent = event;

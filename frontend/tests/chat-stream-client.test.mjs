@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { spawnSync } from "node:child_process";
 
 const chatFilename = fileURLToPath(new URL("../lib/api/chat.ts", import.meta.url));
 const parserFilename = fileURLToPath(new URL("../lib/sse/parser.ts", import.meta.url));
@@ -94,6 +95,24 @@ function isStreamError(stage, kind, status = null) {
     return true;
   };
 }
+
+test("error classification matches backend Python whitespace, preserves NEL/BOM and every delta", async () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const python = spawnSync(path.join(root, ".venv", "Scripts", "python.exe"), ["-c",
+    "import json; print(json.dumps([chr(n) for n in range(0x110000) if chr(n).isspace()]))"], { encoding: "utf8" });
+  assert.equal(python.status, 0, "Existing Python whitespace reference must be available");
+  const whitespace = JSON.parse(python.stdout);
+  for (const content of [...whitespace, whitespace.join(""), "\ufeff", " text\n"]) {
+    const expected = content === "\ufeff" || content.includes("text") ? "PARTIAL" : "FAILED";
+    const transcript = frame("start", eventData.start) + frame("metadata", eventData.metadata)
+      + frame("delta", { sequence: 3, content })
+      + frame("error", { sequence: 4, status: expected, error: { code: "RAG_STREAM_ERROR", message: "fixture", retryable: true }, usage: null });
+    const result = await client(async () => streamResponse([transcript])).stream({ question: "fixture" });
+    assert.equal(result.terminal.data.status, expected);
+    assert.equal(result.answer, content);
+    assert.equal(result.deltas[0].data.content, content);
+  }
+});
 
 test("POSTs JSON and reconstructs validated events across one-byte network chunks", async () => {
   const bytes = encoder.encode(successTranscript);

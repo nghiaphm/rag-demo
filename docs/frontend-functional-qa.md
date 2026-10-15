@@ -1,69 +1,82 @@
 # F7-03-05 — Functional QA & Regression
 
-2026-10-15. **IN PROGRESS; gate before F8 is NOT PASSED.** Two blockers: actual browser/manual acceptance is unavailable, and BUG-STREAM-001 is reproduced. Neither is waived. This report supersedes the current-status interpretation of the historical matrix in FRONTEND_PLAN section31; it does not rewrite that audit snapshot.
+2026-10-15 continuation. **IN PROGRESS: automated evidence refreshed, BUG-STREAM-001 FIXED; final gate awaits explicit disposition of remaining manual/security/live-integration limits.** No unrun check is PASS. This is the current report; [previous report, preserved verbatim](./changelog/frontend-functional-qa-initial-2026-10-15.md) contains the original193/193,80/81 failure and earlier NOT RUN snapshots.
 
-## Executed checks
+## Actual checks in this continuation
 
-| Check | Actual result and limit |
+| Check | Result / practical limit |
 | --- | --- |
-| `node --test tests/*.test.mjs` in frontend | **PASS193/193**. Production REST/SSE/parser/controllers, component callback/SSR/effect harnesses and local HTTP fixtures. Includes new combined session CRUD/3-turn/history/document lifecycle flow and whitespace mismatch recovery. No browser DOM E2E claim. |
-| `.venv/Scripts/python.exe backend/scripts/verify_frontend_functional_qa.py` | **FAIL:80/81 pass,1 fail**. Sessions/action repository/concurrency/models, documents/ingestion, chat persistence/stream, SSE/CORS and terminal parity. External TCP blocked; loopback IPC allowed. Real whitespace-only parity failure, not an environment failure. Local Qdrant warns payload indexes have no effect; cloud behavior is not verified. |
-| `node tests/verify-api-contract.mjs` in frontend | **PASS45 schemas**, offline source OpenAPI/Pydantic/SSE/type checks; network disabled in export. |
-| `node scripts/verify-local-integration.mjs` in frontend | **PASS** against actual port8000: runtime/source paths and component schemas identical,11 paths. Two allowed origins × GET sessions/documents200 with exact ACAO/Vary; two actual OPTIONS chat/stream200 allowing POST/content-type; localhost3001 preflight400/noACAO. No response data printed; no chat POST or mutation. |
-| Configured `npm.cmd run build` | **PASS7/7 prerender**, exit0; process-only API base `http://127.0.0.1:4011/lifecycle`, restored afterward. Chat session route remains partial prerender, documents static. No config/.env edits. |
-| `node scripts/verify-production-delivery.mjs` | **PASS**: production `/chat`, `/chat/{fixture UUID}`, `/documents`200/main content; client JS200. Uses an owned temporary server on an ephemeral loopback port, then verifies its exit. Developer servers untouched. HTTP delivery does not prove hydration/active navigation/accessibility. |
-| `node node_modules/typescript/bin/tsc --noEmit` | **PASS** after production build. |
-| `npm.cmd run lint` | **PASS0 warnings**; no disabled rules. |
-| `git diff --check`, new-file whitespace and archive verification | **PASS**. F4-03 archived verbatim before removing its old log entry; CURRENT_CHANGE retains15 entries. |
-| Browser bootstrap | **FAIL** at import: `Cannot redefine property: process`, before setup/connection/URL. Skill/troubleshooting workflow attempted. Keyboard/mobile/zoom/focus/screen-reader/actual browser flows **NOT RUN**. |
-| Live provider generation/embedding or user-data mutations | **NOT RUN**. Groq=0, Gemini=0. All mutation fixtures stay in local RAM/temp in-memory test stores. Actual backend probes are read-only GET/OPTIONS. |
+| `npm.cmd test` | **PASS198/198**, skipped0. Includes combined session CRUD/3-turn/history/document lifecycle, original mismatch warning and new matching whitespace-state/Unicode reference tests. |
+| Guarded `backend/scripts/verify_frontend_functional_qa.py` | **PASS84/84 after approved fix**. Before fix: original81 had1 failure; expanded84 reproduced whitespace error/normal-completion failures. Fake providers/stores, external TCP blocked. Local Qdrant payload-index warning is a fixture limitation, not cloud acceptance. |
+| Guarded `backend/scripts/verify_multi_session_isolation.py` | **PASS67/67** after backend fix. Overlaps the84-test suite; do not add them as151 unique tests. Original concurrent RAG incident remains NOT REPRODUCED. |
+| Focused `npm.cmd run test:e2e -- functional-qa.spec.mts` | **PASS13/13** real Chromium156 headless browser cases using isolated local mocks. |
+| Final `npm.cmd run test:e2e` | **PASS44/44 Chromium156**,122.2s, retries0/skipped0/flaky0/unexpected0. Rebuilt production frontend;31 prior cases +13 new functional cases. |
+| `npm.cmd run build:e2e` | **PASS7/7 production prerender**, process-only public API mock override; no `.env` edits. Rebuild for another API base before ordinary integration. |
+| `npm.cmd run typecheck`, `npm.cmd run lint` | **PASS / PASS0 warnings** after implementation changes. |
+| `npm.cmd run test:contract` | **PASS45 schemas**, source OpenAPI/Pydantic/REST/SSE/nullable/optional verification, offline network blocked. |
+| `node scripts/verify-production-delivery.mjs` | **PASS** actual production HTTP `/chat`, `/chat/{fixture ID}`, `/documents`, main content and client JS200; its owned ephemeral server exits. Browser suites separately test hydration/navigation. |
+| `node scripts/verify-local-integration.mjs` | **FAIL to connect: ECONNREFUSED127.0.0.1:8000**. The runtime OpenAPI/GET/OPTIONS/CORS assertions were NOT REACHED. Existing CORS remains covered by offline backend tests, but live8000 integration is NOT VERIFIED in this run. Did not start/reconfigure a live backend. |
+| `npm.cmd audit --json` | **9 high,0 critical**, not a clean security result. Ignored raw report: `frontend/.playwright-tmp/functional-qa-audit.json`. See disposition below. No install/update/audit fix. |
+| Diff / new-file whitespace / archive / owned3100 cleanup | PASS; CURRENT_CHANGE15 entries, F7-01 archived before removal; prior QA report archived verbatim, owned3100 probe ECONNREFUSED. |
+| Human AT / contrast / desktop zoom200% / real touch | **NOT RUN**; automated browser keyboard/mobile/scroll evidence is not human certification. |
+| Live Groq/Gemini/ingestion/user-data mutations | **NOT RUN;0 calls**. All mutation tests use fake stores/RAM/synthetic buffers. |
 
-Existing sandbox restrictions on Python outside the workspace and Google Fonts are handled with the authorized escalated check commands; no environment reconstruction or rule bypass. No frontend/backend application implementation changed in task05. Source/config changes from earlier tasks are preserved.
+## Current capability / browser acceptance matrix
 
-## Current capability coverage
-
-| Required capability | Implementation/automated evidence | Actual browser acceptance |
-| --- | --- | --- |
-| New/open/invalid/missing/deleted sessions | Sessions clients/controllers/navigation fixtures,404/410 and lookup guards PASS | NOT RUN |
-| PATCH title, cancel/confirm DELETE, current vs other navigation | Session action clients/repository/callback fixtures PASS; title Unicode/validation and idempotent receipts covered | NOT RUN; no focus/menu claims |
-| >50 sessions, refresh, stale mutation reconciliation |60-session mock, load-more/dedupe/abort tests PASS | NOT RUN |
-|409 active generation, no automatic retries | Backend guards/atomic race + mock stream conflict PASS | NOT RUN |
-| Composer creation→sidebar | Actual hook/workspace effect callback fixture + production services PASS | NOT RUN |
-|3-turn SSE, IDs, exact whitespace, paginated history/session isolation | Combined local HTTP test + multi-turn/parser/stream/history suites PASS | NOT RUN |
-| Stop/disconnect/unmount/late events, no infinite loading | Cancellation/deadline/recovery/late-callback fixtures PASS | NOT RUN |
-| Historical PENDING/STREAMING, deferred URL/recovery | Provenance/SSR/controller/canonical-path fixtures PASS | NOT RUN |
-| Copy and citation/Markdown/source drawer | Exact/denied clipboard, message-local sparse/repeated/out-of-range markers, history fallback fixtures PASS | Actual clipboard/drawer/focus NOT RUN |
-| Documents list/detail/filter/pagination/status/active ID | List/detail/stale-page regression PASS | NOT RUN |
-| Multipart upload/versions/re-index | Existing clients + wired callback/local HTTP profile PASS; no fake progress/activation | NOT RUN |
-| Failed version preserves active; DELETE202/cleanup200/raw retention | Repository/mock/controller/composition fixtures PASS | NOT RUN |
-| Safe HTTP422/404/409/429/503/network/post-header errors | Error/health/timeout/no-replay fixtures PASS; health readiness fixture only | NOT RUN; real dependency outage not induced |
-| SSE terminal vs persisted history status | **FAIL BUG-STREAM-001**, whitespace-only error; frontend warning/recovery PASS | NOT RUN |
-| Runtime contracts/CORS/prerender delivery | Actual source/runtime/Origin/OPTIONS/build/production HTTP PASS | Hydration/navigation NOT RUN |
-| Responsive320/375px, keyboard/menu/dialog, zoom/reduced motion/AT | Source/SSR/scroll/keyboard-handler tests only | **BLOCKED**, no manual row is PASS |
-
-No previously missing required REST client/action wiring remains unimplemented in this inspection. Required interaction acceptance remains PARTIAL/BLOCKED; passing source/callback fixtures does not complete those rows. Unrequested auth/scope/model/theme/individual-message/rollback/PDF/download features remain NOT REQUIRED FOR MVP.
-
-## Technical-debt disposition
-
-| Item | Decision in this QA gate |
+| Capability | Current evidence |
 | --- | --- |
-| BUG-STREAM-001 whitespace terminal/history mismatch | **BLOCKING, not accepted**. Failing reproduction retained; separately assigned backend bugfix required. See [bug report](./bugs/stream-terminal-parity.md). |
-| Browser/manual acceptance | **BLOCKING, not waived**. Recover compatible Browser/runtime or obtain developer Chrome/Edge results using the prepared mock checklist. SSR/HTTP cannot replace it. |
-| History lacks ordered source metadata | Keep the previously accepted baseline fallback from F5: persisted citation cards, unavailable inline ordinals, no guessed link/order. Exact history ordinal restoration needs a separate API/schema task. |
-| Deferred first-turn URL | Keep the F7-03-03 policy: explicit banner, correct new-tab recovery link, replace only after verified terminal. Refreshing `/chat` mid-turn cannot restore its route automatically; manual acceptance is still blocked above. No early navigation that aborts the keyed workspace. |
-| Historical nonterminal messages | UI gap resolved in task03; keep backend status, show snapshot/no live connection and explicit reload. No resume/auto polling/replay. |
-| Synchronous ingestion, no public maximum/job polling/cancel API | Keep existing API limits: no fabricated percentage/size cap/status, uncertain results require a deliberate read/confirmation. Mock2MiB cap is not a backend limit. Async jobs/quota/cancel expansion is out of scope. |
-| Offset lists can shift under concurrent writes | Keep duplicate/stale guards, reset/reread after confirmed mutation, explicit retry. No snapshot isolation claim. Pagination strategy expansion deferred. |
-| Eager history reads all pages | Known latency/RAM constraint; stable ordering and cross-session guards retained. Large-history performance was not measured; do not claim scale acceptance. |
-| Live cloud/provider/ingestion verification | NOT RUN under the no-provider scope; mocks do not prove cloud readiness or raw filesystem cleanup. A live test requires a separately authorized scope. |
-| Unused static scaffolding/optional features | Leave unchanged; no refactor or additional dependency to make the matrix appear complete. |
+| Session CRUD, title validation, menu/dialog keyboard/focus, current/other delete | Actual Chromium cases PASS from task02, plus backend/client/controller regressions. No UUID input required. |
+| Session pagination60/refresh/reconciliation | Actual browser PASS; stale/duplicate/late-response guards covered by unit/integration fixtures. |
+| Invalid/missing/deleted session routes | New browser invalid UUID +404/410 lookup cases PASS; keyboard return to Chat and no generation. |
+| Composer creation→sidebar/deferred URL/new tab/history snapshots | Task03 real browser PASS; one confirmed creation, remote409/no resume, verified canonical navigation and deliberate recovery. |
+| Three turns, request/session isolation, refresh | Existing browser + production-client fixtures PASS, distinct IDs and independent histories in backend/frontend isolation suites. |
+| Stop/disconnect/post-header error/navigation cleanup | Actual browser PASS; native AbortSignal observed, partial text/terminal loading/recovery/no replay. |
+| Copy/citations/Markdown/history fallback | Browser native clipboard/denied/code/375px drawer/focus and persisted citation fallback PASS; sparse/repeated/out-of-range fixtures PASS. History ordinal restoration remains unsupported and explicit. |
+| Document upload/version/re-index/delete202→confirmed200/status/active | Task04 browser PASS, including320×568/375×568 dialogs, failed version preserves active, stale two-tab preflight, post-action GET failure and explicit refresh. |
+| Document empty state/pagination | New browser PASS: empty→explicit refresh,21 items via offsets0/20 and reset0, no fake total or polling. |
+| Safe pre-header errors | New browser422/404/409/429/503/network cases PASS: no arbitrary error detail rendered, composer unlocks, recovery and no auto replay; deliberate503 recovery succeeds. |
+| Health | New browser PASS: no mount/check loop, explicit health/dependencies GET,503 degraded preserved, safe dependency messages, Groq remains unverified. No live outage induced. |
+| Reader intent, keyboard, responsive layout | New actual wheel/upstream-growth/jump keyboard/Stop case PASS; skip link focuses main;320px document layout has no horizontal page overflow. Reduced-motion media is active, not a claim that every animation/contrast/AT requirement was audited. |
+| Terminal/history parity | BUG-STREAM-001 FIXED with retained failing-before/passing-after regressions and full84 backend/198 frontend checks. |
+| Real runtime/CORS/cloud availability | Offline CORS/contract PASS; live8000 check blocked by refused connection, not evidence of a frontend CORS regression. |
+| Full manual accessibility | Human AT/contrast/desktop zoom/real touch remain NOT RUN and unwaived. |
 
-Existing API limitations are retained with explicit fallback behavior; this is not a waiver of newly discovered defects or missing manual AC. Gate remains closed until blockers are resolved or explicitly dispositioned by the user.
+## Approved minimal parity fix
 
-## Manual acceptance handoff
+The user explicitly approved bringing the minimal bugfix into this QA continuation, overriding the original separate-bugfix requirement in plan35.1. [Bug report and before/after evidence](./bugs/stream-terminal-parity.md).
 
-Run the [Chrome/Edge mock procedure](./frontend-browser-qa-blocker.md) and the [accessibility checklist](./frontend-accessibility-checklist.md). Use `/many` for60-session menu/pagination and `/lifecycle` for document success/failure/cleanup; restart dev with process-only public API base and restore it afterward. Never point protected-action QA at the live backend.
+Existing MessageRecord validation requires meaningful text for PARTIAL/COMPLETED. Preserve this invariant and all model/schema/persistence code. Encoder error status now follows the same classification, retaining every whitespace delta/content byte. Provider normal completion with only whitespace becomes RAG_STREAM_EMPTY/FAILED before persistence. Non-whitespace errors remain PARTIAL; no-content errors remain FAILED; IDs/sequence/usage/guard release are asserted.
 
-Record browser/version, viewport/zoom, input/AT, steps, actual result and evidence for each row. Session CRUD/conflict/navigation,3-turn refresh/Stop/copy/citations, document confirms/reconciliation,320/375px/zoom200%/keyboard/reduced motion/screen reader and Suspense hydration all remain **NOT RUN**. No developer manual outcomes were supplied in this task.
+The stream client no longer assumes every delta implies a PARTIAL answer. It permits FAILED after Python-whitespace-only deltas, still rejects FAILED with substantive content/PARTIAL without deltas, and retains legacy PARTIAL support so history mismatches continue warning instead of being hidden. Python whitespace parity is tested across its full whitespace set, with NEL/BOM controls. No API/SSE event shape, database schema, retrieval/LLM provider flow or frontend architecture changes.
 
-Next work is the separate parity bugfix and missing browser acceptance. **Do not mark F7-03-05 COMPLETED or start F8.**
+An initial persistence-side attempt failed the existing model invariant and was fully reverted. Final application changes are confined to encoder classification and client transcript validation. No regression expectation was weakened to manufacture PASS; the original terminal/persisted equality and old frontend mismatch recovery remain tested.
+
+## Technical-debt disposition — proposed, not silently accepted
+
+| Item | Current decision / gate |
+| --- | --- |
+| BUG-STREAM-001 | **RESOLVED**, user-authorized minimal fix;84/84 backend and198/198 frontend PASS. |
+| Codex in-app Browser import failure | Untouched. Repository Playwright works; no longer a blocker for automated DOM/browser coverage. Does not mean the plugin was repaired. |
+| Full human accessibility | **OPEN, not waived.** Need developer human AT/contrast/zoom200%/touch results or explicit acceptance of deferral; no fabricated manual PASS. Prepared checklist remains available. |
+| Dependency audit9 high | **OPEN, not accepted.** Current root advisory is braces stack-exhaustion DoS in deeply nested patterns, [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), propagated through Next lint and shadcn/registry/ts-morph/glob chains. Direct flagged packages: eslint-config-next and shadcn. npm proposes major downgrades14.2.35/1.0.0, incompatible with blindly preserving current setup; no force fix. Runtime exploitability was not established. Proposed: a separate scoped dependency remediation/security review; only the user can accept residual risk for proceeding. |
+| Live backend runtime/CORS | **OPEN environmental verification**, port8000 refused. Proposed: repeat the existing read-only verifier when developer starts the backend. No provider smoke or live mutation needed. |
+| History ordered sources | Previously accepted baseline fallback retained: saved citation cards, unavailable ordinal links, no guessing. API persistence expansion is separate. |
+| Deferred first-turn URL | Existing explicit banner/new-tab/verified terminal policy now browser-tested. Refreshing `/chat` mid-turn still needs sidebar/saved link. No stream resume or auto resend. |
+| Sync ingestion/uncertainty | Preserve no progress/job/cancel/max-size claims. No public polling API, raw retention mock is not real filesystem proof. Read/confirm deliberately after uncertain outcomes. |
+| Offset pagination/eager history | Existing duplicate/stale/reset guards; no snapshot isolation or large-history performance claim. Separate scalability work. |
+| Live provider/cloud ingestion | NOT RUN by explicit scope, separate authorization required; no live smoke started. |
+| Optional auth/scope/model/theme/edit/regenerate/message-delete/rollback/PDF | Outside requested MVP; no new features/dependencies added for QA. |
+
+Gate remains IN PROGRESS until the open manual/security/integration items are explicitly resolved or dispositioned by the user. Automated tests passing do not accept those risks on the user's behalf. F7-03-02/03/04 remain COMPLETED; no next-task/F8-02/F8-03/live-smoke work is started.
+
+## Files and repeatability
+
+This continuation: `backend/app/api/chat.py`, `backend/tests/test_stream_terminal_parity.py`, `frontend/lib/api/chat.ts`, `frontend/tests/{chat-stream-client,functional-regression}.test.mjs`, new `frontend/e2e/functional-qa.spec.mts`; plan/current log, this report/initial report archive, parity bug report and scoped accessibility/browser/automated-test documentation. Other dirty work preserved. Existing frontend dependencies/config and backend conversation service/models remain unchanged.
+
+Use existing frontend npm scripts and guarded backend runners listed above. Never run two Playwright CLIs concurrently against the same3100/output directory. Do not point mutation fixtures at a real backend. For remaining human observations record browser/OS/input/AT/viewport/zoom, steps and actual result using the [accessibility checklist](./frontend-accessibility-checklist.md) and [handoff](./frontend-browser-qa-blocker.md).
+
+## F8-02 controlled live follow-up — 2026-10-15
+
+User subsequently assigned and explicitly approved controlled live scope:5 Groq attempts,4 Gemini embedding requests, fresh temporary namespaces/raw storage and owned cleanup. [F8-02 report](./frontend-controlled-live-e2e.md), plan42:7/7 actual browser stages/3 completed turns PASS; actual4 Groq +4 Gemini attempts, no retry. Health, real isolated upload, same-session history/citations and document/session actions verified. Initial Mongo cleanup code8000 recovered by exact-namespace collection cleanup; fresh independent Mongo/Qdrant/raw absence checks and owned-server shutdown PASS.
+
+This supersedes a blanket “live never run” interpretation, not the historical no-provider counts for earlier tasks/default tests. Default unit/mock scripts still make0 live calls; live is a separate opt-in runner. It also proves the controlled isolated runtime, not permanently configured developer8000/default deployment or the entire CORS matrix. Human manual/security debt remains unwaived; F7-03-05 status is unchanged. F8-03 NOT STARTED; no further provider calls under the exhausted Gemini approval.

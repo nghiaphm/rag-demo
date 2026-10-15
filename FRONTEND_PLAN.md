@@ -47,10 +47,10 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 | F5 — Sources/Citations | COMPLETED | F5-01/F5-02 COMPLETED; callback/Markdown/history fixtures PASS; browser interaction BLOCKED |
 | F6 — Documents | COMPLETED | F6-01…F6-03 COMPLETED; protected-action/stale-state mocks PASS; live mutation chưa chạy |
 | F7 — UX/Resilience | IN PROGRESS | F7-01 COMPLETED; F7-02 implementation xong, chờ manual acceptance |
-| F7-03 — Functional Completeness & API Integration | IN PROGRESS | F7-03-05 gate NOT PASSED: BUG-STREAM-001 terminal/history parity FAIL và browser/manual BLOCKED; task02/03/04 automated checks xong |
-| F8 — Testing/E2E | NOT STARTED | |
+| F7-03 — Functional Completeness & API Integration | IN PROGRESS | F7-03-02/03/04 COMPLETED; task05 có198/198 +44/44 browser +84/84 backend PASS và BUG-STREAM-001 FIXED; remaining manual/security/live8000 disposition chờ xác nhận, mục41 |
+| F8 — Testing/E2E | COMPLETED (scoped tasks) | F8-01/02/03 COMPLETED (mục37/42/43); repeatable dev mock smoke7/7 ×2, README/env/CORS/runtime/checklist xong; full demo/release gate vẫn chờ F7 human/security disposition |
 
-**Task đang thực hiện:** F7-03-05 — Functional QA & Regression, IN PROGRESS; gate NOT PASSED, evidence mục35/[QA report](./docs/frontend-functional-qa.md). **Blockers:** BUG-STREAM-001 cần bugfix riêng; actual browser/manual NOT RUN. **Checks:** frontend193/193/build7/7/typecheck/lint/contract45/runtime OpenAPI/CORS/production HTTP PASS; backend80/81 PASS,1 FAIL parity thật. F8 NOT STARTED; không tự chuyển hoặc waive manual AC. No provider calls.
+**Task gần nhất:** F8-03 — Demo readiness **COMPLETED** cho scope hướng dẫn + reproducible local demo; mục43/[runbook](./docs/frontend-demo-readiness.md). Fresh dev mock browser7/7 hai lần,198 tests/normal build/typecheck/lint/contract/production HTTP PASS;0 live provider calls. F7 human/security debt không waive, không đồng nghĩa full release ready. Dừng sau task, không deploy hoặc gọi provider thêm.
 
 ## 4. Roadmap và acceptance criteria
 
@@ -104,16 +104,16 @@ Next.js App Router + TypeScript + Tailwind + shadcn/ui; `fetch` + `ReadableStrea
 ### F7-03 — Functional Completeness & API Integration
 
 - [x] **F7-03-01 — API Capability Audit & Functional Gap Analysis:** source/OpenAPI/client/UI/tests audit đầy đủ Session/Chat/Documents/Integration; Functional Capability Matrix, backlog có scope/dependencies/AC/tests/out-of-scope và technical debt. Evidence mục31; chỉ sửa documentation.
-- [ ] **F7-03-02 — Session Actions:** nối PATCH title/DELETE có thật, accessible menu/dialog, current-session navigation, backend409 guard, list pagination/refresh và mutation reconciliation. IN PROGRESS: implementation/checks PASS, browser keyboard/focus/mobile NOT RUN; chi tiết mục31.4/32.
-- [ ] **F7-03-03 — Chat Actions Completion:** nối session creation từ composer với sidebar, làm rõ deferred URL/recovery và history PENDING/STREAMING không có live stream; giữ Stop/copy/citations/SSE hiện có. IN PROGRESS: implementation/checks PASS; mock browser interaction NOT RUN/BLOCKED, mục33; không Edit/Regenerate/Delete Message.
-- [ ] **F7-03-04 — Document Actions Completion:** nghiệm thu và sửa gap có bằng chứng trong wired F6 actions, refresh/reconciliation/status/confirm dialogs; không triển khai lại upload/version/re-index/delete. IN PROGRESS: automated verification PASS, sửa aborted-page slot có regression; browser confirm/Escape/focus/mobile NOT RUN/BLOCKED, mục34.
-- [ ] **F7-03-05 — Functional QA & Regression:** mock end-to-end CRUD/session streaming/document lifecycle, actual browser/manual acceptance, contract/error/keyboard/mobile checks; resolve hoặc accept rõ technical debt trước F8. IN PROGRESS: frontend193/193 PASS, backend80/81 PASS/1 FAIL BUG-STREAM-001; browser/manual BLOCKED/NOT RUN; gate chưa đạt, mục35 và QA report.
+- [x] **F7-03-02 — Session Actions:** COMPLETED: existing PATCH/DELETE implementation + browser keyboard/focus/mobile320/375px, pagination60, other/current navigation và remote409/no-replay đã nghiệm thu bằng Chromium mock E2E; chi tiết mục31.4/32/38.
+- [x] **F7-03-03 — Chat Actions Completion:** COMPLETED: composer/sidebar sync, deferred URL/new-tab/recovery, history snapshots/409/no auto resume, native abort khi switch, copy/citation/mobile browser acceptance PASS; mục33/39. Không Edit/Regenerate/Delete Message.
+- [x] **F7-03-04 — Document Actions Completion:** COMPLETED: existing F6 actions/reconciliation/status và prior aborted-page-slot regression được tái kiểm tra; actual mock browser confirm/cancel/Escape/focus/mobile320/375px, failure/active preservation/stale/reread recovery PASS; mục34/40. Không triển khai lại actions hoặc sửa UI/backend.
+- [ ] **F7-03-05 — Functional QA & Regression:** IN PROGRESS:198/198 frontend,44/44 actual Chromium mock E2E,84/84 backend PASS; BUG-STREAM-001 FIXED theo user approval. Human manual/dependency9 high/live8000 availability còn chờ resolve hoặc explicit debt disposition; mục35/41 và QA report. Không tự chuyển F8.
 
 ### F8 — Final Verification & Demo
 
-- [ ] **F8-01 — Automated tests:** TypeScript/build/lint, unit parser/client/mapper, component/integration tests, Playwright mock E2E cho session/chat/doc/error/cancel; 0 live provider calls mặc định. AC: reported counts, no hidden blockers.
-- [ ] **F8-02 — Controlled live E2E:** verify health; new chat → multi-turn same session → refresh history → citation → document operation (on test namespace); small Groq request budget approved by user; cleanup; capture TTFT/latency if timing available. AC: all relevant tests PASS or explicit BLOCKED, no test leftovers.
-- [ ] **F8-03 — Demo readiness:** README frontend run instructions, `.env.example`, CORS note, deployment/runtime assumptions, smoke checklist, known limitations and screenshot/video only if requested. AC: clean dev startup and reproducible demo.
+- [x] **F8-01 — Automated tests:** TypeScript/build/lint, unit parser/client/mapper, component/integration tests, Playwright mock E2E cho session/chat/doc/error/cancel; 0 live provider calls mặc định. COMPLETED cho frontend automated scope:196/196 +7/7 E2E/build7/7/typecheck/lint/contract45 PASS, known backend parity/security/manual blockers được báo rõ ở mục37; không claim full-demo/release gate PASS.
+- [x] **F8-02 — Controlled live E2E:** COMPLETED: actual health,3 turns cùng session, exact persisted history/refresh, live inline citation + persisted fallback, document operation và owned namespace/raw cleanup PASS. Approved caps5 Groq/4 Gemini; actual4 Groq/4 Gemini attempts, no retry; client first-delta/terminal timing captured. Initial cleanup blocker recovered, independent absent checks PASS; mục42.
+- [x] **F8-03 — Demo readiness:** COMPLETED scoped runbook/README + frontend `.env.example`/ignore exception, exact dev CORS/deployment assumptions/smoke checklist/known limitations; fresh dev mock smoke7/7 hai lần + cleanup PASS,198 tests/normal build/typecheck/lint/contract45/HTTP delivery PASS.0 live calls, no screenshot/video, F7 human/security gate còn mở; mục43.
 
 **MVP gate:** F0–F4. **Full demo gate:** F0–F8. Do not mark entire backend validated solely by three successful chat requests; they are manual happy-path evidence.
 
@@ -974,6 +974,8 @@ Các mã source và tests trong từng ô matrix đều là links đến file th
 
 ## 32. Evidence F7-03-02 — Session Actions (2026-10-14)
 
+> Historical snapshot phía dưới được giữ nguyên. Browser acceptance đã được bổ sung ngày2026-10-15 bằng repository Playwright, **F7-03-02 COMPLETED**; xem mục38. Không phục hồi/can thiệp in-app Browser runtime.
+
 **Implementation/automated verification hoàn tất; IN PROGRESS cho manual menu/dialog accessibility.** Không triển khai F7-03-03 hoặc F8. Backend routes/schema/RAG/SSE và các completed tasks giữ nguyên.
 
 Audit đầu lượt thấy `frontend/lib/api/sessions.ts` đã có validateSessionTitle/updateSessionTitle/deleteSession và list DTO hardening; tái dùng, không ghi đè/nhận là code mới của lượt này. Đối chiếu PATCH title200/DELETE200 và DeleteSessionResponse hiện hữu, field defaults optional trong DTO nhưng server serialize các defaults. User/API client work có sẵn được giữ nguyên.
@@ -1026,6 +1028,8 @@ Files changed: `frontend/lib/sessions/controller.ts`, `frontend/hooks/use-sessio
 
 ## 33. Evidence F7-03-03 — Chat Actions Completion (2026-10-15)
 
+> Snapshot triển khai ban đầu phía dưới được giữ nguyên. Acceptance đã bổ sung bằng repository Playwright ngày2026-10-15, **F7-03-03 COMPLETED**; xem mục39/[browser report](./docs/chat-actions-browser-acceptance.md). Không can thiệp in-app Browser runtime.
+
 **IN PROGRESS chỉ ở browser acceptance; implementation/automated checks PASS.** Người dùng giao task03 riêng, không coi task02/browser acceptance cũ là COMPLETED. Matrix mục31 và evidence mục32 là snapshot lịch sử; phần này ghi current delta.
 
 - Composer dùng `createChatServices`: POST `/sessions` đúng client/DTO có sẵn, một lần trước turn đầu; confirmed creation phát scoped in-memory list invalidation. `useSessions` vẫn sở hữu sidebar list, subscribe trước initial load và unsubscribe/dispose khi unmount. List được reread sau stream kết thúc/thất bại; không cache session/localStorage, không replay POST. Invalidation khi sidebar create/mutation đang pending được coalesce và xử lý sau mutation, không bị bỏ mất hoặc ghi đè receipt bằng stale read. Không thêm Context/provider/state library.
@@ -1054,6 +1058,8 @@ Files changed trong task03: `frontend/lib/chat/{controller,recovery,services}.ts
 Remaining acceptance: Chrome/Edge mock extension F7-03-03 trong browser QA doc; URL/new-tab/reload/route switching, keyboard/focus/mobile và copy/source drawer trực tiếp. Rủi ro đã công bố: refresh `/chat` trước canonical URL mất current route; cần mở/lưu link hoặc chọn sidebar; uncertain POST creation không thể suy ra receipt bị mất; offset list/history không có snapshot; history thiếu ordered sources. **Dừng tại F7-03-03; chưa triển khai F7-03-04/05/F8.**
 
 ## 34. Evidence F7-03-04 — Document Actions Completion (2026-10-15)
+
+> Snapshot triển khai ban đầu phía dưới được giữ nguyên. Repository Playwright browser acceptance đã bổ sung ngày2026-10-15; **F7-03-04 COMPLETED**, xem mục40/[report](./docs/document-actions-browser-acceptance.md). Không can thiệp Codex in-app Browser runtime.
 
 **IN PROGRESS cho browser acceptance; automated verification/bugfix hoàn tất.** Verification-first: không triển khai lại upload/version/re-index/delete, không sửa components/UI/client/backend/contracts/RAG/dependencies/config. Existing F6 và task02/03 browser states giữ nguyên; chưa chuyển F7-03-05/F8.
 
@@ -1092,6 +1098,8 @@ Remaining acceptance: Chrome/Edge mock `/lifecycle` checklist trong browser QA d
 
 ## 35. Evidence F7-03-05 — Functional QA & Regression (2026-10-15)
 
+> Historical snapshot phía dưới. Current continuation ở mục41: actual browser QA đã chạy, BUG-STREAM-001 đã được user cho phép sửa hẹp và regression PASS. Gate vẫn IN PROGRESS cho remaining manual/security/live integration disposition; không còn dùng parity failure hoặc blanket browser BLOCKED làm current status. [Current report](./docs/frontend-functional-qa.md), [initial snapshot archive](./docs/changelog/frontend-functional-qa-initial-2026-10-15.md).
+
 **IN PROGRESS; gate trước F8 NOT PASSED.** Current capability matrix/technical-debt disposition và exact commands nằm tại [docs/frontend-functional-qa.md](./docs/frontend-functional-qa.md). Không phát triển feature mới hoặc sửa frontend/backend application logic/config/API/schema/RAG trong task này. Giữ task02/03/04/F7-02/Suspense manual acceptance như cũ.
 
 | Check | Actual result |
@@ -1124,3 +1132,194 @@ Current QA matrix không còn missing REST/action wiring được xác định �
 - Browser/manual và BUG-STREAM-001 là **blockers không waive**. Live cloud/provider/ingestion NOT RUN theo scope, mocks không thay thế live proof. F8 NOT STARTED.
 
 Files changed: `backend/tests/test_stream_terminal_parity.py`, `backend/scripts/verify_frontend_functional_qa.py`, `frontend/tests/functional-regression.test.mjs`, `frontend/scripts/{verify-local-integration,verify-production-delivery}.mjs`, `docs/frontend-functional-qa.md`, `docs/bugs/stream-terminal-parity.md`, `docs/frontend-{accessibility-checklist,browser-qa-blocker}.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md`. Không sửa application implementation; dirty changes từ trước giữ nguyên. **Dừng F7-03-05, không đánh dấu COMPLETED hoặc chuyển F8.**
+
+## 36. Investigation — Concurrent Multi-session RAG Isolation (2026-10-15)
+
+**Final status: NOT REPRODUCED; không FIXED.** [Report đầy đủ](./docs/multi-session-rag-investigation.md) có source audit, hypotheses/risk limits, exact commands và proposed developer-approved live smoke. Không gọi/tìm cách khôi phục/can thiệp Browser Automation theo yêu cầu. Không có application/API/SSE/schema/RAG/dependency/config changes hoặc provider calls.
+
+- Audit route→SessionChat/keyed workspace, create/session_id, hook/client/module/localStorage, Mongo lookup/history/persistence/guard, history-aware rewrite, embedding/Qdrant, budget/context/shared Groq client/stream/error handling. Không tìm thấy global current_session_id/shared request buffers; module session list invalidation chỉ reread, cached SDK clients và app.state connections vẫn shared và SDK behavior chưa được chứng minh safe bằng mocks.
+- New backend11 tests: cùng câu hỏi phụ thuộc history, khác câu hỏi, cùng independent question/ALL_ACTIVE, lỗi provider trước/sau delta, embedding/vector timeout, empty retrieval, rewrite error fallback, missing collection/no active versions. Dùng real API/RAG/rewrite/retriever/context/encoder/ConversationService/MongoConversationRepository query construction; fake storage/cloud I/O. Thread barriers rewrite/embedding + async provider rendezvous bắt buộc overlap; assert typed SSE sequence/start/metadata/source IDs/content/done-error và persisted message/session/request ownership, distinct IDs/guard release. Fake storage không thay proof real Mongo/SDK concurrency.
+- New frontend3 tests: actual SessionChat→history→ChatPreview/workspace callback assembly với fixture-ready lookup hooks và production clients/local mock HTTP; two-response-header barrier, session_id đúng route, signals/state riêng, Stop A không abort B, one-error/one-success, sidebar refresh không đổi active route. Hai composers chưa có session tạo đúng một session riêng mỗi bên và dùng đúng receipt riêng, reject duplicate submits. Không phải actual Chrome tabs/hydration QA; shared-module harness không tìm thấy cross-store leak.
+- Câu “Không tìm thấy thông tin trong tài liệu” là chỉ dẫn trong SYSTEM_INSTRUCTION khi context không đủ. Không có direct exception→câu này ở embedding/vector/generation paths đã test. No active versions hoặc missing Qdrant collection trả[]; rewrite timeout/error dùng original query, có thể giảm retrieval quality. Induced fake no-hits/fake LLM refusal được kiểm tra, **không phải root cause thật của incident**. Real quota/timeout/SDK/client/event-loop/model variation/active corpus changes vẫn chưa loại trừ.
+
+| Check | Actual result |
+| --- | --- |
+| `.venv/Scripts/python.exe backend/scripts/verify_multi_session_isolation.py` | PASS67/67, gồm11 new tests và related history/rewrite/retriever/concurrency/streaming/API/persistence/sessions suites. External TCP blocked, loopback IPC only. First harness run8 errors do dùng sai SSETranscript constructor, sửa đúng model_validate rồi assertions PASS; không sửa app để xanh tests. Final67/67 rerun sau thêm metadata/seed-ID assertions. |
+| `node --test tests/multi-session-isolation.test.mjs` | PASS2/2 ban đầu; final full suite cover3/3 sau thêm concurrent creation và moving synchronous overlap assertion trước chờ network để tránh timing flake. |
+| `node --test tests/*.test.mjs` | PASS196/196; offline Python fixtures ngoài sandbox như trước. |
+| `npm.cmd run lint` | PASS0 warnings. |
+| Build/typecheck/contract/live smoke | NOT RUN lại trong tests/docs-only investigation. Previous QA evidence là snapshot riêng; không claim rerun. Groq=0/Gemini=0. |
+| git diff --check / new-file whitespace / archive | PASS; F5-01 archive exact text được xác minh trước khi remove entry cũ; CURRENT_CHANGE giữ15 entries. |
+| Browser Automation | NOT RUN theo explicit user instruction; không reset/patch/bypass. |
+
+Không đổi status BUG-STREAM-001: separate known whitespace parity regression không thuộc targeted isolation runner và chưa FIXED; F7-03-05/manual gate vẫn mở. Root cause của manual incident chưa xác định; không tự thêm global lock/refactor SDK lifetime/fallback/schema chỉ dựa hypothesis.
+
+Live smoke handoff trong report: developer phê duyệt và tự thực hiện **một concurrent pair/hai chat requests** trên hai fresh sessions, same known-answer question, stable corpus; ghi route/payload/session/request/message IDs, metadata source count/IDs, SSE terminal/errors và own persisted history. Không Agent-run, không stress/auto retry; mọi bổ sung baseline/follow-up cần phạm vi riêng.
+
+Files changed: `backend/tests/test_multi_session_isolation.py`, `backend/scripts/verify_multi_session_isolation.py`, `frontend/tests/multi-session-isolation.test.mjs`, `docs/multi-session-rag-investigation.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md`. **Dừng sau investigation, không tự chuyển F8/live smoke.**
+
+## 37. F8-01 — Automated frontend tests (2026-10-15)
+
+**COMPLETED cho requested frontend automated scope**, không phải full release/F7/manual gate PASS. User giao F8-01 sau investigation; không suy ra waiver của BUG-STREAM-001, security advisories hoặc các manual AC. [Report chi tiết + commands/artifacts](./docs/frontend-automated-tests.md). F8-02/F8-03 NOT STARTED; Groq=0/Gemini=0.
+
+- Reuse196 existing unit/parser/REST+SSE client/mapper/citation/component/integration/isolation tests; thêm Playwright Test1.64.1 (devDependency+lock), config và7 real browser E2E. Không cài lại project/shadcn hoặc thêm runtime app library.
+- Production build bake mock base4011/lifecycle bằng child-process env; no .env/Next architecture changes. Playwright owns3100 production server, each test owns ephemeral RAM mock; reuseExistingServer=false, retries0/workers1, service workers blocked. Unknown backend/provider/page origin và uncaught browser exceptions fail teardown. Browser temp trên workspace volume, generated report/trace/temp git+eslint ignored; không disable ESLint rule.
+- **Proven UI fix:** initial E2E5/7; one broad locator corrected, other browser snapshot showed composer accessible name “Câu hỏi Câu hỏi” after canonical route due static composer/help IDs reused with retained pages. ChatWorkspace.useId→optional composer.inputId→matching label/input/help IDs, no send/Stop/SSE logic change. Actual3-turn/navigation/refresh E2E now passes exact name. Direct-hook isolation harness adds useId stub, not a production state change.
+- Codex in-app Browser không được dùng/reset/patch/bypass. Repository Playwright Test chạy headless Chromium do user giao; không claim runtime cũ đã FIXED hoặc all manual checklist PASS.
+
+| Check | Actual result |
+| --- | --- |
+| `npm.cmd test` | PASS196/196,0 skip: parser/clients/mapper + component SSR/callback/effect + production/local HTTP integrations. |
+| `npm.cmd run test:contract` | PASS45 schemas, offline network-blocked export. |
+| `npm.cmd run build:e2e` | PASS7/7 production prerender after UI fix, exit0; partial session route/static documents retained. |
+| `npm.cmd run typecheck` / `npm.cmd run lint` | PASS sau build / PASS0 warnings. |
+| git diff --check / new-file whitespace / archive / cleanup | PASS; F5-02 archived verbatim, CURRENT_CHANGE15 entries; final JSON expected7/unexpected0/skipped0/flaky0 và owned3100 server stopped được xác minh. |
+| `npm.cmd run test:e2e` | PASS7/7 Chromium156, retries0/skipped0/flaky0/unexpected0, final25.5s JSON+HTML artifacts. Session create/rename/cancel/delete-current/focus,3-turn session/history refresh,Stop/partial recovery,error/disconnect,no-replay,document upload/version/re-index/delete202/cleanup200/include_deleted,REST503 retry,mobile375px sidebar keyboard/Escape/focus. |
+| Guarded backend QA rerun | **FAIL80/81 pass,1 FAIL** at known whitespace-only terminal/history parity. Không skip/xfail/đổi expected hoặc sửa backend semantics trong F8-01. |
+| `npm audit --json` | **9 high,0 critical** ở Next lint/shadcn/registry/ts-morph/glob chains. No audit fix --force; cần scoped dependency review, không claim security clearance. |
+| Live providers/manual AT/full browser matrix | NOT RUN,0 live provider calls;7 automated cases không thay full screen reader/contrast/zoom/320px/copy/citation/manual rows. |
+
+Initial harness/setup issues: CJS/import.meta fixed by .mts E2E files, Playwright callback use→provide tránh React use-hook false positive, no disabled rule. Chromium đầy đủ và FFmpeg cài thành công; optional Headless Shell download FAIL ENOSPC C:. Dùng channel:chromium + workspace temp; final run PASS. Cache inspection thấy chỉ completed Chromium/FFmpeg, không incomplete shell folder; không xóa unrelated files. Docs install command dùng --no-shell. Npm optional unrs-resolver install-script warning được ghi lại, không tự approve; checks vẫn PASS.
+
+Files changed riêng F8-01: `frontend/package{,-lock}.json`, `frontend/playwright.config.ts`, `frontend/e2e/{fixtures.mts,workspace.spec.mts}`, `frontend/scripts/{build-e2e,run-e2e}.mjs`, `frontend/.gitignore`, `frontend/eslint.config.mjs` (generated artifacts only), `frontend/components/chat/{chat-composer,chat-preview}.tsx`, useId stub trong `frontend/tests/multi-session-isolation.test.mjs`, `docs/frontend-automated-tests.md`, accessibility/browser/functional-QA evidence docs, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md`. Giữ investigation work có trước.
+
+Open gates: BUG-STREAM-001,9 dependency advisories và remaining human/manual coverage không waive; concurrent incident vẫn NOT REPRODUCED. **Dừng sau F8-01, không live smoke hoặc F8-02/F8-03.**
+
+## 38. F7-03-02 — Session Actions browser acceptance (2026-10-15)
+
+**COMPLETED** theo AC mục31.4. Audit lại implementation đã có, không sửa UI/backend/API hoặc thêm dependency. Bổ sung5 browser cases trong `frontend/e2e/session-actions.spec.mts`, fixture nhận `streamDelayMs` theo test để kiểm tra remote active generation. Tái sử dụng repository Playwright đã hoạt động; không gọi/can thiệp Codex in-app Browser.
+
+[Acceptance report](./docs/session-actions-browser-acceptance.md) ghi actual observations: desktop Space/Enter/arrows/Escape, rename Tab wrap/initial/return focus/Unicode trim/validation/one PATCH; current delete/cancel/focus từ existing E2E; delete other giữ active route;60-session pagination/reset/refresh/reconciliation; dialog320/375px containment/viewport/Escape/focus return; remote-tab streaming DELETE409 giữ row/URL, deliberate review, one DELETE/no replay.
+
+Verification thực chạy: frontend196/196; backend session actions/API/concurrency11/11 (external TCP blocked); focused browser5/5 và full Chromium12/12 PASS (39.1s, retries0/skipped0/flaky0/unexpected0); production build7/7, TypeScript, ESLint0 warnings và offline contract45 PASS. Diff/new-file whitespace/archive PASS; generated JSON/HTML trong ignored test-results/playwright-report. Owned server3100 đã dừng (ECONNREFUSED), developer3000 không can thiệp. Initial3 assertions sai được đối chiếu source và sửa test, không che lỗi hoặc sửa UI theo giả thuyết.
+
+Files của lượt này: `frontend/e2e/{fixtures,session-actions.spec}.mts`, `docs/session-actions-browser-acceptance.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, `docs/changelog/phase-02.md` (archive F6-01 nguyên vẹn,15 entries), scoped addenda trong accessibility/browser/functional/automated-test docs. Giữ dirty work có trước.
+
+Human screen reader/contrast/zoom200% và full chat/document/citation checklist chưa nghiệm thu; không đổi task03/04/05. BUG-STREAM-001/prior80/81 và npm audit9 high còn mở, không chạy lại broad backend/audit ở lượt này. Multi-session incident vẫn NOT REPRODUCED. Groq/Gemini=0, không live mutation/smoke, dừng sau F7-03-02.
+
+## 39. F7-03-03 — Chat Actions browser acceptance (2026-10-15)
+
+**COMPLETED** theo scoped AC mục31.4/33. [Actual browser observations/files/limits](./docs/chat-actions-browser-acceptance.md). Reuse existing composer/services/sidebar implementation; không triển khai lại Chat UI hoặc đổi API/backend/SSE/dependency.
+
+- Bổ sung10 Playwright cases: composer tạo đúng1 session và sidebar hiện trước terminal; duplicate Enter bị chặn; deferred URL banner/link đúng ID; mở tab mới không abort parent/auto-resume; deliberate remote submit409 giải phóng loading; terminal+verified history mới canonicalize. Refresh `/chat` giữa lượt không pretend restore, mở persisted partial từ sidebar, không replay.
+- History verification503/lagging STREAMING giữ completed local answer và recovery URL; lượt sau chủ động reuse cùng ID rồi canonicalize. PENDING/STREAMING/FAILED/PARTIAL snapshots giữ status, no live spinner/Stop/busy; explicit history reread, không polling/auto generation.
+- Route switch quan sát trực tiếp native fetch AbortSignal của A, B nhận đúng session_id/history, không visible A text/replay. Next cacheComponents giữ hidden DOM; không yêu cầu old route DOM bị xóa hoặc cancellation banner tồn tại sau fresh GET. Abort không hứa backend rollback.
+- Copy kiểm tra exact chuỗi đưa vào native writeText (answer/code, tabs/double spaces/newlines), native OS clipboard roundtrip và denied fallback. Windows Chromium đổi LF→CRLF ở OS clipboard; chỉ roundtrip assertion normalize CRLF, app write argument vẫn exact. Citation mới đúng message, page0→Trang1, drawer375px/keyboard/focus; reload giữ persisted citations với ordinal fallback, không fake link.
+- **Proven minimal fix:** mở citation gọi setSelected làm inline Markdown renderers tạo lại, opener DOM bị thay (`isConnected=false`), Escape focus return không ổn định. Memoize Markdown subtree theo message trong citation-content.tsx; cùng regression PASS node retained/focus return/copy/history. Không sửa mapping/order/content/SSE semantics.
+
+| Check rerun | Actual result |
+| --- | --- |
+| `npm.cmd test` sau UI fix | PASS196/196,0 skipped. |
+| `npm.cmd run test:e2e` final | PASS22/22 Chromium156 (77.6s), retries0/skipped0/flaky0/unexpected0; JSON/HTML generated artifacts. |
+| `npm.cmd run build:e2e` | PASS7/7 production prerender sau fix, mock API process-env only; cần normal rebuild nếu đổi public API base. |
+| `npm.cmd run typecheck` / `npm.cmd run lint` | PASS / PASS0 warnings sau final test changes. |
+| `npm.cmd run test:contract` | PASS45 REST/SSE/health schemas, offline/network blocked. |
+| Diff/new-file whitespace/archive/cleanup | PASS; F6-02 archived nguyên nội dung trước khi remove, CURRENT_CHANGE15 entries; owned3100 ECONNREFUSED, developer3000 untouched. |
+| Backend broad suite / audit / live provider | NOT RERUN / NOT RERUN / NOT RUN; prior BUG-STREAM-00180/81 và npm audit9 high không waive. Groq/Gemini=0. |
+
+Initial test-only issues và failing-before/passing-after focus evidence ghi trong report; có full21/22 failure trước khi sửa route-cache assertion thành direct abort measurement, không skip/xfail hoặc sửa business logic để làm xanh. Test fixture có opt-in lagging history read từ actual DTO; không gọi backend thật.
+
+Files lượt này: `frontend/components/chat/citation-content.tsx`, `frontend/e2e/{fixtures,chat-actions.spec}.mts`, `docs/chat-actions-browser-acceptance.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, archive phase-02 và scoped addenda trong accessibility/browser/functional/automated-test docs. Giữ dirty work có trước. F7-03-02 vẫn COMPLETED; task04/05, human AT/contrast/zoom/full mobile/document QA giữ nguyên. Concurrent incident vẫn NOT REPRODUCED. **Dừng sau F7-03-03; không tự chuyển task hoặc chạy live smoke.**
+
+## 40. F7-03-04 — Document Actions browser acceptance (2026-10-15)
+
+**COMPLETED** theo scoped AC mục31.4/34. [Actual browser observations/files/limits](./docs/document-actions-browser-acceptance.md). Verification-first, giữ existing F6 actions/controller và prior aborted-page-slot fix; không sửa application source/backend/API/dependencies hoặc triển khai lại upload/version/re-index/delete.
+
+Bổ sung9 cases trong `frontend/e2e/document-actions.spec.mts`:
+
+- Upload Enter/Tab trap/Escape/return focus, empty/unsupported validation/no request; explicit promise gate chứng minh pending không đóng bằng Escape/X, disabled controls/no premature receipt, actual mock201 rồi list refresh và focus return.
+- 320×568 và375×568: version/re-index/delete dialogs fit viewport, initial focus và Tab/Shift+Tab containment, Close/Escape trả đúng trigger; cancel không mutation.
+- Failed version từ synthetic qa-fail.txt giữ active ID cũ/document INDEXED và hiển thị failed version; explicit re-index tạo version mới, chỉ reread mới thay active. Delete202/confirmed cleanup200/include_deleted cập nhật đúng list/detail và raw retention; không nói raw files đã xóa.
+- Stale preflight hai tab chặn DELETE, refresh detail/version và yêu cầu review. Mutation success + authoritative GET503 giữ receipt/stale warning, no replay/loop; explicit refresh đọc active mới.
+- Pending action Escape/close guards, keyboard Stop waiting→uncertain/no rollback claim, navigation không replay. PROCESSING/FAILED và absent active version được hiển thị riêng, version/re-index guards đúng state.
+
+Existing196 frontend tests tái chạy gồm canceled-page-slot regression/adjusted offset/stale response guards, lifecycle callbacks, selection/filter/unmount cases và exact multipart/client contract. New fixture option `apiDelayMs` chỉ expose existing mock delay, default25ms không đổi. Không phát hiện application defect mới trong phạm vi kiểm tra; không suy diễn rằng mock counters chứng minh cloud ingestion/raw-file retention thật.
+
+| Check rerun | Actual result |
+| --- | --- |
+| `npm.cmd test` | PASS196/196,0 skipped. |
+| Final `npm.cmd run test:e2e` | PASS31/31 Chromium156 (93.1s), retries0/skipped0/flaky0/unexpected0;9 document cases +22 regressions. |
+| `npm.cmd run build:e2e` | PASS7/7 production prerender, mock API process-env only; không .env edit. |
+| `npm.cmd run typecheck` / `npm.cmd run lint` | PASS / PASS0 warnings sau final test changes. |
+| `npm.cmd run test:contract` | PASS45 REST/SSE/health schemas, offline/network blocked. |
+| Diff/new-file whitespace/archive/cleanup | PASS; F6-03 archived trước khi remove, CURRENT_CHANGE15 entries; owned3100 ECONNREFUSED, developer3000 untouched. |
+| Backend suite / npm audit / live ingestion | NOT RERUN / NOT RERUN / NOT RUN;0 Groq/Gemini calls, no live mutations. |
+
+Initial assertion failures (modal hides background accessibility tree, translated FAILED label, refresh button name) được sửa theo source/error-context, không sửa UI để che lỗi. Một CLI attempt trùng owned3100 bị từ chối và ảnh hưởng artifacts của failed run; final run tuần tự tạo report sạch, no skip/retry. Chi tiết trong report.
+
+Files lượt này: `frontend/e2e/fixtures.mts`, new `frontend/e2e/document-actions.spec.mts`, `docs/document-actions-browser-acceptance.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, phase-02 archive và scoped addenda trong accessibility/browser/functional/automated-test reports. Giữ toàn bộ dirty work có trước.
+
+F7-03-02/03 vẫn COMPLETED; task05/F7-02 full human AT/contrast/zoom/real touch gate không tự nâng trạng thái. BUG-STREAM-001/prior backend80/81 và npm audit9 high còn mở, multi-session incident vẫn NOT REPRODUCED. Sync ingestion không có job polling/progress/snapshot, preflight không atomic If-Match; abort không hứa rollback. **Dừng sau F7-03-04, không task tiếp theo/live smoke.**
+
+## 41. F7-03-05 — Functional QA continuation + approved BUG-STREAM-001 fix (2026-10-15)
+
+**IN PROGRESS: automated acceptance PASS; remaining debt/manual/live-integration disposition chưa được waive.** Current matrix, commands, actual results, source changes và proposed dispositions trong [QA report](./docs/frontend-functional-qa.md); old report đã archive nguyên vẹn tại `docs/changelog/frontend-functional-qa-initial-2026-10-15.md` trước khi cập nhật.
+
+User explicit approval cho minimal bugfix trong lượt QA ghi nhận sau scope question về mục35.1. Tái hiện original81 tests/1 failure, mở rộng84 tests tái hiện Unicode whitespace/cancel/normal finish. Final fix giữ MessageRecord/conversation_service/model/schema: encoder error status theo meaningful content như persistence; normal finish chỉ whitespace → RAG_STREAM_EMPTY/FAILED, giữ exact delta/content/IDs/usage/error/guard. Frontend transcript validator cho FAILED sau Python-whitespace-only deltas, vẫn reject FAILED với nội dung có nghĩa và PARTIAL không delta; legacy PARTIAL mismatch vẫn warning. NEL/BOM/full Python whitespace-set checks và original equality assertions giữ nguyên. First persistence-side attempt vi phạm model invariant đã revert hoàn toàn; không đổi schema/RAG/provider pipeline.
+
+13 new actual browser cases kiểm tra pre-header422/404/409/429/503/network-safe/no replay; explicit recovery; invalid/missing/deleted session routes; manual-triggered health/readiness503/sanitization/Groq unknown; documents empty/21-item offset pagination/refresh; wheel reading intent/keyboard jump/Stop/skip link và320px overflow với reduced-motion media.31 existing browser regressions vẫn chạy, không bootstrap/can thiệp in-app Browser.
+
+| Check rerun | Actual result |
+| --- | --- |
+| Full frontend | PASS198/198,0 skipped. |
+| Guarded backend functional QA | PASS84/84 after fix, external TCP blocked. |
+| Guarded isolation/concurrency QA | PASS67/67; overlaps84 suite, không tính151 unique. Incident vẫn NOT REPRODUCED. |
+| Full Chromium mock E2E | PASS44/44 (122.2s), retries0/skipped0/flaky0/unexpected0; JSON/HTML artifacts. |
+| Production build / typecheck / lint / offline contract | PASS7/7 / PASS / PASS0 warnings / PASS45 schemas. |
+| Production HTTP delivery | PASS /chat, fixture session route, /documents, main/client JS200; owned ephemeral server exits. |
+| Actual backend runtime/CORS verifier | FAIL connection ECONNREFUSED127.0.0.1:8000; runtime GET/OPTIONS assertions NOT REACHED. Offline CORS tests PASS, không gộp thành live PASS hoặc gọi đây là frontend regression. |
+| npm audit JSON |9 high/0 critical; braces advisory propagated through Next lint/shadcn/glob chains. npm đề xuất major downgrades, no force fix; separate security/dependency disposition cần phê duyệt. |
+| Human AT/contrast/desktop zoom200%/real touch | NOT RUN, chưa waive; automatic keyboard/mobile không giả human certification. |
+| Diff/whitespace/archive/cleanup | PASS; F7-01 archived nguyên nội dung trước remove, CURRENT_CHANGE15 entries; owned3100 stopped. |
+
+Files riêng continuation: `backend/app/api/chat.py`, `backend/tests/test_stream_terminal_parity.py`, `frontend/lib/api/chat.ts`, `frontend/tests/{chat-stream-client,functional-regression}.test.mjs`, new `frontend/e2e/functional-qa.spec.mts`; FRONTEND_PLAN.md, CURRENT_CHANGE.md, QA report/initial archive, bug report, scoped accessibility/browser/automated-test docs và phase-02 log archive. Giữ dirty work có trước. Không đổi frontend dependencies/config, conversation service/models/schema hoặc khởi chạy backend thật.
+
+Technical-debt table trong QA report phân biệt RESOLVED (parity), previously accepted baseline limits (history ordinals/deferred URL/sync ingestion/offset/eager history), và OPEN not accepted (human manual/security/live8000). F7-03-02/03/04 vẫn COMPLETED; F7-02 full human gate và F8-02/03 không tự nâng trạng thái.0 Groq/Gemini/live mutations; **dừng sau QA, không task tiếp theo/live smoke**.
+
+## 42. F8-02 — Controlled live E2E (2026-10-15)
+
+**COMPLETED.** [Live report, actual stages/timing/limits](./docs/frontend-controlled-live-e2e.md). User explicit approvals: ≤5 Groq HTTP attempts including rewriting; separately ≤4 Gemini embedding requests; create fresh f8_02 namespace on configured Atlas/Qdrant with private raw directory and exact-owned cleanup. Không sử dụng default corpus/namespace hoặc live document sẵn có.
+
+Initial127.0.0.1:8000/3000 probes ECONNREFUSED; direct read-only Mongo/Qdrant health PASS. Runner confirms generated namespace absent before ownership, process-only namespace/raw/API-base overrides, owned real backend8000/Next3000. Actual SDK clients retry off (Groq0, Gemini attempts1), pre-send HTTP caps/circuit on provider errors, max output256/request. Không sửa app routes/business logic/RAG/schema/dependencies/config/.env hoặc dùng fake provider/retriever trong live flow.
+
+Browser Chromium156 real flow7/7 stages PASS: health UI + dependencies200; tiny TXT synthetic upload201/INDEXED làm corpus prerequisite; sidebar New Chat;3 completed SSE turns same session, distinct3 request IDs/6 message IDs và persisted text/status/ownership exact; inline source[1] thuộc assistant đúng file; refresh backend history + saved citation-card fallback; explicit document soft-delete HTTP200/raw-retention message; explicit session DELETE. Gemini use1 document embedding +3 queries; actual provider counters **Groq4/5, Gemini4/4**, no retry/no extra smoke.
+
+Client-observed timing (ms, request→first content delta / terminal): turn1 **6247.1 /6357.5**, turn2 **3121.3 /3310.9**, turn3 **19214.0 /19406.5**. Includes embedding/retrieval/rewrite/network/provider; not internal token TTFT or percentile proof. Generation usage totals410/481/493; rewrite usage excluded, no aggregate bill claim. No provider answer/raw secret stored in committed report.
+
+Initial cleanup BLOCKED: Mongo dropDatabase OperationFailure8000; không tự coi browser PASS là task PASS. Recovery dropped only exact owned namespace collections, independently cleaned raw despite cloud errors. Fresh read-only verification confirms Mongo namespace absent, Qdrant collection absent, raw directory absent; owned8000/3000 ECONNREFUSED. Browser closed. No app-data leftovers; ignored reports/logs retained as evidence. API soft-delete retains raw; harness deletion is separate explicit owned-test teardown, không tuyên bố API hard-delete.
+
+| Check thực chạy | Kết quả |
+| --- | --- |
+| Plan-only default/syntax | PASS no network/provider/mutation; first sandbox Python access failure rerun with existing interpreter escalation, không rebuild environment. |
+| Offline safety/cleanup guards | PASS9/9: caps/async/host/circuit/approval, cleanup fallback/raw independence/ownership, internal backend rejects default/already-cleaned namespace. Recovery additions tested offline, not rerun paid flow. |
+| Actual live E2E | PASS7/7 stages,3/3 turns, budgets respected, independent cleanup PASS. |
+| Default frontend regression | PASS198/198,0 additional live calls. |
+| Restore mock production artifact | PASS build:e2e7/7; prior mock API base restored, normal configured build needed before deployment. |
+| TypeScript / ESLint / offline contract | PASS / PASS0 warnings / PASS45 schemas. |
+| Diff/new-file whitespace/archive | PASS; F7-02 archived verbatim before remove, CURRENT_CHANGE15 entries. |
+| Full mock44-browser/broad backend/audit | NOT RERUN in F8-02; previous counts retained as historical evidence. |
+
+Files riêng F8-02: `backend/scripts/controlled_live_e2e.py`, `backend/tests/test_controlled_live_guards.py`, `frontend/scripts/controlled-live-browser.mjs`, `docs/frontend-controlled-live-e2e.md`, FRONTEND_PLAN.md, CURRENT_CHANGE.md, phase-02 archive và scoped follow-up trong functional QA/automated-tests docs. Prior dirty work preserved. Main manifest ignored: `frontend/.playwright-tmp/f8_02_13a880b0bfc64daf8409451c9886b062/report.json`.
+
+Budget Gemini đã hết; **không rerun execute dưới approval cũ**. No screenshot/video requested/captured. F7 human AT/contrast/zoom/touch +9 high debt chưa waive; isolated live runtime không chứng nhận default deployment hoặc full CORS matrix. Concurrent incident vẫn NOT REPRODUCED, smoke này tuần tự không stress/concurrency test. **Dừng sau F8-02; F8-03 NOT STARTED.**
+
+## 43. F8-03 — Demo readiness (2026-10-15)
+
+**COMPLETED cho requested runbook/reproducible local demo scope.** [README frontend](./frontend/README.md), [demo checklist/kết quả/known limitations](./docs/frontend-demo-readiness.md). F8 scoped tasks đã hoàn thành; F7-02/F7-03-05 vẫn IN PROGRESS do human/manual/security disposition, không suy ra full demo/release gate PASS.
+
+- Thay scaffold README bằng hướng dẫn PowerShell setup theo lockfile hiện có, mock provider-free và real-backend dev, production build/start, env precedence/public-vs-secret, normal build sau E2E artifact. Root README link đến frontend/runbook.
+- Thêm `frontend/.env.example` chỉ public API base, unignore đúng example; root backend env và local secrets/config giữ nguyên. Ghi exact FastAPI development origins, GET/OPTIONS probes/ACAO expectations; không đổi middleware/proxy/architecture hoặc giả CORS live PASS lần này.
+- Ghi Node/Python requirements và actual verified runtime, cloud/raw storage/CWD, build-time API URL, HTTPS/remote-loopback, Node+FastAPI deployment, SSE buffering/timeouts, unsupported auth/tenant/static-export/multi-replica assumptions. Known limitations về history citation order/deferred URL/snapshots/soft-delete/raw retention/provider approval và unresolved human/security debt giữ rõ.
+- Thêm `frontend/scripts/demo-smoke.mjs` reuse existing RAM mock, fresh owned Next dev3000 + mock4011, headless Chromium, browser origin allowlist/page-error assertions, request session ID/no-replay checks; kiểm tra own process exit và ports free trước tổng PASS. Không capture screenshot/video hoặc call live provider.
+
+| Thực chạy | Kết quả |
+| --- | --- |
+| Fresh dev mock smoke | **PASS7/7 hai lượt liên tiếp**, gồm root redirect/hydration/new session/SSE/history/Documents/dialog Escape/375px/no uncaught browser errors; own dev/mock cleanup ports3000/4011 free. Initial harness teardown exit1 được sửa rồi chạy lại, không sửa application. |
+| Regression | **PASS198/198**, skipped0. Sandbox ban đầu không đọc external Python; rerun với quyền truy cập existing interpreter PASS, không cài/sửa venv. |
+| Normal production build | **PASS7/7**, process-only API base8000 theo example; routes giữ static/partial prerender như cũ. Final artifact là normal API8000 build, cần rebuild:e2e trước mock production suite. |
+| Typecheck / ESLint / offline contract | **PASS / PASS0 warnings / PASS45 schemas**. |
+| Production HTTP delivery | **PASS3 routes + client JS**, own ephemeral server stopped; không suy ra live API/browser acceptance. |
+| Syntax / ignore / doc links / diff / archive | **PASS**; example trackable/local env ignored, local links resolve, archived F7-02-QA nguyên vẹn trước removal, current15 entries. |
+| NOT RUN | npm ci/browser install/clean-room/cross-platform setup, full44 mock E2E/broad backend/audit, live backend/cloud/CORS/provider/human manual.0 Groq/Gemini/live mutations; historical F8-02 approval không gia hạn. |
+
+Không sửa app/backend/API/SSE/schema/RAG/dependencies hoặc `.env`; giữ prior dirty work. Không có blocker cho scoped F8-03; public deployment, human AT/contrast/zoom/touch và9 high audit debt chưa resolved/accepted. Concurrent incident NOT REPRODUCED. **Dừng sau F8-03, không deploy/publish, không tự chuyển task hoặc gọi provider thêm.**

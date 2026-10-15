@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
 interface ChatComposerProps {
+  inputId?: string
   value: string
   disabled?: boolean
   isGenerating?: boolean
@@ -16,6 +17,7 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({
+  inputId = "chat-question",
   value,
   disabled = false,
   isGenerating = false,
@@ -43,12 +45,12 @@ export function ChatComposer({
       onSubmit={submit}
     >
       <div className="rounded-xl border bg-background p-2 shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
-        <label htmlFor="chat-question" className="sr-only">
+        <label htmlFor={inputId} className="sr-only">
           Câu hỏi
         </label>
         <Textarea
-          id="chat-question"
-          aria-describedby="composer-help"
+          id={inputId}
+          aria-describedby={`${inputId}-help`}
           className="max-h-40 min-h-20 resize-none border-0 px-2 shadow-none focus-visible:border-transparent focus-visible:ring-0"
           placeholder="Nhập câu hỏi về tài liệu…"
           value={value}
@@ -58,7 +60,7 @@ export function ChatComposer({
           aria-readonly={disabled}
         />
         <div className="flex items-end justify-between gap-3 px-1 pt-2">
-          <p id="composer-help" className="text-xs leading-5 text-muted-foreground">
+          <p id={`${inputId}-help`} className="text-xs leading-5 text-muted-foreground">
             {isGenerating ? "Đang tạo câu trả lời…" : "Enter để gửi, Shift+Enter để xuống dòng."}
           </p>
           <Button

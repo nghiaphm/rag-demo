@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -80,8 +80,8 @@ export function CitationContent({ message }: { message: ChatViewMessage }) {
   // Selected identity is message-local. If metadata disappears, don't keep a stale target.
   const active = selected && panel.sources.find(source => source.key === selected.key)
   const groups = prioritizeSourceGroups(panel.groups, active?.key ?? null)
-  return (
-    <Sheet>
+  // Selecting a source must retain the Markdown trigger DOM for focus return.
+  const markdown = useMemo(() => (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeCitationMarkers]}
@@ -103,6 +103,10 @@ export function CitationContent({ message }: { message: ChatViewMessage }) {
           a: ({ children, href }) => <a href={href} className="break-all font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" target="_blank" rel="noreferrer">{children}<span className="sr-only"> (mở tab mới)</span></a>,
         }}
       >{message.content}</ReactMarkdown>
+  ), [message])
+  return (
+    <Sheet>
+      {markdown}
       {panel.missingMetadata && (
         <p className="mt-3 text-xs text-muted-foreground">Chưa có thông tin để nối số trích dẫn với nguồn trong câu trả lời này.</p>
       )}

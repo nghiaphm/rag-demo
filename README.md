@@ -5,6 +5,9 @@ MongoDB Atlas cho document lifecycle, Qdrant Cloud cho vector retrieval và loca
 cho raw documents. `/chat` đã cutover sang Qdrant; PostgreSQL/pgvector không còn nằm trong
 runtime hoặc dependency manifest.
 
+Frontend Next.js: [setup/run, API env và CORS](frontend/README.md),
+[demo smoke checklist và known limitations](docs/frontend-demo-readiness.md).
+
 ## Kiến trúc hiện tại
 
 ```text

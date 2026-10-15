@@ -1,6 +1,6 @@
 # BUG-STREAM-001 — Whitespace-only error terminal differs from history
 
-Detected by F7-03-05 on 2026-10-15. **OPEN / blocks the functional QA gate.** No application/backend fix or risk waiver has been applied.
+Detected by F7-03-05 on 2026-10-15. **FIXED in the explicitly user-authorized F7-03-05 continuation.** Original reproduction and equality assertion retained; no skip/xfail/waiver. Other QA/manual/security gates are separate.
 
 Reproduce from project root using the existing Python environment. The guarded runner sets the backend import path and runs all selected suites, including the focused parity test:
 
@@ -21,4 +21,14 @@ Cause: `backend/app/api/chat.py` selects PARTIAL using `emitted_delta`; `backend
 
 Frontend impact: existing persisted-history verification detects the mismatch, preserves streamed whitespace and PARTIAL status, shows the recovery warning, releases loading and avoids automatic replay/canonical URL replacement. After an explicit history reload, the backend FAILED record is shown. This safe behavior is covered by `frontend/tests/functional-regression.test.mjs`; it does not resolve the server disagreement.
 
-Follow-up task: **BUGFIX — Stream terminal/persistence parity**, NOT STARTED. Choose one consistent rule compatible with the SSE contract; preserve exact content, IDs, usage/error and session-guard semantics. Do not trim deltas or special-case the frontend to conceal drift. Acceptance: all three parity cases and selected backend suites pass, frontend recovery/SSE/multi-turn regression remains green, and the known failure is removed by an implementation fix. F7-03-05 explicitly restricts backend semantic fixes to a separately assigned bugfix; no business logic is changed in this QA task.
+The paragraphs above record the original failing behavior. The original plan required a separately assigned bugfix; the user explicitly approved including the minimal fix and before/after regression in this QA continuation.
+
+## Resolution and actual evidence
+
+Existing `MessageRecord` validation permits PARTIAL/COMPLETED only with meaningful text (`content.strip()` nonempty). Keep that model/schema/persistence rule. In `backend/app/api/chat.py`, the encoder now classifies error status from the same meaningful-content rule instead of delta count. Normal provider completion with only whitespace is RAG_STREAM_EMPTY/FAILED before persistence. All emitted/stored characters, IDs, sequence, error code/usage and guard release are preserved; no database schema, REST/SSE shape or RAG retrieval/generation changes.
+
+The frontend transcript validator previously inferred PARTIAL from any delta. It now permits FAILED after whitespace-only deltas, while still rejecting FAILED with meaningful text or PARTIAL before any delta. Its whitespace predicate is checked against the existing Python interpreter's complete `str.isspace()` set; NEL is whitespace, BOM remains content. The original legacy PARTIAL/history FAILED mismatch fixture still warns and does not replay/canonicalize. A matching FAILED/history FAILED fixture verifies exact text and canonical recovery without replay.
+
+Before: baseline81 tests had1 parity failure; expanded84-test run had failing whitespace equality and normal-completion regressions. A first attempt to change persistence classification failed model validation and was fully reverted; `conversation_service.py` and models remain unchanged. Final encoder-side fix: **84/84 guarded backend tests PASS**, plus **67/67 guarded isolation/concurrency tests PASS**. These suites overlap and are not151 unique tests. Frontend **198/198 PASS**, including the unchanged original mismatch warning test and new matching-state/Unicode checks. No live provider calls.
+
+The parity test now includes the original three cases and Unicode-whitespace, disconnect/cancel, and whitespace-only normal completion (6 test methods; Unicode subtests). It asserts exact content, terminal status/code, IDs, usage, sequence and guard release where applicable. The source equality assertion was not weakened.

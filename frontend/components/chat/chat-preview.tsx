@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 import { AlertCircle, MessageSquareText } from "lucide-react"
 
 import { ChatComposer } from "@/components/chat/chat-composer"
@@ -38,6 +38,7 @@ function ChatWorkspace({
   initialMessages: readonly ChatViewMessage[]
 }) {
   const router = useRouter()
+  const composerId = useId()
   const mounted = useRef(false)
   const [question, setQuestion] = useState("")
   const viewport = useRef<HTMLDivElement>(null)
@@ -117,6 +118,7 @@ function ChatWorkspace({
         {unread && <div className="border-t px-4 py-2"><Button type="button" variant="outline" size="sm" onClick={scroll.jump}>Nội dung mới — Về cuối</Button></div>}
         <p role="status" className="sr-only">{state.isGenerating ? "Đang xử lý câu hỏi" : state.messages.some(isHistoricalNonterminal) ? "Không có luồng trực tiếp cho tin nhắn chưa hoàn tất trong lịch sử." : state.messages.length ? "Đã kết thúc xử lý câu hỏi. Kiểm tra trạng thái câu trả lời." : "Sẵn sàng đặt câu hỏi"}</p>
         <ChatComposer
+          inputId={composerId}
           value={question}
           onChange={setQuestion}
           onSubmit={submit}

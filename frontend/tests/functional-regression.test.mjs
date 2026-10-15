@@ -72,7 +72,9 @@ test("one isolated HTTP workspace supports session CRUD/three-turn SSE/history p
   } finally { chat.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
-test("whitespace-only PARTIAL SSE vs persisted FAILED warns and retains exact content without replay or canonical navigation", async () => {
+for (const terminalStatus of ["PARTIAL", "FAILED"]) test(terminalStatus === "PARTIAL"
+  ? "whitespace-only PARTIAL SSE vs persisted FAILED warns and retains exact content without replay or canonical navigation"
+  : "matching whitespace-only FAILED SSE/history verifies exact content and permits canonical recovery without replay", async () => {
   const id = n => `${String(n).padStart(8, "0")}-1111-4111-8111-111111111111`;
   const content = " \n\t ", session = id(1), requestId = id(2), userId = id(3), assistantId = id(4);
   let posts = 0, reads = 0;
@@ -80,7 +82,7 @@ test("whitespace-only PARTIAL SSE vs persisted FAILED warns and retains exact co
     ["start", { sequence: 1, mode: "PERSISTENT", session_id: session, request_id: requestId, user_message_id: userId, assistant_message_id: assistantId }],
     ["metadata", { sequence: 2, sources: [], model: null }],
     ["delta", { sequence: 3, content }],
-    ["error", { sequence: 4, status: "PARTIAL", usage: null, error: { code: "RAG_STREAM_ERROR", message: "Fixture error", retryable: true } }],
+    ["error", { sequence: 4, status: terminalStatus, usage: null, error: { code: "RAG_STREAM_ERROR", message: "Fixture error", retryable: true } }],
   ];
   const stream = createChatStreamClient({ baseUrl: "http://mock.invalid", fetch: async () => {
     posts++;
@@ -96,10 +98,14 @@ test("whitespace-only PARTIAL SSE vs persisted FAILED warns and retains exact co
   });
   await controller.submit("question");
   const state = controller.getSnapshot();
-  assert.equal(state.messages.at(-1).status, "PARTIAL");
+  assert.equal(state.messages.at(-1).status, terminalStatus);
   assert.equal(state.messages.at(-1).content, content);
-  assert.equal(state.isGenerating, false); assert.equal(state.historyVerified, false);
-  assert(state.persistenceError); assert.equal(canonicalChatPath(null, state), null);
+  assert.equal(state.isGenerating, false); assert.equal(state.historyVerified, terminalStatus === "FAILED");
+  if (terminalStatus === "PARTIAL") {
+    assert(state.persistenceError); assert.equal(canonicalChatPath(null, state), null);
+  } else {
+    assert.equal(state.persistenceError, null); assert.equal(canonicalChatPath(null, state), `/chat/${session}`);
+  }
   assert.equal(posts, 1); assert.equal(reads, 1);
   controller.dispose();
 });

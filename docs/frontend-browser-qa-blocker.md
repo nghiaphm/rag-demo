@@ -72,6 +72,12 @@ Phương án phục hồi thuộc môi trường Codex: khởi động lại ứ
 
 ## Evidence cần lưu trước khi COMPLETED
 
+### F8-01 — Repository Playwright Test evidence (2026-10-15)
+
+User giao Playwright mock E2E trong F8-01: đã thêm @playwright/test1.64.1 và chạy **7/7 PASS** trên full Chromium156 headless, production UI3100 + per-test local mock, request allowlist/no uncaught browser exceptions. Xem [automated test report](./frontend-automated-tests.md) cho commands, counts, initial failures/fix, artifacts và open gates. Codex in-app Browser không được gọi/reset/patch hoặc sửa protection; incompatibility cũ không được tuyên bố FIXED.
+
+Keyboard/focus/mobile375px đã có evidence tự động cho các cases cụ thể trong report; những manual rows khác vẫn pending. Không diễn giải7 E2E là full accessibility/live provider acceptance. Browser download ENOSPC ở optional Headless Shell đã được tránh bằng full Chromium + workspace temp; npm audit9 high và backend parity80/81/1 FAIL được báo công khai, không auto-fix/waive.
+
 ### F7-03-05 — Integrated gate (2026-10-15)
 
 Browser bootstrap chính thức vẫn lỗi import `Cannot redefine property: process`, trước setup/connection/navigation. Actual backend source/runtime OpenAPI/CORS và production HTML/client asset delivery PASS; đây không phải UI/browser acceptance. Không có manual outcomes mới để chuyển checklist thành PASS.
@@ -130,3 +136,29 @@ Evidence path / observation:
 ```
 
 Automated verification trong lần chẩn đoán: mock harness4/4 và regression161/161 PASS; production REST/SSE clients validate fixture payloads, persisted exact content, CORS, empty/error/disconnect/no-metadata và fail-closed routes. Các tests này **không phải** browser manual acceptance. Build/typecheck/contract PASS157-test baseline là evidence lần triển khai trước; không tự nhận đã rerun build trong lần diagnosis.
+
+## F7-03-02 scoped browser acceptance update — 2026-10-15
+
+**Session Actions COMPLETED**; [actual observations and commands](./session-actions-browser-acceptance.md) supersede earlier NOT RUN snapshots for these scoped AC only. Repository Playwright/Chromium156:5 new cases + existing current-delete case cover Space/Enter/arrows/Escape, dialog Tab containment/initial/return focus,320/375px, rename validation/trim,60-session pagination/refresh/other deletion, actual remote-stream DELETE409/no replay. Full suite12/12 PASS (39.1s, no skips/retries/flaky/unexpected); frontend196/196, backend session11/11, build/typecheck/lint/contract45 PASS.
+
+Human AT/contrast/zoom/full chat/citation/document acceptance remains unverified. In-app Browser runtime untouched; no live backend/provider calls. F7-03-03/04/05 and unrelated BUG-STREAM-001/security gates retain their prior statuses; no next task started. Earlier counts/statuses above are historical evidence, not current Session Actions blockers.
+
+## F7-03-03 scoped browser acceptance update — 2026-10-15
+
+**Chat Actions COMPLETED**, [full observations/minimal focus fix](./chat-actions-browser-acceptance.md), FRONTEND_PLAN mục39. Existing implementation retained;10 new Chromium cases cover composer/sidebar before terminal, deferred URL/new-tab, refresh/recovery, verification503/lag, historical PENDING/STREAMING/FAILED/PARTIAL snapshots, remote409/no replay, native fetch abort on switch, exact copy/native Windows clipboard/denied permission, citation drawer375px/keyboard/focus/history fallback.
+
+A browser regression proved citation opener DOM was replaced on source selection; memoizing the Markdown subtree retains that node and fixes Escape focus return. Full22/22 browser E2E PASS (77.6s,0 retries/skips/flaky/unexpected), frontend196/196, production build7/7, typecheck/lint/contract45 PASS. Historical NOT RUN snapshots above are superseded only for these scoped AC. Codex in-app Browser untouched;0 live providers/mutations.
+
+Human screen reader/contrast/zoom/real touch/full document coverage remains unverified. Task04/05, BUG-STREAM-001/prior backend80/81 and9 high security advisories are not waived; broad backend/audit NOT RERUN. No Edit/Regenerate/Delete Message, no next task/live smoke.
+
+## F7-03-04 scoped browser acceptance update — 2026-10-15
+
+**Document Actions COMPLETED**, [actual observations/commands/limits](./document-actions-browser-acceptance.md), FRONTEND_PLAN mục40. Nine new Chromium cases cover upload validation/pending/success, version/re-index/delete confirmation/cancel/Escape/Tab/focus on320×568 and375×568, failed version preserves active,202→explicit200 cleanup/raw-retention copy, stale two-tab preflight/no DELETE, success receipt with failed reread/explicit refresh, Stop waiting/no replay and status guards. Full31/31 PASS (93.1s,0 retries/skips/flaky/unexpected), frontend196/196, build7/7/typecheck/lint/contract45 PASS.
+
+No new application defect reproduced; no UI/backend/API/dependency changes or reimplementation. Prior aborted-page-slot regression remains PASS. Earlier NOT RUN snapshots are superseded only for these scoped browser AC. Human AT/contrast/zoom/real touch/full task05 acceptance remain unverified; BUG-STREAM-001/prior80/81 and9 high advisories are not waived. In-app Browser untouched;0 live provider/backend mutations. Stop after task04.
+
+## F7-03-05 continuation — 2026-10-15
+
+[Current functional QA report](./frontend-functional-qa.md), plan41 supersede prior blanket browser-blocked/parity-failing status. User-approved BUG-STREAM-001 is FIXED: backend84/84 + overlapping isolation67/67, frontend198/198, actual Chromium44/44 (122.2s,0 retries/skips/flaky/unexpected), build/typecheck/lint/contract45 and production HTTP delivery PASS.13 new browser error/health/route/empty/pagination/reader-intent/keyboard/320px checks complement31 prior cases.
+
+Human AT/contrast/desktop zoom200%/real touch remain NOT RUN, dependency audit9 high remains unaccepted, actual backend8000 verifier failed ECONNREFUSED before CORS assertions. F7-03-05 final gate IN PROGRESS until explicit resolution/disposition; no false PASS or automatic F8/live smoke. In-app Browser untouched,0 Groq/Gemini/live mutations. Historical counts/results above are preserved evidence, not current parity/browser blockers.
