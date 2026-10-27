@@ -78,10 +78,11 @@ function hasSequence(value: Record<string, unknown>): value is Record<string, un
 
 function isSource(value: unknown): value is Source {
   if (!isRecord(value)) return false;
-  const nullableStrings = ["file_name", "source", "document_id", "version_id", "chunk_id"];
+  const nullableStrings = ["file_name", "source", "document_id", "version_id", "chunk_id", "sheet_name"];
   if (!nullableStrings.every((key) => !Object.hasOwn(value, key) || isNullableString(value[key]))) return false;
   return (!Object.hasOwn(value, "chunk_index") || value.chunk_index === null || isInteger(value.chunk_index)) &&
-    (!Object.hasOwn(value, "page") || value.page === null || isInteger(value.page));
+    (!Object.hasOwn(value, "page") || value.page === null || isInteger(value.page)) &&
+    (!Object.hasOwn(value, "row_index") || value.row_index === null || isInteger(value.row_index, 1));
 }
 
 function isCitation(value: unknown): value is Citation {

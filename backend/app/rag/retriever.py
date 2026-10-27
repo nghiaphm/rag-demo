@@ -61,6 +61,7 @@ class QdrantActiveVersionRetriever(BaseRetriever):
                     "chunk_index": result.chunk_index,
                     "page": result.page,
                     "score": result.score,
+                    **({"sheet_name": result.sheet_name, "row_index": result.row_index} if result.sheet_name is not None else {}),
                 },
             )
             for result in results

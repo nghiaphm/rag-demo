@@ -7,6 +7,24 @@ export type DocumentStatus =
   | "FAILED"
   | "DELETED";
 
+export interface WorkbookSheetPreview {
+  name: string;
+  columns: string[];
+  rows: string[][];
+  total_rows: number;
+  truncated: boolean;
+}
+
+export interface DocumentPreviewResponse {
+  document_id: string;
+  version_id: string;
+  file_name: string;
+  kind: "text" | "excel" | "unsupported";
+  text?: string | null;
+  sheets?: WorkbookSheetPreview[];
+  truncated?: boolean;
+}
+
 export interface DocumentInfo {
   document_id: string;
   file_name: string;

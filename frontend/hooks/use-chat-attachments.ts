@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { createApiClient } from "@/lib/api/client"
 import { uploadDocument } from "@/lib/api/documents"
 import { UploadController } from "@/lib/documents/upload-controller"
@@ -12,10 +12,17 @@ export interface ChatAttachment {
   controller: UploadController
 }
 
-/** Composer-local uploads only. These IDs are never added to chat requests. */
+/** Local files stay in the composer; only indexed immutable references can be sent. */
 export function useChatAttachments(apiBaseUrl: string | null) {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const entries = useRef(new Map<string, ChatAttachment>())
+  const allReady = useSyncExternalStore(listener => {
+    const unsubscribers = attachments.map(entry => entry.controller.subscribe(listener))
+    return () => unsubscribers.forEach(unsubscribe => unsubscribe())
+  }, () => attachments.every(entry => {
+    const result = entry.controller.getSnapshot().result
+    return result?.status === "INDEXED" && result.activated
+  }), () => true)
 
   useEffect(() => {
     const active = entries.current
@@ -58,5 +65,5 @@ export function useChatAttachments(apiBaseUrl: string | null) {
     return entries.current.size === 0
   }
 
-  return { attachments, choose, remove, capture: () => [...entries.current.values()], clearSubmitted }
+  return { attachments, allReady, choose, remove, capture: () => [...entries.current.values()], clearSubmitted }
 }

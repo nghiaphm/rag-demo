@@ -8,7 +8,7 @@ import { validateUploadFile } from "@/lib/documents/upload-validation"
 import { DocumentPreview } from "@/components/chat/document-preview"
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
-export function AttachmentChip({ attachment, onRemove }: { attachment: ChatAttachment; onRemove: () => void }) {
+export function AttachmentChip({ attachment, onRemove, apiBaseUrl }: { attachment: ChatAttachment; onRemove: () => void; apiBaseUrl?: string | null }) {
   const { controller, file } = attachment
   const [open, setOpen] = useState(false)
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -42,10 +42,12 @@ export function AttachmentChip({ attachment, onRemove }: { attachment: ChatAttac
     <SheetContent side="right" showCloseButton={false} initialFocus={closeButton} className="w-full sm:max-w-xl">
       <SheetHeader className="pr-12">
         <SheetTitle className="break-words">{file.name}</SheetTitle>
-        <SheetDescription>Bản xem trước từ file trên thiết bị. Nội dung này không xác nhận kết quả index hoặc phạm vi truy xuất của chat.</SheetDescription>
+        <SheetDescription>Bản xem trước của file đã chọn hoặc phiên bản đã upload. Nội dung này không thay đổi phạm vi truy xuất của chat.</SheetDescription>
       </SheetHeader>
       <SheetClose render={<Button ref={closeButton} type="button" variant="ghost" size="icon" className="absolute top-3 right-3" aria-label="Đóng xem trước" />}><X aria-hidden="true" /></SheetClose>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{open && <DocumentPreview file={file} />}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{open && (failed && file.name.toLowerCase().endsWith(".xlsx")
+        ? <p role="alert" className="text-destructive">{error}</p>
+        : <DocumentPreview file={file} reference={ready ? state.result : null} apiBaseUrl={apiBaseUrl} />)}</div>
     </SheetContent>
   </Sheet>
 }

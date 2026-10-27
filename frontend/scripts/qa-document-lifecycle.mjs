@@ -5,11 +5,26 @@ import { randomUUID } from "node:crypto";
 export function createDocumentLifecycle(fixtures, delayMs) {
   const documents = structuredClone(fixtures);
   const deletes = new Map();
+  const fileContents = new Map();
   let clock = Date.now();
   const now = () => new Date(++clock).toISOString();
   const wait = () => new Promise(resolve => setTimeout(resolve, delayMs * 4));
-  return async ({ path, method, url, headers, body, json }) => {
+  const handle = async ({ path, method, url, headers, body, json }) => {
     if (path !== "/documents" && !path.startsWith("/documents/")) return false;
+    const preview = /^\/documents\/([^/]+)\/versions\/([^/]+)\/preview$/.exec(path);
+    if (preview && method === "GET") {
+      const document = documents.find(item => item.document_id === preview[1]);
+      const version = document?.versions.find(item => item.version_id === preview[2]);
+      if (!document || !version) { json(404, { detail: "Unknown version" }); return true; }
+      if (document.status === "DELETED") { json(410, { detail: "Deleted document" }); return true; }
+      const excel = version.file_name.endsWith(".xlsx");
+      json(200, { document_id: document.document_id, version_id: version.version_id, file_name: version.file_name,
+        kind: excel ? "excel" : version.file_name.endsWith(".txt") ? "text" : "unsupported",
+        text: excel ? null : fileContents.get(version.version_id) ?? "QA fixture document text", truncated: false,
+        sheets: excel ? [{ name: "Vehicles", columns: ["Name", "Speed"], rows: [["Airplane", "900"], ["Bus", "80"]], total_rows: 2, truncated: false },
+          { name: "Policies", columns: ["Topic", "Rule"], rows: [["License", "A valid license is required"]], total_rows: 1, truncated: false }] : [] });
+      return true;
+    }
     if (path === "/documents" && method === "GET") {
       const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 100);
       const visible = documents.filter(d => url.searchParams.get("include_deleted") === "true" || d.status !== "DELETED")
@@ -39,7 +54,7 @@ export function createDocumentLifecycle(fixtures, delayMs) {
     if (document && (document.status === "DELETED" || document.status === "PROCESSING" || (reindex && !document.active_version_id))) {
       json(409, { detail: "QA protected document" }); return true;
     }
-    let filename, size;
+    let filename, size, text;
     if (reindex) {
       const active = document.versions.find(v => v.version_id === document.active_version_id);
       filename = active.file_name; size = active.size_bytes;
@@ -50,6 +65,7 @@ export function createDocumentLifecycle(fixtures, delayMs) {
       const file = form.get("file");
       if ([...form.keys()].length !== 1 || !(file instanceof File)) { json(422, { detail: "QA requires one file field" }); return true; }
       filename = file.name; size = file.size;
+      if (filename.endsWith(".txt")) text = await file.text();
       if (!size || !/\.(pdf|md|markdown|txt|xlsx)$/i.test(filename)) { json(400, { detail: "QA invalid file" }); return true; }
     }
     if (!document) {
@@ -61,6 +77,7 @@ export function createDocumentLifecycle(fixtures, delayMs) {
       status: "PROCESSING", checksum_sha256: "qa-fixture-only", size_bytes: size, chunk_count: 0,
       embedding_model: null, created_at: now(), indexed_at: null };
     document.versions.unshift(version); document.version_count++;
+    fileContents.set(version.version_id, text ?? "QA version fixture");
     if (!document.active_version_id) document.status = "PROCESSING";
     document.updated_at = now();
     await wait();
@@ -76,4 +93,11 @@ export function createDocumentLifecycle(fixtures, delayMs) {
     json(201, { document_id: document.document_id, version_id: version.version_id, job_id: randomUUID(),
       file_name: filename, num_chunks: 1, status: "INDEXED", activated: true }); return true;
   };
+  handle.resolveAttachments = references => references.map(reference => {
+    const document = documents.find(item => item.document_id === reference.document_id && item.status !== "DELETED");
+    const version = document?.versions.find(item => item.version_id === reference.version_id && item.status === "INDEXED");
+    if (!version) throw new Error("Unknown indexed attachment version");
+    return { document_id: document.document_id, version_id: version.version_id, file_name: version.file_name };
+  });
+  return handle;
 }

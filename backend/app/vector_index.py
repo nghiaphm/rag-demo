@@ -44,6 +44,8 @@ class VectorRecord:
     chunk_text: str
     vector: tuple[float, ...]
     page: int | None = None
+    sheet_name: str | None = None
+    row_index: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "point_id", canonical_uuid(self.point_id, "point_id"))
@@ -71,6 +73,7 @@ class VectorRecord:
             "file_name": self.file_name,
             "page": self.page,
             "chunk_text": self.chunk_text,
+            **({"sheet_name": self.sheet_name, "row_index": self.row_index} if self.sheet_name is not None else {}),
         }
 
 
@@ -124,6 +127,8 @@ class VectorSearchResult:
     chunk_text: str
     score: float
     page: int | None = None
+    sheet_name: str | None = None
+    row_index: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "point_id", canonical_uuid(self.point_id, "point_id"))

@@ -20,7 +20,7 @@ function harness(upload) {
     new Function("exports", "require", ts.transpileModule(fs.readFileSync(path.join(root, relative + ".ts"), "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
     }).outputText)(exports, name => {
-      if (name === "react") return { useRef: current => ({ current }), useState: initial => [initial, next => { state = next; }],
+      if (name === "react") return { useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(), useRef: current => ({ current }), useState: initial => [initial, next => { state = next; }],
         useEffect: effect => { cleanups.push(effect()); } };
       if (name === "@/lib/api/client") return { createApiClient: () => ({}) };
       if (name === "@/lib/api/documents") return { uploadDocument: (_api, selected, signal) => upload(selected, signal) };

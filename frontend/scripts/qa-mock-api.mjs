@@ -127,6 +127,7 @@ export function createQaMockServer({ delayMs = 600, deltaMs = 250 } = {}) {
         if (stored.some(item => item.status === "STREAMING")) { json(409, { detail: "Session generation conflict" }); return; }
         const requestId = randomUUID();
         const user = message(payload.session_id, stored.length + 1, "USER", payload.question, requestId);
+        if (payload.attachments?.length) user.attachments = documentLifecycle.resolveAttachments(payload.attachments);
         const assistant = message(payload.session_id, stored.length + 2, "ASSISTANT", "", requestId);
         assistant.status = "STREAMING"; assistant.completed_at = null;
         stored.push(user, assistant);

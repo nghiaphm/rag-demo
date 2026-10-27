@@ -190,6 +190,8 @@ class QdrantVectorIndex(VectorIndex):
                             chunk_text=str(payload["chunk_text"]),
                             page=None if payload.get("page") is None else int(payload["page"]),
                             score=float(point.score),
+                            sheet_name=payload.get("sheet_name"),
+                            row_index=payload.get("row_index"),
                         )
                     )
                 except (KeyError, TypeError, ValueError) as exc:

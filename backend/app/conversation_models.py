@@ -10,6 +10,7 @@ from enum import Enum
 from pydantic import Field, field_validator, model_validator
 
 from app.document_models import MongoRecord, _canonical_uuid, new_uuid, utc_now
+from app.attachment_models import MessageAttachment
 
 
 class SessionScopeMode(str, Enum):
@@ -142,6 +143,7 @@ class MessageRecord(MongoRecord):
     content: str = Field(default="", max_length=1_000_000)
     status: MessageStatus
     citations: list[MessageCitation] = Field(default_factory=list)
+    attachments: list[MessageAttachment] = Field(default_factory=list, max_length=20)
     model: str | None = Field(default=None, min_length=1, max_length=255)
     usage: MessageUsage | None = None
     request_id: str = Field(default_factory=new_uuid)
@@ -165,6 +167,8 @@ class MessageRecord(MongoRecord):
 
     @model_validator(mode="after")
     def _validate_role_and_state(self) -> "MessageRecord":
+        if self.role is MessageRole.ASSISTANT and self.attachments:
+            raise ValueError("Only user messages can carry attachments")
         if self.role is MessageRole.USER:
             if self.status is not MessageStatus.COMPLETED:
                 raise ValueError("user message phải có status COMPLETED")

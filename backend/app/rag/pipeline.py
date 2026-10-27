@@ -319,4 +319,5 @@ def _to_source(document: Document) -> dict:
         "chunk_id": metadata.get("chunk_id"),
         "chunk_index": metadata.get("chunk_index"),
         "page": metadata.get("page"),
+        **({"sheet_name": metadata["sheet_name"], "row_index": metadata.get("row_index")} if metadata.get("sheet_name") is not None else {}),
     }

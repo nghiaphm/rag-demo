@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
 from app.conversation_models import MessageRole, MessageStatus, SessionScopeMode
+from app.attachment_models import MessageAttachment
 
 
 class CreateSessionRequest(BaseModel):
@@ -69,6 +70,7 @@ class UsageResponse(BaseModel):
 
 
 class MessageResponse(BaseModel):
+    attachments: list[MessageAttachment] = Field(default_factory=list)
     message_id: str
     session_id: str
     sequence: int

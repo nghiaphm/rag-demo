@@ -227,6 +227,8 @@ class IngestionService:
                         else int(chunk.metadata["page"])
                     ),
                     vector=tuple(vector),
+                    sheet_name=chunk.metadata.get("sheet_name"),
+                    row_index=chunk.metadata.get("row_index"),
                 )
                 for chunk_index, (chunk, vector) in enumerate(
                     zip(chunks, vectors, strict=True)

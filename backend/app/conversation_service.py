@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.citation_mapping import map_verified_citations
+from app.attachment_models import MessageAttachment
 from app.conversation_models import (
     MessageRecord,
     MessageRole,
@@ -100,6 +101,7 @@ class ConversationService:
         question: str,
         generate: Callable[[], dict],
         model: str,
+        attachments: list[MessageAttachment] | None = None,
     ) -> dict:
         """Persist một non-streaming turn; generation chỉ chạy sau durable placeholders."""
         request_id = new_uuid()
@@ -112,6 +114,7 @@ class ConversationService:
                 sequence=user_sequence,
                 role=MessageRole.USER,
                 content=question,
+                attachments=attachments or [],
                 status=MessageStatus.COMPLETED,
                 request_id=request_id,
             )
@@ -183,7 +186,7 @@ class ConversationService:
             self.repository.release_generation(session_id, request_id)
 
     def begin_streaming_turn(
-        self, *, session_id: str, question: str, model: str
+        self, *, session_id: str, question: str, model: str, attachments: list[MessageAttachment] | None = None
     ) -> StreamingTurn:
         """Persist the user turn and assistant STREAMING state before SSE headers."""
         request_id = new_uuid()
@@ -196,6 +199,7 @@ class ConversationService:
                 sequence=user_sequence,
                 role=MessageRole.USER,
                 content=question,
+                attachments=attachments or [],
                 status=MessageStatus.COMPLETED,
                 request_id=request_id,
             )

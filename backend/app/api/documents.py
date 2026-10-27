@@ -14,7 +14,12 @@ from app.document_repository import (
 from app.document_service import DocumentService, DocumentSummary, create_document_service
 from app.ingestion import IngestionError, IngestionResult
 from app.rag.loader import SUPPORTED_EXTENSIONS
+from app.attachments import AttachmentUnavailableError, preview_version
+from app.document_repository import MongoDocumentRepository
+from app.storage import create_file_storage, StorageError
+from app.excel import MAX_XLSX_BYTES, WorkbookError, read_workbook
 from app.schemas import (
+    DocumentPreviewResponse,
     DeleteDocumentResponse,
     DocumentDetail,
     DocumentIndexInfo,
@@ -119,10 +124,33 @@ def _handle_error(exc: Exception) -> None:
 
 async def _read_upload(file: UploadFile) -> tuple[str, bytes]:
     file_name = _validated_file_name(file)
-    content = await file.read()
+    content = await file.read(MAX_XLSX_BYTES + 1) if Path(file_name).suffix.lower() == ".xlsx" else await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="File rỗng.")
+    if Path(file_name).suffix.lower() == ".xlsx":
+        try:
+            await run_in_threadpool(read_workbook, content, content_type=file.content_type)
+        except WorkbookError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     return file_name, content
+
+
+@router.get("/{document_id}/versions/{version_id}/preview", response_model=DocumentPreviewResponse)
+async def document_preview(document_id: UUID, version_id: UUID, request: Request):
+    database = request.app.state.cloud_connections.mongodb.database
+    if database is None:
+        raise HTTPException(status_code=503, detail="Document metadata unavailable")
+    try:
+        return await run_in_threadpool(preview_version, MongoDocumentRepository(database), create_file_storage(),
+                                       str(document_id), str(version_id))
+    except AttachmentUnavailableError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except WorkbookError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StorageError as exc:
+        raise HTTPException(status_code=404, detail="Không đọc được file gốc.") from exc
+    except RepositoryError as exc:
+        raise HTTPException(status_code=503, detail="Document metadata unavailable") from exc
 
 
 @router.post("/upload", response_model=DocumentIndexInfo, status_code=201)

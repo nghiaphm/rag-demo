@@ -71,6 +71,7 @@ def _message_response(message: MessageRecord) -> MessageResponse:
         content=message.content,
         status=message.status,
         citations=[CitationResponse(**item.model_dump()) for item in message.citations],
+        attachments=message.attachments,
         model=message.model,
         usage=None if message.usage is None else UsageResponse(**message.usage.model_dump()),
         request_id=message.request_id,

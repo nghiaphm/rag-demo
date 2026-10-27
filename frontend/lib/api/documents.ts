@@ -3,6 +3,23 @@ import type { DeleteDocumentResponse, DocumentDetail, DocumentIndexInfo, Documen
 import { validateUploadFile } from "@/lib/documents/upload-validation";
 
 type ApiClient = ReturnType<typeof createApiClient>;
+
+export async function getDocumentPreview(api: ApiClient, documentId: string, versionId: string, signal?: AbortSignal): Promise<import("@/types/document").DocumentPreviewResponse> {
+  assertDocumentId(documentId);
+  assertDocumentId(versionId);
+  const response = await api.request<unknown>(`/documents/${documentId}/versions/${versionId}/preview`, { method: "GET", signal });
+  const value = response.data;
+  if (response.status !== 200 || !record(value) || value.document_id !== documentId || value.version_id !== versionId
+    || typeof value.file_name !== "string" || !["text", "excel", "unsupported"].includes(String(value.kind))
+    || (value.kind === "text" && typeof value.text !== "string")
+    || !Array.isArray(value.sheets) || value.sheets.some(sheet => !record(sheet) || typeof sheet.name !== "string"
+      || !Array.isArray(sheet.columns) || !sheet.columns.every(column => typeof column === "string")
+      || !Array.isArray(sheet.rows) || sheet.rows.some(row => !Array.isArray(row) || !row.every(cell => typeof cell === "string"))
+      || !count(sheet.total_rows) || typeof sheet.truncated !== "boolean") || typeof value.truncated !== "boolean") {
+    throw new TypeError("Document preview không khớp API contract.");
+  }
+  return value as unknown as import("@/types/document").DocumentPreviewResponse;
+}
 const statuses = ["UPLOADED", "PROCESSING", "INDEXED", "FAILED", "DELETED"];
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;

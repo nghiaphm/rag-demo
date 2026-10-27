@@ -126,6 +126,7 @@ export function historyMessageToViewMessage(message: MessageResponse): ChatViewM
     requestId: message.request_id,
     role: message.role === "USER" ? "user" : "assistant",
     content: message.content,
+    ...(message.attachments?.length ? { attachments: message.attachments } : {}),
     status: message.status,
     model: message.model,
     sources: [],

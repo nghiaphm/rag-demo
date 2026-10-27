@@ -120,6 +120,9 @@ function isMessageResponse(value: unknown): value is MessageResponse {
     && (value.role === "USER" || value.role === "ASSISTANT")
     && ["PENDING", "STREAMING", "COMPLETED", "PARTIAL", "FAILED"].includes(String(value.status))
     && typeof value.content === "string"
+    && (value.attachments === undefined || (Array.isArray(value.attachments) && value.attachments.length <= 20
+      && value.attachments.every(item => isRecord(item) && isSessionId(item.document_id) && isSessionId(item.version_id)
+        && typeof item.file_name === "string" && item.file_name.length > 0)))
     && Array.isArray(value.citations)
     && value.citations.every(isCitationResponse)
     && isNullableString(value.model)

@@ -13,6 +13,7 @@ import { ChatScrollController } from "@/lib/chat/scroll"
 import { createChatServices } from "@/lib/chat/services"
 import { canonicalChatPath, isHistoricalNonterminal } from "@/lib/chat/recovery"
 import { ChatController, type ChatViewMessage } from "@/lib/chat/controller"
+import type { MessageAttachment } from "@/types/chat"
 
 function EmptyChat() {
   return (
@@ -75,12 +76,12 @@ function ChatWorkspace({
     setQuestion(value)
   }
 
-  async function submit(): Promise<boolean> {
+  async function submit(attachments: readonly MessageAttachment[] = []): Promise<boolean> {
     if (!question.trim() || submission.current || controller.getSnapshot().isGenerating) return false
     const identity = Symbol("workspace submission")
     submission.current = identity
     const revision = draft.current.revision
-    const pending = controller.submit(question)
+    const pending = controller.submit(question, attachments)
     const key = controller.getSnapshot().messages.at(-1)?.key
     let messageId: string | null = null
     const unsubscribe = controller.subscribe(() => {
@@ -137,7 +138,7 @@ function ChatWorkspace({
           ) : (
             <div className="space-y-5" aria-label="Hội thoại hiện tại">
               {state.messages.map((message) => (
-                <ChatMessage key={message.key} message={message} />
+                <ChatMessage key={message.key} message={message} apiBaseUrl={apiBaseUrl} />
               ))}
             </div>
           )}

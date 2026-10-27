@@ -55,6 +55,7 @@ export interface UsageResponse {
 
 /** History has citations, but no sources or [n] -> source ordinal mapping. */
 export interface MessageResponse {
+  attachments?: import("./chat").MessageAttachment[];
   message_id: string;
   session_id: string;
   sequence: number;

@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { AttachmentChip } from "@/components/chat/attachment-chip"
 import { useChatAttachments } from "@/hooks/use-chat-attachments"
 import { DOCUMENT_UPLOAD_ACCEPT } from "@/lib/documents/upload-validation"
+import type { MessageAttachment } from "@/types/chat"
 
 interface ChatComposerProps {
   apiBaseUrl?: string | null
@@ -16,7 +17,7 @@ interface ChatComposerProps {
   disabled?: boolean
   isGenerating?: boolean
   onChange: (value: string) => void
-  onSubmit: () => void | Promise<boolean>
+  onSubmit: (attachments?: readonly MessageAttachment[]) => void | Promise<boolean>
   onSuccessfulReset?: () => void
   onStop: () => void
 }
@@ -35,12 +36,12 @@ export function ChatComposer({
   const picker = useRef<HTMLInputElement>(null)
   const mounted = useRef(false)
   const submission = useRef<symbol | null>(null)
-  const { attachments, choose, remove, capture, clearSubmitted } = useChatAttachments(apiBaseUrl)
+  const { attachments, allReady, choose, remove, capture, clearSubmitted } = useChatAttachments(apiBaseUrl)
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false; submission.current = null }
   }, [])
-  const canSubmit = !disabled && !isGenerating && value.trim().length > 0
+  const canSubmit = !disabled && !isGenerating && value.trim().length > 0 && allReady && attachments.length <= 20
 
   async function submit(event?: FormEvent) {
     event?.preventDefault()
@@ -49,7 +50,11 @@ export function ChatComposer({
     submission.current = identity
     const submitted = capture()
     try {
-      const successful = await onSubmit()
+      const files = submitted.map(entry => {
+        const result = entry.controller.getSnapshot().result!
+        return { document_id: result.document_id, version_id: result.version_id, file_name: result.file_name }
+      })
+      const successful = await onSubmit(files)
       if (successful && mounted.current && submission.current === identity) {
         const empty = clearSubmitted(submitted)
         if (picker.current) picker.current.value = ""
@@ -78,10 +83,11 @@ export function ChatComposer({
       <div className="rounded-xl border bg-background p-2 shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
         {attachments.length > 0 && <div className="space-y-2 px-2 pb-2">
           <ul aria-label="Tệp đính kèm" className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
-            {attachments.map(attachment => <AttachmentChip key={attachment.id} attachment={attachment} onRemove={() => remove(attachment.id)} />)}
+            {attachments.map(attachment => <AttachmentChip key={attachment.id} apiBaseUrl={apiBaseUrl} attachment={attachment} onRemove={() => remove(attachment.id)} />)}
           </ul>
           <p className="text-xs text-muted-foreground">Tệp được tải vào thư viện tài liệu; chưa giới hạn chat theo tệp đính kèm. <a href="/documents" target="_blank" rel="noreferrer" className="underline">Kiểm tra tài liệu (tab mới)</a> trước khi thử tải lại nếu chưa rõ kết quả.</p>
         </div>}
+        {attachments.length > 0 && (!allReady || attachments.length > 20) && <p role="status" className="px-2 pb-2 text-xs text-muted-foreground">Chờ tất cả tệp Ready trước khi gửi; thử lại hoặc gỡ tệp Failed. Mỗi tin nhắn tối đa 20 tệp.</p>}
         <label htmlFor={inputId} className="sr-only">
           Câu hỏi
         </label>

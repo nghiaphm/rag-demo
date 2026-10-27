@@ -3,6 +3,7 @@ import { safeApiErrorMessage, safeStreamErrorMessage } from "@/lib/api/error-ux"
 import type {
   ChatError,
   ChatRequest,
+  MessageAttachment,
   ChatUsage,
   Citation,
   Source,
@@ -11,6 +12,7 @@ import type {
 import type { MessageStatus } from "@/types/sessions";
 
 export interface ChatViewMessage {
+  attachments?: readonly MessageAttachment[];
   /** UI provenance only; never serialized into the API message DTO. */
   origin?: "history";
   key: string;
@@ -219,7 +221,7 @@ export class ChatController {
   }
 
   /** Returns false for blank or duplicate submits; true means the turn was accepted. */
-  async submit(rawQuestion: string): Promise<boolean> {
+  async submit(rawQuestion: string, attachments: readonly MessageAttachment[] = []): Promise<boolean> {
     const question = rawQuestion.trim();
     if (!question || this.activeTurn) return false;
 
@@ -251,6 +253,7 @@ export class ChatController {
           messageId: null,
           requestId: null,
           role: "user",
+          ...(attachments.length ? { attachments: attachments.map(item => ({ ...item })) } : {}),
           content: question,
           status: "PENDING",
           model: null,
@@ -285,7 +288,7 @@ export class ChatController {
         this.publish({ ...this.state, sessionId });
       }
       await waitForSignal(this.services.stream(
-        { question, session_id: sessionId },
+        { question, session_id: sessionId, ...(attachments.length ? { attachments: attachments.map(({ document_id, version_id }) => ({ document_id, version_id })) } : {}) },
         {
           signal: turn.abortController.signal,
           onEvent: (event) => this.acceptEvent(turn, event),
@@ -319,6 +322,7 @@ export class ChatController {
               if (!persisted || persisted.requestId !== local.requestId
                 || persisted.role !== local.role || persisted.content !== local.content
                 || persisted.status !== local.status
+                || (local.role === "user" && JSON.stringify((persisted.attachments ?? []).map(item => [item.document_id, item.version_id])) !== JSON.stringify((local.attachments ?? []).map(item => [item.document_id, item.version_id])))
                 || (local.role === "assistant" && (
                   persisted.model !== local.model
                   || persisted.usage?.input_tokens !== local.usage?.input_tokens

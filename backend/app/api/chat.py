@@ -6,6 +6,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from app.attachments import AttachmentUnavailableError, resolve_attachments
+from app.document_repository import MongoDocumentRepository, RepositoryError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.citation_mapping import map_verified_citations
@@ -310,6 +312,19 @@ async def _encode_provider_stream(
         raise
 
 
+async def _attachments(payload, database):
+    if not payload.attachments:
+        return []
+    if database is None:
+        raise HTTPException(status_code=503, detail="Document metadata unavailable")
+    try:
+        return await run_in_threadpool(resolve_attachments, MongoDocumentRepository(database), payload.attachments)
+    except AttachmentUnavailableError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except RepositoryError as exc:
+        raise HTTPException(status_code=503, detail="Document metadata unavailable") from exc
+
+
 @router.post(
     "/chat",
     response_model=ChatResponse,
@@ -321,6 +336,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
     request_id = new_uuid()
     try:
         cloud = request.app.state.cloud_connections
+        attachments = await _attachments(payload, cloud.mongodb.database)
         if cloud.mongodb.database is None or cloud.qdrant.client is None:
             raise HTTPException(status_code=503, detail="Cloud dependencies chưa sẵn sàng.")
         if not persistent:
@@ -349,6 +365,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
                 question=payload.question,
                 generate=generate,
                 model=settings.llm_model,
+                **({"attachments": attachments} if attachments else {}),
             )
     except HTTPException:
         raise
@@ -430,6 +447,7 @@ async def chat_stream(
     turn = None
     try:
         cloud = request.app.state.cloud_connections
+        attachments = await _attachments(payload, cloud.mongodb.database)
         if cloud.mongodb.database is None or cloud.qdrant.client is None:
             raise HTTPException(status_code=503, detail="Cloud dependencies chưa sẵn sàng.")
         prepared = await run_in_threadpool(
@@ -448,6 +466,7 @@ async def chat_stream(
                 session_id=str(payload.session_id),
                 question=payload.question,
                 model=settings.llm_model,
+                **({"attachments": attachments} if attachments else {}),
             )
             request_id = turn.request_id
     except HTTPException as exc:

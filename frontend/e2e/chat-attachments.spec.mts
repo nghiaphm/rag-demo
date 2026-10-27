@@ -9,7 +9,7 @@ const receipt = (overrides = {}) => ({ document_id: "11111111-1111-4111-8111-111
   job_id: "33333333-3333-4333-8333-333333333333", file_name: "attachment.txt", num_chunks: 1, status: "INDEXED", activated: true, ...overrides })
 
 async function mockUpload(page: Page) {
-  await page.route("**/lifecycle/documents/upload", route => route.fulfill({ status: 201, json: receipt() }))
+  await page.route("**/lifecycle/documents/upload", route => route.fallback())
 }
 
 for (const width of [375, 1280]) {
@@ -112,7 +112,7 @@ test.describe("Stop during an active stream", () => {
     await page.route("**/lifecycle/documents/upload", async route => {
       uploads++
       await gate
-      await route.fulfill({ status: 201, json: receipt() }).catch(() => {})
+      await route.fallback().catch(() => {})
     })
     try {
       await page.goto("/chat")
@@ -139,7 +139,8 @@ test.describe("Stop during an active stream", () => {
       await expect(chips).toHaveCount(0)
       const streams = qa.requests.filter(r => r.method === "POST" && r.path.endsWith("/chat/stream"))
       expect(streams).toHaveLength(1)
-      expect(Object.keys(JSON.parse(streams[0].body!)).sort()).toEqual(["question", "session_id"])
+      expect(Object.keys(JSON.parse(streams[0].body!)).sort()).toEqual(["attachments", "question", "session_id"])
+      expect(Object.keys(JSON.parse(streams[0].body!).attachments[0]).sort()).toEqual(["document_id", "version_id"])
       expect(deletes).toEqual([])
     } finally { release() }
   })

@@ -1,10 +1,20 @@
 import type { UUID } from "./api";
 
+export interface AttachmentReference {
+  document_id: string;
+  version_id: string;
+}
+
+export interface MessageAttachment extends AttachmentReference {
+  file_name: string;
+}
+
 /** POST /chat and POST /chat/stream. Omitted/null session_id is stateless. */
 export interface ChatRequest {
   /** Backend trims and rejects empty/whitespace-only questions. */
   question: string;
   session_id?: UUID | null;
+  attachments?: AttachmentReference[];
 }
 
 export type ChatResponseMode = "STATELESS" | "PERSISTENT";
@@ -12,6 +22,8 @@ export type ChatResponseStatus = "COMPLETED" | "PARTIAL" | "FAILED";
 
 /** Optional nullable fields follow OpenAPI; current serializers emit defaults. */
 export interface Source {
+  sheet_name?: string | null;
+  row_index?: number | null;
   file_name?: string | null;
   source?: string | null;
   document_id?: string | null;

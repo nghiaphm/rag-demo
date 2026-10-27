@@ -6,9 +6,9 @@ Phase 1 chỉ load text; KHÔNG embedding và KHÔNG lưu database.
 
 from pathlib import Path
 
-from langchain_community.document_loaders import PyPDFLoader, TextLoader, UnstructuredExcelLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_core.documents import Document
-import networkx as nx
+from app.excel import MAX_XLSX_BYTES, WorkbookError, workbook_documents
 SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".md", ".markdown", ".txt", ".xlsx"})
 
 
@@ -41,7 +41,9 @@ def _load(path: Path) -> list[Document]:
     if suffix == ".pdf":
         return PyPDFLoader(str(path), mode="page").load()
     if suffix == ".xlsx":
-        return UnstructuredExcelLoader(str(path), mode="elements").load()
+        if path.stat().st_size > MAX_XLSX_BYTES:
+            raise WorkbookError("File XLSX không được quá 10 MiB.")
+        return workbook_documents(path.read_bytes())
     if suffix in {".md", ".markdown", ".txt"}:
         return _load_text(path)
 

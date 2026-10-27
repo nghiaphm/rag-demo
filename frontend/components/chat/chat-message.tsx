@@ -1,6 +1,7 @@
 import { Bot, LoaderCircle, UserRound } from "lucide-react"
 import { CitationContent } from "@/components/chat/citation-content"
 import { CopyButton } from "@/components/chat/copy-button"
+import { MessageAttachmentChip } from "@/components/chat/message-attachment"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,7 @@ const statusLabels = {
   FAILED: "Thất bại",
 } as const
 
-export function ChatMessage({ message }: { message: ChatViewMessage }) {
+export function ChatMessage({ message, apiBaseUrl = null }: { message: ChatViewMessage; apiBaseUrl?: string | null }) {
   const isUser = message.role === "user"
   const historicalNonterminal = isHistoricalNonterminal(message)
 
@@ -51,7 +52,6 @@ export function ChatMessage({ message }: { message: ChatViewMessage }) {
               )}
               {historicalNonterminal ? `${message.status} · Lịch sử` : statusLabels[message.status]}
             </Badge>
-            {message.model && <span className="text-xs text-muted-foreground">{message.model}</span>}
           </div>
         )}
         {isUser ? (
@@ -72,6 +72,9 @@ export function ChatMessage({ message }: { message: ChatViewMessage }) {
         {isUser && message.status === "FAILED" && (
           <p className="mt-2 text-xs">Chưa xác nhận câu hỏi này đã được xử lý.</p>
         )}
+        {isUser && !!message.attachments?.length && <div aria-label="Tệp đính kèm tin nhắn" className="mt-3 flex flex-wrap gap-2">
+          {message.attachments.map(attachment => <MessageAttachmentChip key={`${attachment.document_id}:${attachment.version_id}`} attachment={attachment} apiBaseUrl={apiBaseUrl} />)}
+        </div>}
         {message.content && <div className="mt-2"><CopyButton text={message.content}
           label={isUser ? "Sao chép câu hỏi" : "Sao chép câu trả lời"}
           disabled={message.status === "PENDING" || message.status === "STREAMING"} /></div>}

@@ -24,7 +24,7 @@ function load(relative) {
     // This handler-only harness calls the component directly; attachment state is covered in browser tests.
     if (relative === "components/chat/chat-composer" && specifier === "react") return { ...React, useRef: initial => ({ current: initial }), useEffect() {} };
     if (relative === "components/chat/chat-composer" && specifier === "@/hooks/use-chat-attachments") return {
-      useChatAttachments: () => ({ attachments: [], choose() {}, remove() {}, capture: () => [], clearSubmitted: () => true }),
+      useChatAttachments: () => ({ attachments: [], allReady: true, choose() {}, remove() {}, capture: () => [], clearSubmitted: () => true }),
     };
     if (specifier.startsWith("@/")) return load(specifier.slice(2));
     if (specifier === "react-markdown") return { default: ReactMarkdown };

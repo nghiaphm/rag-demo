@@ -2,11 +2,31 @@
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.document_models import DocumentStatus
+from app.attachment_models import AttachmentReference
+
+
+class WorkbookSheetPreview(BaseModel):
+    name: str
+    columns: list[str]
+    rows: list[list[str]]
+    total_rows: int
+    truncated: bool
+
+
+class DocumentPreviewResponse(BaseModel):
+    document_id: str
+    version_id: str
+    file_name: str
+    kind: Literal["text", "excel", "unsupported"]
+    text: str | None = None
+    sheets: list[WorkbookSheetPreview] = Field(default_factory=list)
+    truncated: bool = False
 
 
 class Source(BaseModel):
@@ -19,6 +39,8 @@ class Source(BaseModel):
     chunk_id: str | None = None
     chunk_index: int | None = None
     page: int | None = None
+    sheet_name: str | None = None
+    row_index: int | None = None
 
 
 class Citation(BaseModel):
@@ -77,10 +99,20 @@ class ChatRequest(BaseModel):
     """Request cho POST /chat."""
 
     question: str = Field(..., min_length=1, description="Câu hỏi của người dùng")
+    attachments: list[AttachmentReference] = Field(default_factory=list, max_length=20)
     session_id: UUID | None = Field(
         default=None,
         description="Có giá trị thì persist turn; bỏ trống giữ hành vi stateless cũ",
     )
+
+    @model_validator(mode="after")
+    def _validate_attachments(self):
+        if self.attachments and self.session_id is None:
+            raise ValueError("Attachments require a persistent session")
+        keys = [(item.document_id, item.version_id) for item in self.attachments]
+        if len(keys) != len(set(keys)):
+            raise ValueError("Duplicate attachments")
+        return self
 
     @field_validator("question")
     @classmethod
