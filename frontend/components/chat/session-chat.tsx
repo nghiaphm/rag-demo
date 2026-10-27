@@ -41,7 +41,7 @@ function SessionState({
             {onRetry && (
               <Button type="button" variant="outline" onClick={onRetry}>Thử lại</Button>
             )}
-            <Button render={<Link href="/chat" />}>Về trang Chat</Button>
+            <Button nativeButton={false} role="link" render={<Link href="/chat" />}>Về trang Chat</Button>
           </div>
         )}
       </div>

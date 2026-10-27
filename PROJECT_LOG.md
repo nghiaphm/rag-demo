@@ -194,7 +194,7 @@ rag-demo/
 ## Trạng thái tổng quan
 
 | Phase | Nội dung | Status |
-|---|---|---|
+| --- | --- | --- |
 | 0 | Foundation & configuration theo architecture mới | ✅ DONE |
 | 1 | Document ingestion: loader + splitter | ✅ DONE |
 | 2 | Embedding + PostgreSQL/pgvector vector store | ✅ DONE |

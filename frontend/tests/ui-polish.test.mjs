@@ -21,6 +21,11 @@ function load(relative) {
   const exports = {};
   cache.set(relative, exports);
   new Function("exports", "require", output)(exports, specifier => {
+    // This handler-only harness calls the component directly; attachment state is covered in browser tests.
+    if (relative === "components/chat/chat-composer" && specifier === "react") return { ...React, useRef: initial => ({ current: initial }), useEffect() {} };
+    if (relative === "components/chat/chat-composer" && specifier === "@/hooks/use-chat-attachments") return {
+      useChatAttachments: () => ({ attachments: [], choose() {}, remove() {}, capture: () => [], clearSubmitted: () => true }),
+    };
     if (specifier.startsWith("@/")) return load(specifier.slice(2));
     if (specifier === "react-markdown") return { default: ReactMarkdown };
     if (specifier === "remark-gfm") return { default: remarkGfm };
@@ -97,19 +102,20 @@ test("composer supports Enter, Shift+Enter, IME, empty guard and keyboard Stop w
   let submitted = 0, stopped = 0, prevented = 0;
   const props = { value: "question", onChange: () => {}, onSubmit: () => submitted++, onStop: () => stopped++ };
   const form = ChatComposer(props);
-  const field = form.props.children.props.children[1];
+  const field = form.props.children.props.children.find(child => child?.props?.onKeyDown);
   const key = (shiftKey, isComposing) => field.props.onKeyDown({ key: "Enter", shiftKey, nativeEvent: { isComposing }, preventDefault: () => prevented++ });
   key(true, false); key(false, true);
   assert.equal(submitted, 0);
   key(false, false);
   assert.equal(submitted, 1); assert.equal(prevented, 1);
   const generating = ChatComposer({ ...props, disabled: true, isGenerating: true });
-  const generatingField = generating.props.children.props.children[1];
+  const generatingField = generating.props.children.props.children.find(child => child?.props?.onKeyDown);
   assert.equal(generatingField.props.readOnly, true);
   assert.equal(generatingField.props.disabled, undefined);
-  const stop = generating.props.children.props.children[2].props.children[1];
+  const stop = generating.props.children.props.children.at(-1).props.children.at(-1);
   assert.equal(stop.props.disabled, false);
-  stop.props.onClick(); assert.equal(stopped, 1);
+  stop.props.onClick({ preventDefault: () => prevented++ }); assert.equal(stopped, 1);
+  assert.equal(prevented, 2, "Stop prevents a default submit when the control changes back to Send");
   ChatComposer({ ...props, value: "   " }).props.onSubmit({ preventDefault() {} });
   assert.equal(submitted, 1);
 });

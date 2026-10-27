@@ -37,13 +37,21 @@ for (const status of [422, 404, 409, 429, 503, "network"] as const) {
 
 for (const status of [404, 410]) {
   test(`session lookup${status} reports unavailable session and keyboard return without generation`, async ({ page, qa }) => {
+    const buttonWarnings: string[] = []
+    page.on("console", message => {
+      if (/Base UI:.*native.*button/i.test(message.text())) buttonWarnings.push(message.text())
+    })
     await page.route(`**/lifecycle/sessions/${session}`, route => route.fulfill({ status, headers: cors, json: { detail: "UNSAFE_INTERNAL_FIXTURE" } }))
     await page.goto(`/chat/${session}`)
     await expect(page.getByRole("heading", { name: "Không tìm thấy phiên trò chuyện", exact: true })).toBeVisible()
     await expect(question(page)).toHaveCount(0)
-    await page.getByRole("link", { name: "Về trang Chat", exact: true }).press("Enter")
+    const backLink = page.getByRole("link", { name: "Về trang Chat", exact: true })
+    await expect(backLink).toHaveJSProperty("tagName", "A")
+    await expect(backLink).toHaveAttribute("href", "/chat")
+    await backLink.press("Enter")
     await expect(page).toHaveURL(/\/chat$/)
     expect(qa.requests.filter(r => r.method === "POST")).toHaveLength(0)
+    expect(buttonWarnings, "Link styled as Button preserves link semantics without a nativeButton warning").toEqual([])
   })
 }
 

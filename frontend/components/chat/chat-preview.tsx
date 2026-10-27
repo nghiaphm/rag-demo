@@ -41,6 +41,8 @@ function ChatWorkspace({
   const composerId = useId()
   const mounted = useRef(false)
   const [question, setQuestion] = useState("")
+  const draft = useRef({ value: question, revision: 0 })
+  const submission = useRef<symbol | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const [scroll] = useState(() => new ChatScrollController())
@@ -68,13 +70,39 @@ function ChatWorkspace({
     }
   }, [controller])
 
-  function submit() {
-    if (!question.trim()) return
-    void controller.submit(question).then((accepted) => {
-      const path = canonicalChatPath(initialSessionId, controller.getSnapshot())
-      if (mounted.current && accepted && path) router.replace(path)
+  function changeQuestion(value: string) {
+    draft.current = { value, revision: draft.current.revision + 1 }
+    setQuestion(value)
+  }
+
+  async function submit(): Promise<boolean> {
+    if (!question.trim() || submission.current || controller.getSnapshot().isGenerating) return false
+    const identity = Symbol("workspace submission")
+    submission.current = identity
+    const revision = draft.current.revision
+    const pending = controller.submit(question)
+    const key = controller.getSnapshot().messages.at(-1)?.key
+    let messageId: string | null = null
+    const unsubscribe = controller.subscribe(() => {
+      const message = controller.getSnapshot().messages.find(message => message.key === key)
+      if (message?.messageId) messageId = message.messageId
     })
-    setQuestion("")
+    try {
+      const accepted = await pending
+      if (!mounted.current || submission.current !== identity || !accepted) return false
+      const message = controller.getSnapshot().messages.find(message => message.key === key || (messageId && message.messageId === messageId))
+      const successful = message?.role === "assistant" && message.status === "COMPLETED" && !message.error
+      if (successful && draft.current.revision === revision) changeQuestion("")
+      return successful
+    } finally {
+      unsubscribe()
+      if (submission.current === identity) submission.current = null
+    }
+  }
+
+  function navigateAfterReset() {
+    const path = canonicalChatPath(initialSessionId, controller.getSnapshot())
+    if (mounted.current && !draft.current.value && path) router.replace(path)
   }
 
   return (
@@ -117,11 +145,12 @@ function ChatWorkspace({
         </div>
         {unread && <div className="border-t px-4 py-2"><Button type="button" variant="outline" size="sm" onClick={scroll.jump}>Nội dung mới — Về cuối</Button></div>}
         <p role="status" className="sr-only">{state.isGenerating ? "Đang xử lý câu hỏi" : state.messages.some(isHistoricalNonterminal) ? "Không có luồng trực tiếp cho tin nhắn chưa hoàn tất trong lịch sử." : state.messages.length ? "Đã kết thúc xử lý câu hỏi. Kiểm tra trạng thái câu trả lời." : "Sẵn sàng đặt câu hỏi"}</p>
-        <ChatComposer
+        <ChatComposer apiBaseUrl={apiBaseUrl}
           inputId={composerId}
           value={question}
-          onChange={setQuestion}
+          onChange={changeQuestion}
           onSubmit={submit}
+          onSuccessfulReset={navigateAfterReset}
           onStop={() => controller.stop()}
           disabled={state.isGenerating}
           isGenerating={state.isGenerating && !state.isVerifyingHistory}

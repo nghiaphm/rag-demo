@@ -12,7 +12,7 @@ import { createQaMockServer } from "../scripts/qa-mock-api.mjs";
 
 const require = createRequire(import.meta.url), cache = new Map();
 let sidebarController, chatController, composer;
-const effects = [], replacements = [];
+const effects = [], replacements = [], questionChanges = [];
 function load(relative) {
   if (cache.has(relative)) return cache.get(relative);
   const base = fileURLToPath(new URL(`../${relative}`, import.meta.url));
@@ -26,7 +26,7 @@ function load(relative) {
     if (name === "react" && relative === "components/chat/chat-preview") return { ...React,
       useState: initial => {
         const state = React.useState(initial);
-        if (initial === "") return ["composer fixture question", state[1]];
+        if (initial === "") return ["composer fixture question", next => questionChanges.push(next)];
         if (state[0] instanceof load("lib/chat/controller").ChatController) {
           chatController ??= state[0]; return [chatController, state[1]];
         }
@@ -64,7 +64,8 @@ test("assembled sidebar hook and workspace reconcile composer creation without n
     render();
     for (const effect of effects.splice(0)) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); }
     await until(() => sidebarController.getSnapshot().status === "ready");
-    composer.onSubmit(); composer.onSubmit();
+    const submittedComposer = composer;
+    const completion = submittedComposer.onSubmit(); submittedComposer.onSubmit();
     await until(() => sidebarController.getSnapshot().sessions.some(s => s.session_id === chatController.getSnapshot().sessionId));
     const id = chatController.getSnapshot().sessionId;
     assert.equal(chatController.getSnapshot().isGenerating, true);
@@ -72,7 +73,8 @@ test("assembled sidebar hook and workspace reconcile composer creation without n
     const html = render();
     assert.match(html, new RegExp(`href="/chat/${id}"`));
     assert.match(html, /Mở lịch sử trong tab mới/);
-    await until(() => replacements.length > 0);
+    assert.equal(await completion, true);
+    submittedComposer.onSuccessfulReset();
     assert.deepEqual(replacements, [`/chat/${id}`]);
     assert.equal(chatController.getSnapshot().historyVerified, true);
     assert.equal(chatController.getSnapshot().messages.length, 2);
@@ -80,6 +82,31 @@ test("assembled sidebar hook and workspace reconcile composer creation without n
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
     load("lib/sessions/invalidation").invalidateSessionList(apiBaseUrl);
     assert.equal(sidebarController.getSnapshot(), before);
+  } finally {
+    for (const cleanup of cleanups.reverse()) cleanup();
+    server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("old successful turn cannot clear a revised question or navigate away from the next draft", async () => {
+  sidebarController = undefined; chatController = undefined;
+  effects.length = 0; replacements.length = 0; questionChanges.length = 0;
+  const server = createQaMockServer({ delayMs: 0, deltaMs: 10 });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const apiBaseUrl = `http://127.0.0.1:${server.address().port}`;
+  const cleanups = [];
+  try {
+    renderToStaticMarkup(React.createElement(ChatPreview, { apiBaseUrl }));
+    for (const effect of effects.splice(0)) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); }
+    const submittedComposer = composer;
+    const completion = submittedComposer.onSubmit();
+    submittedComposer.onChange("next draft typed while the old turn is pending");
+    assert.equal(await completion, true);
+    submittedComposer.onSuccessfulReset();
+    assert.deepEqual(questionChanges, ["next draft typed while the old turn is pending"]);
+    assert.deepEqual(replacements, []);
+    assert.equal(chatController.getSnapshot().messages[0].content, "composer fixture question");
+    assert.equal(chatController.getSnapshot().messages.at(-1).status, "COMPLETED");
   } finally {
     for (const cleanup of cleanups.reverse()) cleanup();
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
