@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
-import { AlertCircle, MessageSquareText } from "lucide-react"
+import { AlertCircle, Bot } from "lucide-react"
 
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatMessage } from "@/components/chat/chat-message"
@@ -19,12 +19,11 @@ function EmptyChat() {
   return (
     <div className="flex min-h-72 flex-col items-center justify-center px-4 text-center">
       <span className="flex size-12 items-center justify-center rounded-2xl bg-muted">
-        <MessageSquareText className="size-5 text-muted-foreground" aria-hidden="true" />
+        <Bot className="size-6 text-primary" aria-hidden="true" />
       </span>
-      <h2 className="mt-4 text-base font-semibold">Bắt đầu một cuộc trò chuyện</h2>
-      <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-        Đặt câu hỏi về tài liệu của bạn. Một session sẽ được tạo trước lần gửi đầu tiên.
-      </p>
+      <h2 className="mt-4 max-w-lg text-lg font-semibold leading-8 text-balance sm:text-xl">
+        Xin chào! Tôi là trợ lý tri thức nội bộ. Bạn muốn tìm hiểu điều gì hôm nay?
+      </h2>
     </div>
   )
 }

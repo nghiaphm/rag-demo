@@ -918,3 +918,35 @@ Project ưu tiên:
 [ ] Có thể đổi LLM/embedding bằng config
 [ ] README mô tả architecture + cách chạy bằng terminal/API
 ```
+
+---
+
+# Frontend — UX-01 / UX-02 (2026-10-27)
+
+**Status: ✅ DONE**
+
+### Đã hoàn thành
+
+- `frontend/components/chat/chat-preview.tsx`: `EmptyChat()` hiển thị icon trợ lý và lời chào “Xin chào! Tôi là trợ lý tri thức nội bộ. Bạn muốn tìm hiểu điều gì hôm nay?” khi `state.messages` rỗng; có message đầu tiên thì render hội thoại bình thường.
+- Audit `session-chat.tsx`, `use-sessions.ts`, `lib/sessions/history.ts`: chỉ mount workspace sau khi toàn bộ history đạt `ready`; loading/error có UI riêng, không hiển thị lời chào. Không thêm state hoặc thay đổi history loader.
+- `frontend/components/chat/document-preview-sheet.tsx`: `DocumentPreviewSheetContent({ open, children, ...sheetProps })` trả về Sheet hiện tại với resize handle ở viền trái trên desktop. Pointer capture giữ thao tác kéo khi con trỏ rời viền; kéo trái mở rộng, kéo phải thu hẹp. Chỉ state của wrapper thay đổi khi resize.
+- `frontend/components/chat/attachment-chip.tsx`, `message-attachment.tsx`: tái sử dụng wrapper cho preview từ Composer và user message; giữ nguyên upload, preview content, close/Escape và focus return.
+- `frontend/e2e/welcome-preview-resize.spec.mts`: 6 browser scenarios mới cho welcome/history/loading, pointer/keyboard resize, reopen/refresh, viewport/mobile, TXT/PDF notice và bảng Excel. `chat-actions.spec.mts` cập nhật expectation lời chào mới.
+
+### Ghi chú/Quyết định
+
+- Không có thư viện resize sẵn trong dependencies; dùng Pointer Events, không thêm package hoặc đổi layout/Sheet dùng chung. Citation panel không thay đổi.
+- Chiều rộng desktop mặc định giữ 576px (`sm:max-w-xl`). Min 320px; max theo viewport, tối đa 960px (75% viewport trên màn hình rộng, giữ giới hạn mặc định ở desktop hẹp). Viewport thay đổi tự clamp; dưới 640px giữ Sheet mobile và không render resize handle.
+- Lưu preference trong `sessionStorage` của tab, khôi phục cả sau refresh; fallback bộ nhớ khi storage bị chặn. Không lưu preference hay lời chào vào message/session API hoặc MongoDB; không gọi LLM để tạo lời chào.
+- Handle có accessible name, `role="separator"`, orientation/value/description và focus ring. ArrowLeft/Right đổi 16px, Shift tăng bước lên 64px; Home/End về min/max.
+- Audit xác nhận PDF preview hiện chỉ có thông báo chưa hỗ trợ; giữ nguyên hành vi này. TXT và structured Excel preview được tái sử dụng nguyên trạng.
+
+### Kiểm thử
+
+- `npm.cmd run typecheck`: PASS.
+- `npm.cmd run lint`: PASS, không warning sau sửa mô tả accessibility bằng `aria-describedby`.
+- `node --test --test-concurrency=1 tests/*.test.mjs`: **210/210 PASS**. Lần sandbox ban đầu có 4 test không mở được Python gốc của virtualenv; chạy lại ngoài sandbox với Python có sẵn đã pass đầy đủ, không đổi dependencies.
+- `npm.cmd run build:e2e`, `npm.cmd run test:e2e -- --shard=N/3` (N=1..3): **69/69 PASS**, lần lượt 25 + 22 + 22; không skip/retry/flaky. Browser dùng API fixtures offline; không gọi provider/backend thật. Tổng hợp tại `frontend/.playwright-tmp/ux-e2e-summary.json`.
+- `npm.cmd run build`: PASS với cấu hình `.env.local` hiện tại, không để lại mock API trong production output. Build/test dùng process env `CIRCLE_NODE_TOTAL=2`, `NODE_OPTIONS=--max-old-space-size=512 --max-semi-space-size=2` để giới hạn tài nguyên.
+- Đã kiểm tra ảnh welcome desktop và preview desktop/mobile tại `frontend/.playwright-tmp/ux-*.png`; kiểm tra scroll/overflow, session switch, refresh, no fake history, Send/Stop/SSE và không DELETE khi thao tác attachment.
+- Manual QA còn thiếu: screen reader thực tế, thiết bị cảm ứng thật, Firefox/Safari và backend production. Không thay đổi backend/API/RAG/session scope.

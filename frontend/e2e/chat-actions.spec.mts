@@ -58,7 +58,7 @@ test.describe("deferred first-turn URL", () => {
     const href = (await recovery.getAttribute("href"))!
     await page.reload()
     await expect(page).toHaveURL(/\/chat$/)
-    await expect(page.getByRole("heading", { name: "Bắt đầu một cuộc trò chuyện" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Xin chào! Tôi là trợ lý tri thức nội bộ. Bạn muốn tìm hiểu điều gì hôm nay?" })).toBeVisible()
     await expect(page.getByRole("link", { name: recoveryName, exact: true })).toHaveCount(0)
     await page.locator(`a[href='${href}']`).filter({ hasText: "QA new chat" }).click()
     await expect(assistant(page).last()).toContainText("Chưa hoàn tất")

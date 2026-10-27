@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import type { ChatAttachment } from "@/hooks/use-chat-attachments"
 import { validateUploadFile } from "@/lib/documents/upload-validation"
 import { DocumentPreview } from "@/components/chat/document-preview"
-import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Sheet, SheetClose, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { DocumentPreviewSheetContent } from "@/components/chat/document-preview-sheet"
 
 export function AttachmentChip({ attachment, onRemove, apiBaseUrl }: { attachment: ChatAttachment; onRemove: () => void; apiBaseUrl?: string | null }) {
   const { controller, file } = attachment
@@ -39,7 +40,7 @@ export function AttachmentChip({ attachment, onRemove, apiBaseUrl }: { attachmen
     {failed && <Button type="button" variant="outline" size="sm" className="mt-1" disabled={!!validateUploadFile(file)}
       onClick={upload}>Thử lại</Button>}
   </li>
-    <SheetContent side="right" showCloseButton={false} initialFocus={closeButton} className="w-full sm:max-w-xl">
+    <DocumentPreviewSheetContent open={open} side="right" showCloseButton={false} initialFocus={closeButton} className="w-full sm:max-w-xl">
       <SheetHeader className="pr-12">
         <SheetTitle className="break-words">{file.name}</SheetTitle>
         <SheetDescription>Bản xem trước của file đã chọn hoặc phiên bản đã upload. Nội dung này không thay đổi phạm vi truy xuất của chat.</SheetDescription>
@@ -48,6 +49,6 @@ export function AttachmentChip({ attachment, onRemove, apiBaseUrl }: { attachmen
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{open && (failed && file.name.toLowerCase().endsWith(".xlsx")
         ? <p role="alert" className="text-destructive">{error}</p>
         : <DocumentPreview file={file} reference={ready ? state.result : null} apiBaseUrl={apiBaseUrl} />)}</div>
-    </SheetContent>
+    </DocumentPreviewSheetContent>
   </Sheet>
 }
