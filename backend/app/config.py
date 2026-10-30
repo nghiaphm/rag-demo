@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
 
+    # JSON /chat only; SSE remains legacy until its separately approved integration.
+    tool_use_enabled: bool = False
+
     # ----- Embedding provider (độc lập với LLM) -----
     # Baseline: Google Gemini embedding (free tier, gọi qua API — không self-host).
     embedding_provider: str = "google"

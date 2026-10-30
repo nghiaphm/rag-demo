@@ -2,8 +2,12 @@
 
 import asyncio
 
+from concurrent.futures import CancelledError as FutureCancelledError
+from time import monotonic
+from typing import Any
 from uuid import UUID
 
+from anyio import from_thread
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from app.attachments import AttachmentUnavailableError, resolve_attachments
@@ -11,6 +15,7 @@ from app.document_repository import MongoDocumentRepository, RepositoryError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.citation_mapping import map_verified_citations
+from app.chat_orchestration import ChatOrchestrationError, ChatOrchestrator, PreparedChatAnswer
 from app.config import settings
 from app.conversation_models import new_uuid
 from app.conversation_repository import (
@@ -25,6 +30,7 @@ from app.conversation_service import (
     StreamingTurn,
     create_conversation_service,
 )
+from app.document_queries import DocumentQueries
 from app.rag.pipeline import (
     PreparedRagStream,
     answer_question,
@@ -118,11 +124,12 @@ def _failed_generation_response(
 async def _encode_provider_stream_impl(
     *,
     request_id: str,
-    prepared: PreparedRagStream,
+    prepared: PreparedRagStream | PreparedChatAnswer,
     state: dict,
     tracker: StreamMetricTracker,
     service: ConversationService | None = None,
     turn: StreamingTurn | None = None,
+    orchestrator: ChatOrchestrator | None = None,
 ):
     """Encode provider deltas and keep an optional persistent turn truthful."""
     persistent = turn is not None
@@ -165,11 +172,18 @@ async def _encode_provider_stream_impl(
     emitted_delta = False
     content_parts: list[str] = state["content_parts"]
     error_code = None
-    provider_iterator = astream_rag_answer(prepared).__aiter__()
+    provider_iterator = (
+        astream_rag_answer(prepared)
+        if orchestrator is None
+        else orchestrator.stream_final(prepared)
+    ).__aiter__()
     try:
         deadline = asyncio.get_running_loop().time() + settings.stream_timeout_seconds
         while True:
             remaining = deadline - asyncio.get_running_loop().time()
+            if orchestrator is not None and prepared.deadline is not None:
+                # Preparation and durable setup share the facade's original budget.
+                remaining = min(remaining, prepared.deadline - monotonic())
             if remaining <= 0:
                 raise asyncio.TimeoutError
             try:
@@ -196,6 +210,20 @@ async def _encode_provider_stream_impl(
             error_code = "RAG_STREAM_EMPTY"
     except asyncio.TimeoutError:
         error_code = "RAG_STREAM_TIMEOUT"
+        if orchestrator is not None:
+            usage = prepared.usage
+            state["usage"] = usage
+    except ChatOrchestrationError as exc:
+        error_code = "RAG_STREAM_ERROR"
+        if orchestrator is not None:
+            # The facade reports actual aggregate usage, or None for incomplete coverage.
+            usage = exc.usage
+            state["usage"] = usage
+            error_code = {
+                "CHAT_TIMEOUT": "RAG_STREAM_TIMEOUT",
+                "TOOL_TIMEOUT": "RAG_STREAM_TIMEOUT",
+                "CHAT_EMPTY_ANSWER": "RAG_STREAM_EMPTY",
+            }.get(exc.code, "RAG_STREAM_ERROR")
     except Exception:  # noqa: BLE001 - never persist a false COMPLETED state
         error_code = "RAG_STREAM_ERROR"
     finally:
@@ -256,10 +284,11 @@ async def _encode_provider_stream_impl(
 async def _encode_provider_stream(
     *,
     request_id: str,
-    prepared: PreparedRagStream,
+    prepared: PreparedRagStream | PreparedChatAnswer,
     tracker: StreamMetricTracker | None = None,
     service: ConversationService | None = None,
     turn: StreamingTurn | None = None,
+    orchestrator: ChatOrchestrator | None = None,
 ):
     """Guard the complete response, including disconnects at prefix/delta yields."""
     tracker = tracker or StreamMetricTracker()
@@ -271,6 +300,7 @@ async def _encode_provider_stream(
         tracker=tracker,
         service=service,
         turn=turn,
+        orchestrator=orchestrator,
     )
     try:
         async for frame in stream:
@@ -325,6 +355,21 @@ async def _attachments(payload, database):
         raise HTTPException(status_code=503, detail="Document metadata unavailable") from exc
 
 
+async def _answer_with_tools(
+    question: str,
+    database: Any,
+    qdrant_client: Any,
+    session_id: str | None = None,
+) -> dict:
+    """Compose JSON-only dependencies from managed handles, without new clients."""
+    queries = DocumentQueries(MongoDocumentRepository(database))
+    orchestrator = ChatOrchestrator(queries=queries, tools_enabled=True)
+    plan = await orchestrator.prepare_plan(
+        question, database=database, qdrant_client=qdrant_client, session_id=session_id,
+    )
+    return await orchestrator.generate_json(plan)
+
+
 @router.post(
     "/chat",
     response_model=ChatResponse,
@@ -334,24 +379,42 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
     """Trả lời câu hỏi bằng RAG pipeline (retrieve top-k -> prompt -> LLM)."""
     persistent = payload.session_id is not None
     request_id = new_uuid()
+    tools_enabled = settings.tool_use_enabled
     try:
         cloud = request.app.state.cloud_connections
         attachments = await _attachments(payload, cloud.mongodb.database)
-        if cloud.mongodb.database is None or cloud.qdrant.client is None:
+        if cloud.mongodb.database is None or (not tools_enabled and cloud.qdrant.client is None):
             raise HTTPException(status_code=503, detail="Cloud dependencies chưa sẵn sàng.")
         if not persistent:
-            result = await run_in_threadpool(
-                answer_question,
-                payload.question,
-                database=cloud.mongodb.database,
-                qdrant_client=cloud.qdrant.client,
-            )
+            if tools_enabled:
+                result = await _answer_with_tools(
+                    payload.question, cloud.mongodb.database, cloud.qdrant.client,
+                )
+            else:
+                result = await run_in_threadpool(
+                    answer_question,
+                    payload.question,
+                    database=cloud.mongodb.database,
+                    qdrant_client=cloud.qdrant.client,
+                )
         else:
             service = await run_in_threadpool(
                 create_conversation_service, cloud.mongodb.database
             )
 
             def generate() -> dict:
+                if tools_enabled:
+                    # ConversationService owns this worker callback after guard/pair setup.
+                    # Return to the request loop instead of creating another SDK event loop.
+                    try:
+                        return from_thread.run(
+                            _answer_with_tools, payload.question, cloud.mongodb.database,
+                            cloud.qdrant.client, str(payload.session_id),
+                        )
+                    except FutureCancelledError:
+                        # AnyIO translates async cancellation at the worker bridge.
+                        # Preserve ConversationService's dedicated cancellation path.
+                        raise asyncio.CancelledError from None
                 return answer_question(
                     payload.question,
                     database=cloud.mongodb.database,
@@ -386,6 +449,12 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
             assistant_message_id=exc.assistant_message_id,
             error_code=exc.error_code,
         )
+    except ChatOrchestrationError:
+        # Real persistent generation is wrapped by ConversationService with durable IDs.
+        # Keep the existing public error contract instead of exposing internal tool codes.
+        if persistent:
+            raise HTTPException(status_code=502, detail="Không thể tạo câu trả lời.") from None
+        return _failed_generation_response(request_id=request_id, persistent=False)
     except Exception as exc:  # noqa: BLE001 - chuyển lỗi integration thành lỗi API rõ ràng
         if persistent:
             raise HTTPException(
@@ -445,18 +514,31 @@ async def chat_stream(
     tracker = StreamMetricTracker()
     service = None
     turn = None
+    tools_enabled = settings.tool_use_enabled
+    orchestrator = None
     try:
         cloud = request.app.state.cloud_connections
         attachments = await _attachments(payload, cloud.mongodb.database)
-        if cloud.mongodb.database is None or cloud.qdrant.client is None:
+        if cloud.mongodb.database is None or (not tools_enabled and cloud.qdrant.client is None):
             raise HTTPException(status_code=503, detail="Cloud dependencies chưa sẵn sàng.")
-        prepared = await run_in_threadpool(
-            prepare_rag_stream,
-            payload.question,
-            database=cloud.mongodb.database,
-            qdrant_client=cloud.qdrant.client,
-            session_id=(None if payload.session_id is None else str(payload.session_id)),
-        )
+        if tools_enabled:
+            queries = DocumentQueries(MongoDocumentRepository(cloud.mongodb.database))
+            orchestrator = ChatOrchestrator(queries=queries, tools_enabled=True)
+            # C05 pre-guard preparation is intentionally retained. No tools run here.
+            prepared = await orchestrator.prepare_plan(
+                payload.question,
+                database=cloud.mongodb.database,
+                qdrant_client=cloud.qdrant.client,
+                session_id=(None if payload.session_id is None else str(payload.session_id)),
+            )
+        else:
+            prepared = await run_in_threadpool(
+                prepare_rag_stream,
+                payload.question,
+                database=cloud.mongodb.database,
+                qdrant_client=cloud.qdrant.client,
+                session_id=(None if payload.session_id is None else str(payload.session_id)),
+            )
         if persistent:
             service = await run_in_threadpool(
                 create_conversation_service, cloud.mongodb.database
@@ -507,6 +589,7 @@ async def chat_stream(
             tracker=tracker,
             service=service,
             turn=turn,
+            orchestrator=orchestrator,
         ),
         media_type="text/event-stream",
         headers={

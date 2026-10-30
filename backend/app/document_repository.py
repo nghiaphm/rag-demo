@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError
 from pymongo import DESCENDING
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
@@ -32,6 +33,41 @@ class RepositoryConflictError(RepositoryError):
 
 class RepositoryNotFoundError(RepositoryError):
     pass
+
+
+class RepositoryQueryTimeoutError(RepositoryError):
+    """A bounded metadata read exceeded a database or driver timeout."""
+
+
+class DocumentQueryParameterError(ValueError):
+    """Invalid internal document read parameters; no database query was issued."""
+
+
+DOCUMENT_QUERY_MAX_TIME_MS = 5000
+DOCUMENT_QUERY_MAX_FETCH = 21
+DOCUMENT_QUERY_MAX_OFFSET = (1 << 63) - 1
+
+
+def validate_document_query_parameters(
+    *,
+    include_deleted: bool,
+    offset: int = 0,
+    limit: int = DOCUMENT_QUERY_MAX_FETCH,
+    max_time_ms: int = DOCUMENT_QUERY_MAX_TIME_MS,
+) -> None:
+    """Validate bounded Documents reads without accepting coercions or BSON overflow."""
+    if type(include_deleted) is not bool:
+        raise DocumentQueryParameterError("include_deleted phải là boolean")
+    if type(offset) is not int or not 0 <= offset <= DOCUMENT_QUERY_MAX_OFFSET:
+        raise DocumentQueryParameterError("offset phải là số nguyên không âm trong phạm vi int64")
+    if type(limit) is not int or not 1 <= limit <= DOCUMENT_QUERY_MAX_FETCH:
+        raise DocumentQueryParameterError("limit truy vấn phải từ 1 đến 21")
+    if type(max_time_ms) is not int or not 1 <= max_time_ms <= DOCUMENT_QUERY_MAX_TIME_MS:
+        raise DocumentQueryParameterError("max_time_ms phải từ 1 đến 5000")
+
+
+def _document_query_predicate(include_deleted: bool) -> dict[str, Any]:
+    return {} if include_deleted else {"status": {"$ne": DocumentStatus.DELETED.value}}
 
 
 class MongoDocumentRepository:
@@ -113,6 +149,56 @@ class MongoDocumentRepository:
             return [DocumentRecord.model_validate(value) for value in values]
         except PyMongoError as exc:
             raise RepositoryError("Không thể liệt kê documents") from exc
+
+    def count_documents_for_tools(
+        self,
+        *,
+        include_deleted: bool = False,
+        max_time_ms: int = 5000,
+    ) -> int:
+        """Count library document identities using a server-controlled query budget."""
+        validate_document_query_parameters(
+            include_deleted=include_deleted, max_time_ms=max_time_ms
+        )
+        try:
+            return self.documents.count_documents(
+                _document_query_predicate(include_deleted), maxTimeMS=max_time_ms
+            )
+        except PyMongoError as exc:
+            if exc.timeout:
+                raise RepositoryQueryTimeoutError("Truy vấn đếm documents hết thời gian") from None
+            raise RepositoryError("Không thể đếm documents") from None
+
+    def list_documents_for_tools(
+        self,
+        *,
+        include_deleted: bool = False,
+        offset: int = 0,
+        limit: int = 21,
+        max_time_ms: int = 5000,
+    ) -> list[DocumentRecord]:
+        """Read at most 21 identities in a stable order, including a page sentinel."""
+        validate_document_query_parameters(
+            include_deleted=include_deleted,
+            offset=offset,
+            limit=limit,
+            max_time_ms=max_time_ms,
+        )
+        try:
+            with (
+                self.documents.find(_document_query_predicate(include_deleted))
+                .sort([("created_at", DESCENDING), ("_id", DESCENDING)])
+                .skip(offset)
+                .limit(limit)
+                .max_time_ms(max_time_ms)
+            ) as values:
+                return [DocumentRecord.model_validate(value) for value in values]
+        except PyMongoError as exc:
+            if exc.timeout:
+                raise RepositoryQueryTimeoutError("Truy vấn liệt kê documents hết thời gian") from None
+            raise RepositoryError("Không thể liệt kê documents") from None
+        except (ValidationError, TypeError, ValueError):
+            raise RepositoryError("Document metadata không hợp lệ") from None
 
     def list_versions(self, document_id: str) -> list[DocumentVersionRecord]:
         try:
