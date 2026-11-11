@@ -125,8 +125,7 @@ class ExcelAttachmentTests(unittest.TestCase):
     def test_versioned_preview_survives_new_active_version_and_has_readonly_tables(self):
         result = self.upload().json()
         self.service.update(result["document_id"], file_name="replacement.txt", content=b"Replacement text")
-        with patch("app.api.routes.documents.MongoDocumentRepository", return_value=self.repository), \
-             patch("app.api.routes.documents.create_file_storage", return_value=self.storage):
+        with patch("app.api.routes.documents.create_document_service", return_value=self.service):
             response = TestClient(self.app).get(f"/documents/{result['document_id']}/versions/{result['version_id']}/preview")
         self.assertEqual(response.status_code, 200, response.text)
         preview = response.json()

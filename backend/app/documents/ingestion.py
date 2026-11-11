@@ -21,12 +21,10 @@ from app.documents.repository import (
     RepositoryError,
     RepositoryNotFoundError,
 )
-from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.indexing import build_vector_records, embed_chunks, parse_and_split
 from app.rag.loaders.files import SUPPORTED_EXTENSIONS, load_document
 from app.rag.splitter import split_documents
 from app.documents.ports import FileStorage, StorageError, build_document_storage_key
-from app.infrastructure.storage import create_file_storage
 from app.rag.vector_index import (
     VectorFilter,
     VectorIndex,
@@ -318,12 +316,23 @@ def create_ingestion_service(
     qdrant_client: Any,
     embeddings: Embeddings | None = None,
     storage: FileStorage | None = None,
+    vector_index: VectorIndex | None = None,
 ) -> IngestionService:
     """Composition root nhỏ cho API/script; tests có thể inject toàn bộ adapters."""
+    if storage is None:
+        from app.infrastructure.storage import create_file_storage
+        resolved_storage: FileStorage = create_file_storage(settings)
+    else:
+        resolved_storage = storage
+    if vector_index is None:
+        from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
+        resolved_index: VectorIndex = QdrantVectorIndex(qdrant_client, settings.qdrant_collection)
+    else:
+        resolved_index = vector_index
     return IngestionService(
         repository=MongoDocumentRepository(database),
-        storage=storage if storage is not None else create_file_storage(settings),
-        vector_index=QdrantVectorIndex(qdrant_client, settings.qdrant_collection),
+        storage=resolved_storage,
+        vector_index=resolved_index,
         embeddings=embeddings,
         embedding_model=settings.embedding_model,
     )

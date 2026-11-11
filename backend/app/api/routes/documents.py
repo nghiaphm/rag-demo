@@ -15,8 +15,6 @@ from app.documents.service import DocumentService, DocumentSummary, create_docum
 from app.documents.ingestion import IngestionError, IngestionResult
 from app.rag.loaders.files import SUPPORTED_EXTENSIONS
 from app.documents.attachments import AttachmentUnavailableError, preview_version
-from app.documents.repository import MongoDocumentRepository
-from app.infrastructure.storage import create_file_storage
 from app.documents.ports import StorageError
 from app.documents.excel.validation import MAX_XLSX_BYTES, WorkbookError, read_workbook
 from app.api.schemas.chat_documents import (
@@ -138,11 +136,9 @@ async def _read_upload(file: UploadFile) -> tuple[str, bytes]:
 
 @router.get("/{document_id}/versions/{version_id}/preview", response_model=DocumentPreviewResponse)
 async def document_preview(document_id: UUID, version_id: UUID, request: Request):
-    database = request.app.state.cloud_connections.mongodb.database
-    if database is None:
-        raise HTTPException(status_code=503, detail="Document metadata unavailable")
+    service = await _service(request)
     try:
-        return await run_in_threadpool(preview_version, MongoDocumentRepository(database), create_file_storage(),
+        return await run_in_threadpool(preview_version, service.repository, service.storage,
                                        str(document_id), str(version_id))
     except AttachmentUnavailableError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc

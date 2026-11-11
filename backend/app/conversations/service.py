@@ -5,7 +5,6 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from app.chat.citation_mapping import map_verified_citations
 from app.documents.attachment_models import MessageAttachment
 from app.conversations.models import (
     MessageRecord,
@@ -45,6 +44,12 @@ class StreamingTurn:
     request_id: str
     user_message: MessageRecord
     assistant_message: MessageRecord
+
+
+def _map_citations(content: str, sources: list[dict[str, Any]]) -> list[Any]:
+    from app.chat.citation_mapping import map_verified_citations
+
+    return map_verified_citations(content, sources)
 
 
 class ConversationGenerationError(Exception):
@@ -144,7 +149,7 @@ class ConversationService:
                     role=MessageRole.ASSISTANT,
                     content=str(result["answer"]),
                     status=MessageStatus.COMPLETED,
-                    citations=map_verified_citations(
+                    citations=_map_citations(
                         str(result["answer"]), list(result.get("sources", []))
                     ),
                     model=model,
@@ -261,7 +266,7 @@ class ConversationService:
                 citations=(
                     []
                     if status is MessageStatus.FAILED
-                    else map_verified_citations(content, sources)
+                    else _map_citations(content, sources)
                 ),
                 model=turn.assistant_message.model,
                 usage=normalized_usage,

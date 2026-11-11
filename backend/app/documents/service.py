@@ -13,9 +13,7 @@ from app.documents.ingestion import (
     IngestionResult,
     IngestionService,
 )
-from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.documents.ports import FileStorage, StorageError
-from app.infrastructure.storage import create_file_storage
 from app.rag.vector_index import VectorFilter, VectorIndex, VectorIndexError
 
 
@@ -129,19 +127,33 @@ class DocumentService:
         )
 
 
-def create_document_service(*, database: Any, qdrant_client: Any) -> DocumentService:
+def create_document_service(
+    *,
+    database: Any,
+    qdrant_client: Any,
+    storage: FileStorage | None = None,
+    vector_index: VectorIndex | None = None,
+) -> DocumentService:
     repository = MongoDocumentRepository(database)
-    storage = create_file_storage(settings)
-    vector_index = QdrantVectorIndex(qdrant_client, settings.qdrant_collection)
+    if storage is None:
+        from app.infrastructure.storage import create_file_storage
+        resolved_storage: FileStorage = create_file_storage(settings)
+    else:
+        resolved_storage = storage
+    if vector_index is None:
+        from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
+        resolved_index: VectorIndex = QdrantVectorIndex(qdrant_client, settings.qdrant_collection)
+    else:
+        resolved_index = vector_index
     ingestion = IngestionService(
         repository=repository,
-        storage=storage,
-        vector_index=vector_index,
+        storage=resolved_storage,
+        vector_index=resolved_index,
         embedding_model=settings.embedding_model,
     )
     return DocumentService(
         repository=repository,
-        storage=storage,
-        vector_index=vector_index,
+        storage=resolved_storage,
+        vector_index=resolved_index,
         ingestion=ingestion,
     )
