@@ -10,11 +10,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import chat, documents, sessions
-from app.cloud_connections import CloudConnections
-from app.config import settings
-from app.conversation_indexes import initialize_conversation_indexes
-from app.document_indexes import initialize_document_indexes
+from app.api.routes import chat, documents, sessions
+from app.infrastructure.connections import CloudConnections
+from app.shared.config import settings
+from app.conversations.indexes import initialize_conversation_indexes
+from app.documents.indexes import initialize_document_indexes
 
 
 @asynccontextmanager

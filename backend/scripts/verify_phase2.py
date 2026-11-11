@@ -21,7 +21,7 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.cloud_connections import MongoDBConnection
+from app.infrastructure.mongo import MongoDBConnection
 from app.main import app
 
 
@@ -84,7 +84,7 @@ def main() -> int:
 
             for turn in range(1, 4):
                 with patch(
-                    "app.api.chat.answer_question",
+                    "app.api.routes.chat.answer_question",
                     return_value=_generation(turn),
                 ):
                     result = _expect(
@@ -102,7 +102,7 @@ def main() -> int:
                     raise RuntimeError("chat response mismatch")
 
             with patch(
-                "app.api.chat.answer_question",
+                "app.api.routes.chat.answer_question",
                 side_effect=RuntimeError("forced verification failure"),
             ):
                 failed = client.post(

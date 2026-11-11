@@ -25,10 +25,10 @@ def connect_ex(sock, address):
 
 socket.socket.connect, socket.socket.connect_ex = connect, connect_ex
 suite = unittest.defaultTestLoader.loadTestsFromNames([
-    "tests.test_multi_session_isolation", "tests.test_conversation_concurrency",
-    "tests.test_history", "tests.test_query_rewriting", "tests.test_retriever",
-    "tests.test_streaming_pipeline", "tests.test_chat_stream", "tests.test_chat_persistence",
-    "tests.test_session_actions", "tests.test_sessions_api",
+    "tests.integration.test_multi_session_isolation", "tests.unit.test_conversation_concurrency",
+    "tests.unit.test_history", "tests.unit.test_query_rewriting", "tests.unit.test_retriever",
+    "tests.unit.test_streaming_pipeline", "tests.integration.test_chat_stream", "tests.integration.test_chat_persistence",
+    "tests.unit.test_session_actions", "tests.integration.test_sessions_api",
 ])
 result = unittest.TextTestRunner(verbosity=1).run(suite)
 sys.exit(0 if result.wasSuccessful() else 1)

@@ -15,15 +15,15 @@ PROJECT_ROOT = BACKEND_DIR.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.cloud_connections import CloudConnections
-from app.config import settings
-from app.data_migration import DemoCorpusMigration, MigrationSource
-from app.document_indexes import initialize_document_indexes
-from app.document_repository import MongoDocumentRepository
-from app.ingestion import IngestionService
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.infrastructure.connections import CloudConnections
+from app.shared.config import settings
+from app.documents.migrations.demo_corpus import DemoCorpusMigration, MigrationSource
+from app.documents.indexes import initialize_document_indexes
+from app.documents.repository import MongoDocumentRepository
+from app.documents.ingestion import IngestionService
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.embeddings import get_embeddings
-from app.storage import create_file_storage
+from app.infrastructure.storage import create_file_storage
 
 MANIFEST_PATH = BACKEND_DIR / "migration" / "demo_corpus.json"
 DEMO_SOURCE_ROOT = (PROJECT_ROOT / "data" / "documents").resolve()

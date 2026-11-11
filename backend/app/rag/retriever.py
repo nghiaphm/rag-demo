@@ -10,11 +10,9 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict
 
-from app.config import settings
-from app.document_repository import MongoDocumentRepository
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.shared.config import settings
 from app.rag.embeddings import get_embeddings
-from app.vector_index import VectorFilter, VectorIndex
+from app.rag.vector_index import VectorFilter, VectorIndex
 
 
 class QdrantActiveVersionRetriever(BaseRetriever):
@@ -84,6 +82,7 @@ def get_retriever(
     if resolved_index is None:
         if qdrant_client is None:
             raise ValueError("Qdrant client chưa sẵn sàng")
+        from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
         resolved_index = QdrantVectorIndex(
             qdrant_client,
             collection_name or settings.qdrant_collection,
@@ -92,6 +91,7 @@ def get_retriever(
     if resolved_repository is None and active_version_ids is None:
         if database is None:
             raise ValueError("MongoDB database chưa sẵn sàng")
+        from app.documents.repository import MongoDocumentRepository
         resolved_repository = MongoDocumentRepository(database)
     return QdrantActiveVersionRetriever(
         vector_index=resolved_index,

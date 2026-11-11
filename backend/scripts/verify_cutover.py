@@ -15,22 +15,23 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.cloud_connections import CloudConnections
-from app.config import settings
-from app.document_indexes import (
+from app.infrastructure.connections import CloudConnections
+from app.shared.config import settings
+from app.documents.indexes import (
     DOCUMENTS_COLLECTION,
     DOCUMENT_VERSIONS_COLLECTION,
     INGESTION_JOBS_COLLECTION,
 )
-from app.document_repository import MongoDocumentRepository
-from app.document_service import DocumentService
-from app.ingestion import IngestionService
+from app.documents.repository import MongoDocumentRepository
+from app.documents.service import DocumentService
+from app.documents.ingestion import IngestionService
 from app.main import app
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.embeddings import get_embeddings
 from app.rag.retriever import get_retriever
-from app.storage import StorageError, create_file_storage
-from app.vector_index import VectorFilter, VectorIndexError
+from app.documents.ports import StorageError
+from app.infrastructure.storage import create_file_storage
+from app.rag.vector_index import VectorFilter, VectorIndexError
 
 BASELINE_COUNTS = {
     "enterprise_it_knowledge_base.xlsx": 37,

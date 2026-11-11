@@ -13,7 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.cloud_connections import CloudConnections
+from app.infrastructure.connections import CloudConnections
 
 
 def main() -> int:

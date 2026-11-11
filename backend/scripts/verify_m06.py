@@ -23,7 +23,7 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.conversation_models import (
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,
@@ -32,7 +32,7 @@ from app.conversation_models import (
     SessionScopeMode,
 )
 from app.main import app
-from app.query_rewriting import (
+from app.chat.query_rewriting import (
     QueryRewriteResult,
     RewriteMetrics,
     RewriteStatus,
@@ -200,8 +200,8 @@ def main() -> int:
             )
 
             with patch(
-                "app.rag.pipeline.create_query_rewriter", return_value=rewriter
-            ), patch("app.rag.pipeline.get_llm", return_value=llm):
+                "app.chat.pipeline.create_query_rewriter", return_value=rewriter
+            ), patch("app.chat.pipeline.get_llm", return_value=llm):
                 json_response = client.post(
                     "/chat",
                     json={"question": JSON_QUESTION, "session_id": session.session_id},

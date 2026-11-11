@@ -8,7 +8,7 @@ from functools import lru_cache
 
 from langchain_core.embeddings import Embeddings
 
-from app.config import settings
+from app.shared.config import settings
 
 _GOOGLE_PROVIDER_ALIASES: frozenset[str] = frozenset({"google", "google-genai", "gemini"})
 

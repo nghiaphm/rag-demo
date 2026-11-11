@@ -20,8 +20,8 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.config import settings
-from app.rag.loader import load_document
+from app.shared.config import settings
+from app.rag.loaders.files import load_document
 from app.rag.splitter import split_documents
 
 SAMPLE_FILE_NAME = "sample_rag.md"
