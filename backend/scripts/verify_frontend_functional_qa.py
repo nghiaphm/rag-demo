@@ -31,11 +31,11 @@ def connect_ex(sock, address):
 socket.socket.connect = connect
 socket.socket.connect_ex = connect_ex
 names = [
-    "tests.test_sessions_api", "tests.test_session_actions",
-    "tests.test_conversation_models", "tests.test_conversation_concurrency",
-    "tests.test_documents_api", "tests.test_ingestion", "tests.test_chat_stream",
-    "tests.test_chat_persistence", "tests.test_sse_schema", "tests.test_cors",
-    "tests.test_stream_terminal_parity",
+    "tests.integration.test_sessions_api", "tests.unit.test_session_actions",
+    "tests.unit.test_conversation_models", "tests.unit.test_conversation_concurrency",
+    "tests.integration.test_documents_api", "tests.integration.test_ingestion", "tests.integration.test_chat_stream",
+    "tests.integration.test_chat_persistence", "tests.unit.test_sse_schema", "tests.integration.test_cors",
+    "tests.integration.test_stream_terminal_parity",
 ]
 suite = unittest.defaultTestLoader.loadTestsFromNames(names)
 result = unittest.TextTestRunner(verbosity=1).run(suite)
