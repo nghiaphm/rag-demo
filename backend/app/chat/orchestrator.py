@@ -24,9 +24,9 @@ from app.conversations.repository import ConversationRepositoryError, MongoConve
 from app.documents.queries import DocumentQueries
 from app.conversations.history import ConversationHistoryLoader, HistoryTurn
 from app.rag.llm import get_llm
+from app.chat.events import ProviderStreamChunk
 from app.chat.pipeline import (
     PreparedRagStream,
-    ProviderStreamChunk,
     astream_rag_answer,
     generate_prepared_answer,
     prepare_rag_request,

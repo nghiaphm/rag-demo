@@ -25,6 +25,7 @@ from app.documents.repository import (
     RepositoryNotFoundError,
 )
 from app.conversations.history import ConversationHistoryLoader, HistoryTurn
+from app.chat.events import ProviderStreamChunk
 from app.chat.query_rewriting import (
     QueryRewriteResult,
     create_query_rewriter,
@@ -51,14 +52,6 @@ class PreparedRagStream:
     active_version_ids: tuple[str, ...] = ()
     budget: BudgetedContext | None = None
     rewrite: QueryRewriteResult | None = None
-
-
-@dataclass(frozen=True)
-class ProviderStreamChunk:
-    """Normalized provider output; usage can arrive in a textless final chunk."""
-
-    content: str | None
-    usage: dict[str, int] | None
 
 
 async def prepare_rag_request(

@@ -14,7 +14,6 @@ from app.documents.attachments import AttachmentUnavailableError, resolve_attach
 from app.documents.repository import MongoDocumentRepository, RepositoryError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.chat.citation_mapping import map_verified_citations
 from app.chat.orchestrator import ChatOrchestrationError, ChatOrchestrator, PreparedChatAnswer
 from app.shared.config import settings
 from app.conversations.models import new_uuid
@@ -38,29 +37,22 @@ from app.chat.pipeline import (
     prepare_rag_stream,
 )
 from app.api.schemas.chat_documents import (
-    ChatError,
     ChatRequest,
     ChatResponse,
-    ChatResponseMetadata,
-    ChatResponseMode,
-    ChatResponseStatus,
-    Citation,
     Source,
 )
-from app.api.streaming.sse_schema import (
-    SSEDeltaData,
-    SSEDeltaEvent,
-    SSEDoneData,
-    SSEDoneEvent,
-    SSEErrorData,
-    SSEErrorEvent,
-    SSEMetadataData,
-    SSEMetadataEvent,
-    SSEStartData,
-    SSEStartEvent,
-    encode_sse_event,
+from app.api.streaming.event_adapter import (
+    completed_chat_response,
+    delta_frame,
+    done_frame,
+    error_frame,
+    failed_generation_response,
+    metadata_frame,
+    start_frame,
+    stream_error_code_for_orchestration,
 )
 from app.api.streaming.stream_metrics import StreamMetricTracker, record_stream_metric
+
 
 router = APIRouter(tags=["chat"])
 
@@ -85,42 +77,6 @@ def _finish_stream_metric(
         pass
 
 
-def _failed_generation_response(
-    *,
-    request_id: str,
-    persistent: bool,
-    session_id: str | UUID | None = None,
-    user_message_id: str | UUID | None = None,
-    assistant_message_id: str | UUID | None = None,
-    error_code: str = "RAG_PIPELINE_ERROR",
-) -> JSONResponse:
-    response = ChatResponse(
-        request_id=request_id,
-        session_id=session_id,
-        user_message_id=user_message_id,
-        assistant_message_id=assistant_message_id,
-        answer=None,
-        sources=[],
-        citations=[],
-        metadata=ChatResponseMetadata(
-            mode=(
-                ChatResponseMode.PERSISTENT
-                if persistent
-                else ChatResponseMode.STATELESS
-            ),
-            model=settings.llm_model,
-        ),
-        usage=None,
-        status=ChatResponseStatus.FAILED,
-        error=ChatError(
-            code=error_code,
-            message="Không thể tạo câu trả lời.",
-            retryable=True,
-        ),
-    )
-    return JSONResponse(status_code=502, content=response.model_dump(mode="json"))
-
-
 async def _encode_provider_stream_impl(
     *,
     request_id: str,
@@ -136,34 +92,9 @@ async def _encode_provider_stream_impl(
     sources = [Source(**source) for source in prepared.sources]
     sequence = 1
     tracker.mark_first_event()
-    yield encode_sse_event(
-        SSEStartEvent(
-            data=SSEStartData(
-                sequence=sequence,
-                request_id=request_id,
-                session_id=None if turn is None else turn.user_message.session_id,
-                user_message_id=None if turn is None else turn.user_message.message_id,
-                assistant_message_id=(
-                    None if turn is None else turn.assistant_message.message_id
-                ),
-                mode=(
-                    ChatResponseMode.PERSISTENT
-                    if persistent
-                    else ChatResponseMode.STATELESS
-                ),
-            )
-        )
-    )
+    yield start_frame(sequence=sequence, request_id=request_id, turn=turn)
     sequence += 1
-    yield encode_sse_event(
-        SSEMetadataEvent(
-            data=SSEMetadataData(
-                sequence=sequence,
-                model=settings.llm_model,
-                sources=sources,
-            )
-        )
-    )
+    yield metadata_frame(sequence=sequence, sources=sources)
 
     # Citations need answer ordinals. The contract requires them before the
     # first delta, so P4-02 leaves them absent rather than buffering the full
@@ -201,11 +132,7 @@ async def _encode_provider_stream_impl(
             sequence += 1
             emitted_delta = True
             tracker.mark_content()
-            yield encode_sse_event(
-                SSEDeltaEvent(
-                    data=SSEDeltaData(sequence=sequence, content=chunk.content)
-                )
-            )
+            yield delta_frame(sequence=sequence, content=chunk.content)
         if not emitted_delta:
             error_code = "RAG_STREAM_EMPTY"
     except asyncio.TimeoutError:
@@ -219,11 +146,7 @@ async def _encode_provider_stream_impl(
             # The facade reports actual aggregate usage, or None for incomplete coverage.
             usage = exc.usage
             state["usage"] = usage
-            error_code = {
-                "CHAT_TIMEOUT": "RAG_STREAM_TIMEOUT",
-                "TOOL_TIMEOUT": "RAG_STREAM_TIMEOUT",
-                "CHAT_EMPTY_ANSWER": "RAG_STREAM_EMPTY",
-            }.get(exc.code, "RAG_STREAM_ERROR")
+            error_code = stream_error_code_for_orchestration(exc)
     except Exception:  # noqa: BLE001 - never persist a false COMPLETED state
         error_code = "RAG_STREAM_ERROR"
     finally:
@@ -261,23 +184,10 @@ async def _encode_provider_stream_impl(
         outcome="COMPLETED" if error_code is None else error_code,
     )
     if error_code is None:
-        yield encode_sse_event(
-            SSEDoneEvent(data=SSEDoneData(sequence=sequence, usage=usage))
-        )
+        yield done_frame(sequence=sequence, usage=usage)
     else:
-        yield encode_sse_event(
-            SSEErrorEvent(
-                data=SSEErrorData(
-                    sequence=sequence,
-                    status="PARTIAL" if content.strip() else "FAILED",
-                    error=ChatError(
-                        code=error_code,
-                        message="Luồng tạo câu trả lời không thể hoàn tất.",
-                        retryable=True,
-                    ),
-                    usage=usage,
-                )
-            )
+        yield error_frame(
+            sequence=sequence, content=content, error_code=error_code, usage=usage
         )
 
 
@@ -441,7 +351,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
     except ConversationRepositoryError as exc:
         raise HTTPException(status_code=503, detail="Message persistence tạm thời không khả dụng.") from exc
     except ConversationGenerationError as exc:
-        return _failed_generation_response(
+        return failed_generation_response(
             request_id=exc.request_id,
             persistent=True,
             session_id=payload.session_id,
@@ -454,39 +364,20 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
         # Keep the existing public error contract instead of exposing internal tool codes.
         if persistent:
             raise HTTPException(status_code=502, detail="Không thể tạo câu trả lời.") from None
-        return _failed_generation_response(request_id=request_id, persistent=False)
+        return failed_generation_response(request_id=request_id, persistent=False)
     except Exception as exc:  # noqa: BLE001 - chuyển lỗi integration thành lỗi API rõ ràng
         if persistent:
             raise HTTPException(
                 status_code=502,
                 detail=f"Lỗi RAG pipeline: {type(exc).__name__}",
             ) from exc
-        return _failed_generation_response(request_id=request_id, persistent=False)
+        return failed_generation_response(request_id=request_id, persistent=False)
 
-    return ChatResponse(
-        request_id=result.get("request_id") or request_id,
+    return completed_chat_response(
+        result=result,
+        request_id=request_id,
         session_id=payload.session_id,
-        user_message_id=result.get("user_message_id"),
-        assistant_message_id=result.get("assistant_message_id"),
-        answer=result["answer"],
-        sources=[Source(**source) for source in result["sources"]],
-        citations=[
-            Citation(**citation)
-            for citation in map_verified_citations(
-                str(result["answer"]), list(result.get("sources", []))
-            )
-        ],
-        metadata=ChatResponseMetadata(
-            mode=(
-                ChatResponseMode.PERSISTENT
-                if persistent
-                else ChatResponseMode.STATELESS
-            ),
-            model=settings.llm_model,
-        ),
-        usage=result.get("usage"),
-        status=ChatResponseStatus.COMPLETED,
-        error=None,
+        persistent=persistent,
     )
 
 
@@ -580,7 +471,7 @@ async def chat_stream(
         )
         if persistent:
             raise HTTPException(status_code=502, detail="Unable to initialize answer stream.")
-        return _failed_generation_response(request_id=request_id, persistent=False)
+        return failed_generation_response(request_id=request_id, persistent=False)
 
     return StreamingResponse(
         _encode_provider_stream(
