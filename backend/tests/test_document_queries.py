@@ -11,18 +11,18 @@ from uuid import UUID
 
 from pymongo.errors import ExecutionTimeout, NetworkTimeout, OperationFailure
 
-from app.document_indexes import (
+from app.documents.indexes import (
     DOCUMENTS_COLLECTION,
     DOCUMENT_VERSIONS_COLLECTION,
     INGESTION_JOBS_COLLECTION,
 )
-from app.document_models import DocumentRecord, DocumentStatus
-from app.document_queries import (
+from app.documents.models import DocumentRecord, DocumentStatus
+from app.documents.queries import (
     MAX_DOCUMENT_LIST_RESULT_BYTES,
     DocumentQueries,
     DocumentQueryOutputLimitError,
 )
-from app.document_repository import (
+from app.documents.repository import (
     DOCUMENT_QUERY_MAX_OFFSET,
     DocumentQueryParameterError,
     MongoDocumentRepository,
@@ -445,7 +445,7 @@ class DocumentQueryTests(unittest.TestCase):
 
     def test_a_complete_item_that_cannot_fit_raises_output_limit(self):
         _, _, queries = self.fixture([document(0)])
-        with patch("app.document_queries.MAX_DOCUMENT_LIST_RESULT_BYTES", 64):
+        with patch("app.documents.queries.MAX_DOCUMENT_LIST_RESULT_BYTES", 64):
             with self.assertRaises(DocumentQueryOutputLimitError):
                 queries.list_documents()
 

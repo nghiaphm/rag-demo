@@ -15,19 +15,19 @@ from langchain_core.messages import AIMessageChunk
 from langchain_core.prompt_values import ChatPromptValue
 from pymongo.errors import ExecutionTimeout, OperationFailure
 
-from app.api.chat import chat_stream, router
-from app.chat_orchestration import ChatOrchestrator
-from app.config import settings
-from app.conversation_models import MessageStatus
-from app.conversation_repository import ConversationRepositoryError, SessionConflictError
-from app.conversation_service import ConversationService
-from app.document_indexes import DOCUMENTS_COLLECTION, DOCUMENT_VERSIONS_COLLECTION, INGESTION_JOBS_COLLECTION
-from app.document_queries import DocumentQueries
-from app.rag.pipeline import PreparedRagStream, ProviderStreamChunk
-from app.query_rewriting import QueryRewriteResult, RewriteMetrics, RewriteStatus
-from app.schemas import ChatRequest, Source
-from app.sse_schema import SSETranscript
-from app.stream_metrics import StreamMetricTracker
+from app.api.routes.chat import chat_stream, router
+from app.chat.orchestrator import ChatOrchestrator
+from app.shared.config import settings
+from app.conversations.models import MessageStatus
+from app.conversations.repository import ConversationRepositoryError, SessionConflictError
+from app.conversations.service import ConversationService
+from app.documents.indexes import DOCUMENTS_COLLECTION, DOCUMENT_VERSIONS_COLLECTION, INGESTION_JOBS_COLLECTION
+from app.documents.queries import DocumentQueries
+from app.chat.pipeline import PreparedRagStream, ProviderStreamChunk
+from app.chat.query_rewriting import QueryRewriteResult, RewriteMetrics, RewriteStatus
+from app.api.schemas.chat_documents import ChatRequest, Source
+from app.api.streaming.sse_schema import SSETranscript
+from app.api.streaming.stream_metrics import StreamMetricTracker
 
 from test_chat_json_tools import GuardedCollection, MessageRepository, SESSION_ID
 from test_chat_orchestration import CONFIG, FINAL_USAGE, SOURCES, FakeModel, call, selection
@@ -102,11 +102,11 @@ class StreamToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.connect = self.start_patch(socket.socket, "connect", side_effect=AssertionError("offline only"))
         self.start_patch(settings, "tool_use_enabled", new=True)
-        self.compose = self.start_patch("app.api.chat.ChatOrchestrator", side_effect=compose)
-        self.start_patch("app.api.chat.create_conversation_service", return_value=self.service)
-        self.metrics = self.start_patch("app.api.chat.record_stream_metric")
-        self.provider = self.start_patch("app.chat_orchestration.get_llm", side_effect=AssertionError("fake only"))
-        self.legacy = self.start_patch("app.api.chat.prepare_rag_stream", side_effect=AssertionError("legacy forbidden"))
+        self.compose = self.start_patch("app.api.routes.chat.ChatOrchestrator", side_effect=compose)
+        self.start_patch("app.api.routes.chat.create_conversation_service", return_value=self.service)
+        self.metrics = self.start_patch("app.api.routes.chat.record_stream_metric")
+        self.provider = self.start_patch("app.chat.orchestrator.get_llm", side_effect=AssertionError("fake only"))
+        self.legacy = self.start_patch("app.api.routes.chat.prepare_rag_stream", side_effect=AssertionError("legacy forbidden"))
         self.app = FastAPI()
         self.app.include_router(router)
         self.app.state.cloud_connections = SimpleNamespace(
@@ -384,7 +384,7 @@ class StreamToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
             now[0] += 3
             return count(*args, **kwargs)
         self.documents.count_documents = timed_count
-        with patch("app.api.chat.StreamMetricTracker", side_effect=lambda: StreamMetricTracker(clock=lambda: now[0])):
+        with patch("app.api.routes.chat.StreamMetricTracker", side_effect=lambda: StreamMetricTracker(clock=lambda: now[0])):
             self.transcript(await self.post())
         metric = self.metrics.call_args.args[0]
         self.assertEqual(metric.first_event_ms, 2000)
@@ -465,8 +465,8 @@ class StreamToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
         async def legacy_stream(plan):
             self.assertIs(plan, prepared)
             yield ProviderStreamChunk("Legacy SSE", FINAL_USAGE)
-        with patch("app.api.chat.prepare_rag_stream", return_value=prepared) as prepare, \
-                patch("app.api.chat.astream_rag_answer", legacy_stream):
+        with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared) as prepare, \
+                patch("app.api.routes.chat.astream_rag_answer", legacy_stream):
             events = self.transcript(await self.post(True))
         self.assert_pair(events)
         self.assertEqual(events[1]["data"]["sources"], [Source(**s).model_dump(mode="json") for s in SOURCES])

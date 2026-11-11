@@ -8,22 +8,22 @@ from uuid import uuid4
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage
 
-from app.conversation_models import (
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,
     SessionScope,
     SessionScopeMode,
 )
-from app.config import settings
-from app.document_models import DocumentStatus
-from app.history import HistoryTurn
-from app.query_rewriting import (
+from app.shared.config import settings
+from app.documents.models import DocumentStatus
+from app.conversations.history import HistoryTurn
+from app.chat.query_rewriting import (
     QueryRewriteResult,
     RewriteMetrics,
     RewriteStatus,
 )
-from app.rag.pipeline import answer_question_async, prepare_rag_request
+from app.chat.pipeline import answer_question_async, prepare_rag_request
 
 
 class FakeRetriever:
@@ -128,16 +128,16 @@ class RagIntegrationTests(unittest.IsolatedAsyncioTestCase):
             return retriever
 
         with patch(
-            "app.rag.pipeline.MongoDocumentRepository",
+            "app.chat.pipeline.MongoDocumentRepository",
             return_value=document_repository,
         ), patch(
-            "app.rag.pipeline.MongoConversationRepository", return_value=object()
+            "app.chat.pipeline.MongoConversationRepository", return_value=object()
         ), patch(
-            "app.rag.pipeline.ConversationHistoryLoader"
+            "app.chat.pipeline.ConversationHistoryLoader"
         ) as loader_type, patch(
-            "app.rag.pipeline.create_query_rewriter", return_value=rewriter
+            "app.chat.pipeline.create_query_rewriter", return_value=rewriter
         ), patch(
-            "app.rag.pipeline.get_retriever", side_effect=retriever_factory
+            "app.chat.pipeline.get_retriever", side_effect=retriever_factory
         ):
             loader_type.return_value.load.return_value = loaded
             prepared = await prepare_rag_request(
@@ -188,8 +188,8 @@ class RagIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         llm = Llm()
         with patch(
-            "app.rag.pipeline.prepare_rag_request", return_value=prepared
-        ) as builder, patch("app.rag.pipeline.get_llm", return_value=llm):
+            "app.chat.pipeline.prepare_rag_request", return_value=prepared
+        ) as builder, patch("app.chat.pipeline.get_llm", return_value=llm):
             result = await answer_question_async(
                 "Original question",
                 database=object(),

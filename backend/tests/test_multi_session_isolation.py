@@ -13,14 +13,14 @@ from fastapi import FastAPI
 from langchain_core.messages import AIMessageChunk
 from pymongo import ReturnDocument
 
-from app.api.chat import router
-from app.conversation_models import SessionRecord
-from app.conversation_repository import MongoConversationRepository
-from app.conversation_service import ConversationService
-from app.query_rewriting import ProviderRewrite, QueryRewriter
+from app.api.routes.chat import router
+from app.conversations.models import SessionRecord
+from app.conversations.repository import MongoConversationRepository
+from app.conversations.service import ConversationService
+from app.chat.query_rewriting import ProviderRewrite, QueryRewriter
 from app.rag.retriever import get_retriever
-from app.sse_schema import SSETranscript
-from app.vector_index import VectorSearchResult
+from app.api.streaming.sse_schema import SSETranscript
+from app.rag.vector_index import VectorSearchResult
 
 
 class Cursor(list):
@@ -95,7 +95,7 @@ class Collection:
 class MultiSessionIsolationTests(unittest.TestCase):
     def run_pair(self, *, same=True, failure=None, independent=False):
         # Resolve actual collection names rather than assume storage naming.
-        from app.conversation_indexes import SESSIONS_COLLECTION, MESSAGES_COLLECTION
+        from app.conversations.indexes import SESSIONS_COLLECTION, MESSAGES_COLLECTION
         database = {SESSIONS_COLLECTION: Collection(), MESSAGES_COLLECTION: Collection()}
         repository = MongoConversationRepository(database)
         service = ConversationService(repository)
@@ -174,10 +174,10 @@ class MultiSessionIsolationTests(unittest.TestCase):
             app = FastAPI()
             app.include_router(router)
             app.state.cloud_connections = SimpleNamespace(mongodb=SimpleNamespace(database=database), qdrant=SimpleNamespace(client=object()))
-            with patch("app.rag.pipeline.MongoDocumentRepository", return_value=SimpleNamespace(list_active_version_ids=lambda: list(versions.values()))), \
-                patch("app.rag.pipeline.create_query_rewriter", side_effect=lambda _settings: QueryRewriter(RewriteProvider(), timeout_seconds=10, max_chars=200)), \
-                patch("app.rag.pipeline.get_retriever", side_effect=lambda **kwargs: get_retriever(embeddings=embeddings, vector_index=index, active_version_ids=kwargs["active_version_ids"])), \
-                patch("app.rag.pipeline.get_llm", return_value=llm):
+            with patch("app.chat.pipeline.MongoDocumentRepository", return_value=SimpleNamespace(list_active_version_ids=lambda: list(versions.values()))), \
+                patch("app.chat.pipeline.create_query_rewriter", side_effect=lambda _settings: QueryRewriter(RewriteProvider(), timeout_seconds=10, max_chars=200)), \
+                patch("app.chat.pipeline.get_retriever", side_effect=lambda **kwargs: get_retriever(embeddings=embeddings, vector_index=index, active_version_ids=kwargs["active_version_ids"])), \
+                patch("app.chat.pipeline.get_llm", return_value=llm):
                 async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://offline.test") as client:
                     questions = ["Explain common policy"] * 2 if independent else ["What about it?", "What about it?" if same else "How about that policy?"]
                     return await asyncio.gather(*(client.post("/chat/stream", json={"question": q, "session_id": s.session_id}) for q, s in zip(questions, sessions)))
@@ -273,7 +273,7 @@ class MultiSessionIsolationTests(unittest.TestCase):
         self.assertIn("What about it?", observed["embedding"])
 
     def test_missing_qdrant_collection_returns_empty_results(self):
-        from app.qdrant_ingestion import QdrantVectorIndex
+        from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
         client = SimpleNamespace(collection_exists=lambda _name: False,
                                  query_points=lambda **_kwargs: self.fail("Missing collection must not query points"))
         index = QdrantVectorIndex(client, "offline-fixture")

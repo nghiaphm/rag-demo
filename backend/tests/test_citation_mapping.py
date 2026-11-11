@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from langchain_core.documents import Document
 
-from app.citation_mapping import map_verified_citations
+from app.chat.citation_mapping import map_verified_citations
 from app.rag.prompt import SYSTEM_INSTRUCTION, format_context
 
 

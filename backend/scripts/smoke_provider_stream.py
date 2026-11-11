@@ -12,7 +12,7 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.rag.pipeline import PreparedRagStream, astream_rag_answer
+from app.chat.pipeline import PreparedRagStream, astream_rag_answer
 from app.rag.prompt import get_rag_prompt
 
 

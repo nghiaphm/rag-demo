@@ -10,9 +10,9 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from app.document_models import DocumentRecord
-from app.document_queries import DocumentQueries, DocumentQueryOutputLimitError
-from app.document_repository import (
+from app.documents.models import DocumentRecord
+from app.documents.queries import DocumentQueries, DocumentQueryOutputLimitError
+from app.documents.repository import (
     DocumentQueryParameterError,
     RepositoryError,
     RepositoryQueryTimeoutError,
@@ -29,7 +29,7 @@ from app.tool_use.contracts import (
     success_result,
     validate_arguments,
 )
-from app.tool_use.document_tools import (
+from app.documents.tool_handlers import (
     count_documents,
     create_document_tool_registry,
     document_tool_definitions,
@@ -270,9 +270,6 @@ class ToolContractTests(OfflineMixin, unittest.TestCase):
         folder = Path(__file__).parents[1] / "app" / "tool_use"
         expected = {
             "__init__.py": set(), "contracts.py": set(),
-            "document_tools.py": {
-                "app.document_queries", "app.document_repository", "app.tool_use.contracts",
-            },
             "executor.py": {"app.tool_use.contracts"},
         }
         for path in sorted(folder.glob("*.py")):

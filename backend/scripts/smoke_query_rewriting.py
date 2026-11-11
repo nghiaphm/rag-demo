@@ -11,10 +11,10 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.config import settings
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.history import HistoryTurn
-from app.query_rewriting import ProviderRewrite, QueryRewriter, RewriteStatus
+from app.shared.config import settings
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.conversations.history import HistoryTurn
+from app.chat.query_rewriting import ProviderRewrite, QueryRewriter, RewriteStatus
 
 
 class Provider:

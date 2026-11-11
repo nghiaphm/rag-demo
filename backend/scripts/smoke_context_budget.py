@@ -10,10 +10,10 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.config import settings
-from app.context_budget import ContextBudgetBuilder, ContextBudgetConfig
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.history import HistoryTurn
+from app.shared.config import settings
+from app.chat.context_budget import ContextBudgetBuilder, ContextBudgetConfig
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.conversations.history import HistoryTurn
 from app.rag.prompt import SYSTEM_INSTRUCTION
 
 

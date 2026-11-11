@@ -7,11 +7,11 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.documents import router
-from app.document_models import DocumentRecord, DocumentStatus, DocumentVersionRecord
-from app.document_repository import RepositoryNotFoundError
-from app.document_service import DeleteResult, DocumentDetail, DocumentSummary
-from app.ingestion import IngestionResult
+from app.api.routes.documents import router
+from app.documents.models import DocumentRecord, DocumentStatus, DocumentVersionRecord
+from app.documents.repository import RepositoryNotFoundError
+from app.documents.service import DeleteResult, DocumentDetail, DocumentSummary
+from app.documents.ingestion import IngestionResult
 
 DOCUMENT_ID = "8a424056-e6cb-4a7f-8163-a20d3fbc3590"
 VERSION_ID = "30731462-aa86-47ee-985a-73b077e96da9"
@@ -98,7 +98,7 @@ class DocumentApiTests(unittest.TestCase):
     def test_document_lifecycle_routes(self):
         app = self.make_app()
         fake = FakeDocumentService()
-        with patch("app.api.documents.create_document_service", return_value=fake):
+        with patch("app.api.routes.documents.create_document_service", return_value=fake):
             client = TestClient(app)
             upload = client.post(
                 "/documents/upload",
@@ -138,7 +138,7 @@ class DocumentApiTests(unittest.TestCase):
 
     def test_delete_returns_202_when_cleanup_must_be_retried(self):
         with patch(
-            "app.api.documents.create_document_service",
+            "app.api.routes.documents.create_document_service",
             return_value=CleanupPendingService(),
         ):
             response = TestClient(self.make_app()).delete(f"/documents/{DOCUMENT_ID}")

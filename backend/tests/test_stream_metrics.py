@@ -2,7 +2,7 @@
 
 import unittest
 
-from app.stream_metrics import StreamMetric, StreamMetricTracker, record_stream_metric
+from app.api.streaming.stream_metrics import StreamMetric, StreamMetricTracker, record_stream_metric
 
 
 class FakeClock:

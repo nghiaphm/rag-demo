@@ -5,8 +5,8 @@ import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
-from app.conversation_repository import SessionGenerationConflictError
-from app.conversation_service import ConversationService
+from app.conversations.repository import SessionGenerationConflictError
+from app.conversations.service import ConversationService
 
 
 class AtomicGuardRepository:

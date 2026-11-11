@@ -64,7 +64,7 @@ def main() -> int:
                 raise RuntimeError("persisted citation mapping mismatch")
 
             with patch(
-                "app.api.chat.answer_question",
+                "app.api.routes.chat.answer_question",
                 side_effect=RuntimeError("private provider detail"),
             ):
                 failed_response = client.post(

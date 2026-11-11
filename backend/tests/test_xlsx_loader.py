@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from openpyxl import Workbook
 
-from app.rag.loader import load_document
+from app.rag.loaders.files import load_document
 
 
 class XlsxLoaderTests(unittest.TestCase):

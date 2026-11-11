@@ -23,7 +23,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from app.main import app
-from app.rag.pipeline import ProviderStreamChunk
+from app.chat.pipeline import ProviderStreamChunk
 
 
 def _frames(body: str) -> list[tuple[str, dict]]:
@@ -58,8 +58,8 @@ def main() -> int:
                     usage={"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
                 )
 
-            with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-                "app.api.chat.astream_rag_answer", provider_stream
+            with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+                "app.api.routes.chat.astream_rag_answer", provider_stream
             ):
                 response = client.post(
                     "/chat/stream",

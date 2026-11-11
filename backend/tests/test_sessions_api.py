@@ -8,20 +8,20 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.sessions import router
-from app.conversation_models import (
+from app.api.routes.sessions import router
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,
     SessionRecord,
     utc_now,
 )
-from app.conversation_repository import (
+from app.conversations.repository import (
     SessionDeleteResult,
     SessionDeletedError,
     SessionNotFoundError,
 )
-from app.conversation_service import MessagePage, SessionPage
+from app.conversations.service import MessagePage, SessionPage
 
 
 class FakeConversationService:
@@ -106,7 +106,7 @@ class SessionApiTests(unittest.TestCase):
         fake = FakeConversationService()
         session_id = fake.session.session_id
         with patch(
-            "app.api.sessions.create_conversation_service", return_value=fake
+            "app.api.routes.sessions.create_conversation_service", return_value=fake
         ):
             client = TestClient(self.make_app())
             created = client.post("/sessions", json={"title": "  New title  "})
@@ -140,11 +140,11 @@ class SessionApiTests(unittest.TestCase):
     def test_missing_and_deleted_sessions_have_distinct_statuses(self):
         fake = FakeConversationService()
         with patch(
-            "app.api.sessions.create_conversation_service", return_value=fake
+            "app.api.routes.sessions.create_conversation_service", return_value=fake
         ):
             missing = TestClient(self.make_app()).get(f"/sessions/{uuid4()}")
         with patch(
-            "app.api.sessions.create_conversation_service",
+            "app.api.routes.sessions.create_conversation_service",
             return_value=DeletedConversationService(),
         ):
             deleted = TestClient(self.make_app()).get(

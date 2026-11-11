@@ -4,7 +4,7 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 
-from app.rag.pipeline import (
+from app.chat.pipeline import (
     PreparedRagStream,
     ProviderStreamChunk,
     _text_delta,

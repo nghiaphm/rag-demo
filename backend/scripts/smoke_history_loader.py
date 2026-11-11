@@ -10,8 +10,8 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.cloud_connections import MongoDBConnection
-from app.conversation_models import (
+from app.infrastructure.mongo import MongoDBConnection
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,
@@ -19,8 +19,8 @@ from app.conversation_models import (
     SessionScope,
     SessionScopeMode,
 )
-from app.conversation_repository import MongoConversationRepository
-from app.history import ConversationHistoryLoader
+from app.conversations.repository import MongoConversationRepository
+from app.conversations.history import ConversationHistoryLoader
 
 
 def _pair(

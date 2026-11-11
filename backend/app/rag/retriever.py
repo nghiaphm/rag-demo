@@ -10,11 +10,11 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict
 
-from app.config import settings
-from app.document_repository import MongoDocumentRepository
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.shared.config import settings
+from app.documents.repository import MongoDocumentRepository
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.embeddings import get_embeddings
-from app.vector_index import VectorFilter, VectorIndex
+from app.rag.vector_index import VectorFilter, VectorIndex
 
 
 class QdrantActiveVersionRetriever(BaseRetriever):

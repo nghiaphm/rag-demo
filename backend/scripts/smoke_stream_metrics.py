@@ -18,8 +18,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from app.main import app
-from app.rag.pipeline import ProviderStreamChunk
-from app.sse_schema import SSETranscript
+from app.chat.pipeline import ProviderStreamChunk
+from app.api.streaming.sse_schema import SSETranscript
 
 
 def _events(body: str) -> list[dict]:
@@ -74,10 +74,10 @@ def main() -> int:
                 )
 
             success_metrics = []
-            with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-                "app.api.chat.astream_rag_answer", success_provider
+            with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+                "app.api.routes.chat.astream_rag_answer", success_provider
             ), patch(
-                "app.api.chat.record_stream_metric", side_effect=success_metrics.append
+                "app.api.routes.chat.record_stream_metric", side_effect=success_metrics.append
             ):
                 response = client.post(
                     "/chat/stream",
@@ -94,9 +94,9 @@ def main() -> int:
                 yield ProviderStreamChunk(content=None, usage=None)
 
             empty_metrics = []
-            with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-                "app.api.chat.astream_rag_answer", empty_provider
-            ), patch("app.api.chat.record_stream_metric", side_effect=empty_metrics.append):
+            with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+                "app.api.routes.chat.astream_rag_answer", empty_provider
+            ), patch("app.api.routes.chat.record_stream_metric", side_effect=empty_metrics.append):
                 empty = client.post(
                     "/chat/stream",
                     json={"question": "metrics empty", "session_id": session_id},
@@ -111,10 +111,10 @@ def main() -> int:
                 raise RuntimeError("private provider detail")
 
             partial_metrics = []
-            with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-                "app.api.chat.astream_rag_answer", partial_provider
+            with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+                "app.api.routes.chat.astream_rag_answer", partial_provider
             ), patch(
-                "app.api.chat.record_stream_metric", side_effect=partial_metrics.append
+                "app.api.routes.chat.record_stream_metric", side_effect=partial_metrics.append
             ):
                 partial = client.post(
                     "/chat/stream",

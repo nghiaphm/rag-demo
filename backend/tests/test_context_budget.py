@@ -5,15 +5,15 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.config import Settings
-from app.context_budget import (
+from app.shared.config import Settings
+from app.chat.context_budget import (
     ApproximateTokenCounter,
     ContextBudgetBuilder,
     ContextBudgetConfig,
     ContextBudgetError,
 )
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.history import HistoryTurn
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.conversations.history import HistoryTurn
 
 
 def _turn(sequence: int, *, text: str = "short") -> HistoryTurn:

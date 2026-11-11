@@ -5,9 +5,9 @@ from uuid import uuid4
 
 from langchain_core.embeddings import Embeddings
 
-from app.rag.pipeline import _to_source
+from app.chat.pipeline import _to_source
 from app.rag.retriever import QdrantActiveVersionRetriever
-from app.vector_index import VectorSearchResult
+from app.rag.vector_index import VectorSearchResult
 
 
 class FakeEmbeddings(Embeddings):

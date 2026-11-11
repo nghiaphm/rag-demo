@@ -12,7 +12,7 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.conversation_models import (
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,

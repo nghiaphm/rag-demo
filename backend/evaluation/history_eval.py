@@ -6,9 +6,9 @@ import statistics
 from typing import Any
 from uuid import uuid4
 
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.config import settings
-from app.history import HistoryTurn
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.shared.config import settings
+from app.conversations.history import HistoryTurn
 from evaluation.metrics import (
     answer_fact_coverage,
     faithfulness_ratio,

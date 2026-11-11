@@ -6,12 +6,12 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from app.conversation_indexes import (
+from app.conversations.indexes import (
     CONVERSATION_INDEX_DEFINITIONS,
     MESSAGE_INDEXES,
     initialize_conversation_indexes,
 )
-from app.conversation_models import (
+from app.conversations.models import (
     MessageCitation,
     MessageRecord,
     MessageRole,

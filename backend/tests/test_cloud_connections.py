@@ -6,8 +6,9 @@ import httpx
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
-from app.cloud_connections import MongoDBConnection, QdrantConnection
-from app.config import Settings
+from app.infrastructure.mongo import MongoDBConnection
+from app.infrastructure.qdrant import QdrantConnection
+from app.shared.config import Settings
 
 
 def make_settings(**overrides) -> Settings:

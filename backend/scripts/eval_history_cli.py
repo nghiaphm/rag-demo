@@ -17,11 +17,11 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.cloud_connections import QdrantConnection
-from app.config import settings
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.infrastructure.qdrant import QdrantConnection
+from app.shared.config import settings
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.embeddings import get_embeddings
-from app.rag.pipeline import (
+from app.chat.pipeline import (
     generate_prepared_answer,
     prepare_rag_request_from_components,
 )

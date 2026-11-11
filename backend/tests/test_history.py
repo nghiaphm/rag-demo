@@ -3,7 +3,7 @@
 import unittest
 from uuid import uuid4
 
-from app.conversation_models import (
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,
@@ -11,8 +11,8 @@ from app.conversation_models import (
     SessionScope,
     SessionScopeMode,
 )
-from app.conversation_repository import ConversationRepositoryError
-from app.history import ConversationHistoryLoader
+from app.conversations.repository import ConversationRepositoryError
+from app.conversations.history import ConversationHistoryLoader
 
 
 class FakeHistoryRepository:

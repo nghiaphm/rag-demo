@@ -6,8 +6,8 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.schemas import ChatError, ChatResponseMode, Citation
-from app.sse_schema import (
+from app.api.schemas.chat_documents import ChatError, ChatResponseMode, Citation
+from app.api.streaming.sse_schema import (
     SSECitationData,
     SSECitationEvent,
     SSEDeltaData,

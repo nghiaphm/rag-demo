@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
-from app.api.chat import _encode_provider_stream
-from app.conversation_service import ConversationService
-from app.rag.pipeline import ProviderStreamChunk
+from app.api.routes.chat import _encode_provider_stream
+from app.conversations.service import ConversationService
+from app.chat.pipeline import ProviderStreamChunk
 from tests.test_chat_persistence import FakeMessageRepository
 
 
@@ -28,7 +28,7 @@ class StreamTerminalParityTests(unittest.TestCase):
             raise RuntimeError("synthetic provider failure")
 
         async def collect():
-            with patch("app.api.chat.astream_rag_answer", provider):
+            with patch("app.api.routes.chat.astream_rag_answer", provider):
                 return [frame async for frame in _encode_provider_stream(
                     request_id=turn.request_id, prepared=SimpleNamespace(sources=[]),
                     service=service, turn=turn,
@@ -77,7 +77,7 @@ class StreamTerminalParityTests(unittest.TestCase):
             yield ProviderStreamChunk(content=content, usage=usage)
 
         async def disconnect():
-            with patch("app.api.chat.astream_rag_answer", provider):
+            with patch("app.api.routes.chat.astream_rag_answer", provider):
                 stream = _encode_provider_stream(
                     request_id=turn.request_id, prepared=SimpleNamespace(sources=[]),
                     service=service, turn=turn,
@@ -110,7 +110,7 @@ class StreamTerminalParityTests(unittest.TestCase):
                 yield ProviderStreamChunk(content=part, usage=None)
 
         async def collect():
-            with patch("app.api.chat.astream_rag_answer", provider):
+            with patch("app.api.routes.chat.astream_rag_answer", provider):
                 return [frame async for frame in _encode_provider_stream(
                     request_id=turn.request_id, prepared=SimpleNamespace(sources=[]),
                     service=service, turn=turn,

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.conversation_service import SessionPage
+from app.conversations.service import SessionPage
 
 
 ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
@@ -25,9 +25,9 @@ class CorsTests(unittest.TestCase):
         self.stack.enter_context(patch.object(app.state, "cloud_connections", self.cloud, create=True))
         # No TestClient context manager: don't run the cloud-connecting lifespan.
         self.stack.enter_context(patch("app.main.CloudConnections", side_effect=AssertionError("No cloud startup")))
-        self.sessions = self.stack.enter_context(patch("app.api.sessions.create_conversation_service"))
+        self.sessions = self.stack.enter_context(patch("app.api.routes.sessions.create_conversation_service"))
         self.sessions.return_value.list_sessions.return_value = SessionPage([], 0, 50, 0)
-        self.documents = self.stack.enter_context(patch("app.api.documents.create_document_service"))
+        self.documents = self.stack.enter_context(patch("app.api.routes.documents.create_document_service"))
         self.documents.return_value.list_documents.return_value = []
         self.client = TestClient(app)
         self.addCleanup(self.client.close)

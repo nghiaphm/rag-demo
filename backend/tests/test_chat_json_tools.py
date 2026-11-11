@@ -18,23 +18,23 @@ from langchain_core.prompt_values import ChatPromptValue
 from pydantic import ValidationError
 from pymongo.errors import ExecutionTimeout, OperationFailure
 
-from app.api.chat import router
-from app.chat_orchestration import ChatOrchestrator
-from app.config import Settings, settings
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.conversation_repository import (
+from app.api.routes.chat import router
+from app.chat.orchestrator import ChatOrchestrator
+from app.shared.config import Settings, settings
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.conversations.repository import (
     ConversationRepositoryError,
     SessionConflictError,
     SessionDeletedError,
     SessionNotFoundError,
 )
-from app.conversation_service import ConversationService
-from app.document_indexes import DOCUMENTS_COLLECTION, DOCUMENT_VERSIONS_COLLECTION, INGESTION_JOBS_COLLECTION
-from app.document_queries import DocumentQueries
-from app.document_repository import MongoDocumentRepository
-from app.rag.pipeline import PreparedRagStream, ProviderStreamChunk
-from app.schemas import ChatRequest, ChatResponse
-from app.sse_schema import SSETranscript
+from app.conversations.service import ConversationService
+from app.documents.indexes import DOCUMENTS_COLLECTION, DOCUMENT_VERSIONS_COLLECTION, INGESTION_JOBS_COLLECTION
+from app.documents.queries import DocumentQueries
+from app.documents.repository import MongoDocumentRepository
+from app.chat.pipeline import PreparedRagStream, ProviderStreamChunk
+from app.api.schemas.chat_documents import ChatRequest, ChatResponse
+from app.api.streaming.sse_schema import SSETranscript
 
 # Reuse the accepted rounds' deterministic native-model and collection fixtures.
 from test_chat_orchestration import CONFIG, FINAL_USAGE, SOURCES, FakeModel, call, selection
@@ -162,16 +162,16 @@ class JsonToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 budget_config=CONFIG, rag_prepare=self.prepare_rag,
             )
 
-        composition = patch("app.api.chat.ChatOrchestrator", side_effect=compose)
+        composition = patch("app.api.routes.chat.ChatOrchestrator", side_effect=compose)
         self.compose = composition.start()
         self.addCleanup(composition.stop)
-        legacy = patch("app.api.chat.answer_question", return_value=LEGACY_RESULT)
+        legacy = patch("app.api.routes.chat.answer_question", return_value=LEGACY_RESULT)
         self.legacy = legacy.start()
         self.addCleanup(legacy.stop)
-        service = patch("app.api.chat.create_conversation_service", return_value=self.service)
+        service = patch("app.api.routes.chat.create_conversation_service", return_value=self.service)
         self.service_factory = service.start()
         self.addCleanup(service.stop)
-        provider = patch("app.chat_orchestration.get_llm", side_effect=AssertionError("fake model required"))
+        provider = patch("app.chat.orchestrator.get_llm", side_effect=AssertionError("fake model required"))
         self.real_provider = provider.start()
         self.addCleanup(provider.stop)
 
@@ -537,9 +537,9 @@ class JsonToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
         prepared = PreparedRagStream(prompt_value="unused", sources=[])
         async def legacy_stream(_prepared):
             yield ProviderStreamChunk("Legacy SSE", None)
-        with patch("app.api.chat.prepare_rag_stream", return_value=prepared) as prepare, \
-                patch("app.api.chat.astream_rag_answer", legacy_stream), \
-                patch("app.api.chat.record_stream_metric"):
+        with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared) as prepare, \
+                patch("app.api.routes.chat.astream_rag_answer", legacy_stream), \
+                patch("app.api.routes.chat.record_stream_metric"):
             response = await self.client.post("/chat/stream", json={"question": "Count documents"})
         self.assertEqual(response.status_code, 200)
         frames = []

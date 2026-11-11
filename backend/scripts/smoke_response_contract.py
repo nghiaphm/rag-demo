@@ -98,7 +98,7 @@ def main() -> int:
             # Readiness reconnects clients, so capture the current database afterwards.
             database = app.state.cloud_connections.mongodb.database
 
-            with patch("app.api.chat.answer_question", return_value=generated):
+            with patch("app.api.routes.chat.answer_question", return_value=generated):
                 stateless = _expect(
                     client.post("/chat", json={"question": "stateless"}),
                     200,
@@ -124,7 +124,7 @@ def main() -> int:
                 "answer": "Không tìm thấy thông tin trong tài liệu",
                 "sources": [],
             }
-            with patch("app.api.chat.answer_question", return_value=fallback_result):
+            with patch("app.api.routes.chat.answer_question", return_value=fallback_result):
                 fallback = _expect(
                     client.post("/chat", json={"question": "outside corpus"}),
                     200,
@@ -140,7 +140,7 @@ def main() -> int:
                 "create session",
             )
             session_id = session["session_id"]
-            with patch("app.api.chat.answer_question", return_value=generated):
+            with patch("app.api.routes.chat.answer_question", return_value=generated):
                 persistent = _expect(
                     client.post(
                         "/chat",
@@ -180,7 +180,7 @@ def main() -> int:
                 raise RuntimeError("response citations do not match durable history")
 
             with patch(
-                "app.api.chat.answer_question",
+                "app.api.routes.chat.answer_question",
                 side_effect=RuntimeError("private provider detail"),
             ):
                 failed_response = client.post(

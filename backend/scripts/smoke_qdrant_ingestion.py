@@ -11,11 +11,11 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.cloud_connections import QdrantConnection
-from app.config import settings
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.infrastructure.qdrant import QdrantConnection
+from app.shared.config import settings
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.embeddings import get_embeddings
-from app.vector_index import VectorFilter, VectorRecord, chunk_point_id
+from app.rag.vector_index import VectorFilter, VectorRecord, chunk_point_id
 
 
 def main() -> int:

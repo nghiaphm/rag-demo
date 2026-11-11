@@ -12,9 +12,9 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.citation_mapping import map_verified_citations
-from app.cloud_connections import CloudConnections
-from app.rag.pipeline import _to_source
+from app.chat.citation_mapping import map_verified_citations
+from app.infrastructure.connections import CloudConnections
+from app.chat.pipeline import _to_source
 from app.rag.retriever import get_retriever
 
 

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from app.schemas import (
+from app.api.schemas.chat_documents import (
     Citation,
     ChatError,
     ChatResponse,

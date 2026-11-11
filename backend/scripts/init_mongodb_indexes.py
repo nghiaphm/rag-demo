@@ -9,12 +9,12 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.cloud_connections import MongoDBConnection
-from app.conversation_indexes import (
+from app.infrastructure.mongo import MongoDBConnection
+from app.conversations.indexes import (
     CONVERSATION_INDEX_DEFINITIONS,
     initialize_conversation_indexes,
 )
-from app.document_indexes import INDEX_DEFINITIONS, initialize_document_indexes
+from app.documents.indexes import INDEX_DEFINITIONS, initialize_document_indexes
 
 
 def main() -> int:

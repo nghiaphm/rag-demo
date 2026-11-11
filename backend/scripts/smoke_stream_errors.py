@@ -21,9 +21,9 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.config import settings
+from app.shared.config import settings
 from app.main import app
-from app.rag.pipeline import ProviderStreamChunk
+from app.chat.pipeline import ProviderStreamChunk
 
 
 def _frames(body: str) -> list[tuple[str, dict]]:
@@ -58,8 +58,8 @@ def main() -> int:
                 yield ProviderStreamChunk(content="partial", usage=None)
                 raise RuntimeError("private provider detail")
 
-            with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-                "app.api.chat.astream_rag_answer", partial_failure
+            with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+                "app.api.routes.chat.astream_rag_answer", partial_failure
             ):
                 partial_response = client.post(
                     "/chat/stream",
@@ -77,8 +77,8 @@ def main() -> int:
                 await asyncio.sleep(1)
                 yield ProviderStreamChunk(content="late", usage=None)
 
-            with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-                "app.api.chat.astream_rag_answer", slow_provider
+            with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+                "app.api.routes.chat.astream_rag_answer", slow_provider
             ), patch.object(settings, "stream_timeout_seconds", 0.01):
                 timeout_response = client.post(
                     "/chat/stream",

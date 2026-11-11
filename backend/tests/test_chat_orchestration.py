@@ -19,7 +19,7 @@ from langchain_core.messages.utils import convert_to_openai_messages
 from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from app.chat_orchestration import (
+from app.chat.orchestrator import (
     ChatOrchestrationError,
     ChatOrchestrator,
     FINAL_INSTRUCTION,
@@ -27,15 +27,15 @@ from app.chat_orchestration import (
     UsageLedger,
     estimate_context_tokens,
 )
-from app.citation_mapping import map_verified_citations
-from app.context_budget import ContextBudgetConfig
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus, SessionScope, SessionScopeMode
-from app.conversation_repository import SessionNotFoundError
-from app.document_models import DocumentStatus
-from app.document_repository import RepositoryError, RepositoryQueryTimeoutError
-from app.history import HistoryTurn
-from app.query_rewriting import QueryRewriteResult, RewriteMetrics, RewriteStatus
-from app.rag.pipeline import PreparedRagStream
+from app.chat.citation_mapping import map_verified_citations
+from app.chat.context_budget import ContextBudgetConfig
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus, SessionScope, SessionScopeMode
+from app.conversations.repository import SessionNotFoundError
+from app.documents.models import DocumentStatus
+from app.documents.repository import RepositoryError, RepositoryQueryTimeoutError
+from app.conversations.history import HistoryTurn
+from app.chat.query_rewriting import QueryRewriteResult, RewriteMetrics, RewriteStatus
+from app.chat.pipeline import PreparedRagStream
 
 SELECTOR_USAGE = {"input_tokens": 2, "output_tokens": 1, "total_tokens": 3}
 FINAL_USAGE = {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10}
@@ -162,7 +162,7 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         network = patch.object(socket.socket, "connect", side_effect=AssertionError("offline only"))
         self.connect = network.start()
         self.addCleanup(network.stop)
-        provider = patch("app.chat_orchestration.get_llm", side_effect=AssertionError("fake model required"))
+        provider = patch("app.chat.orchestrator.get_llm", side_effect=AssertionError("fake model required"))
         self.factory = provider.start()
         self.addCleanup(provider.stop)
         self.queries = FakeQueries()
@@ -510,11 +510,11 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         model = FakeModel(selection())
         model.final = AIMessage(content="Grounded [2]", usage_metadata=FINAL_USAGE)
         orchestrator = self.orchestrator(model, rag_prepare=None, history_loader=FakeHistory(history))
-        with patch("app.rag.pipeline.MongoDocumentRepository", return_value=repository), \
-                patch("app.rag.pipeline.MongoConversationRepository", return_value=object()), \
-                patch("app.rag.pipeline.ConversationHistoryLoader") as history_type, \
-                patch("app.rag.pipeline.get_retriever", return_value=retriever) as build_retriever, \
-                patch("app.rag.pipeline.create_query_rewriter", return_value=SimpleNamespace(rewrite=rewrite)):
+        with patch("app.chat.pipeline.MongoDocumentRepository", return_value=repository), \
+                patch("app.chat.pipeline.MongoConversationRepository", return_value=object()), \
+                patch("app.chat.pipeline.ConversationHistoryLoader") as history_type, \
+                patch("app.chat.pipeline.get_retriever", return_value=retriever) as build_retriever, \
+                patch("app.chat.pipeline.create_query_rewriter", return_value=SimpleNamespace(rewrite=rewrite)):
             history_type.return_value.load.return_value = loaded
             plan = await orchestrator.prepare_plan("Original question", database=object(),
                                                    qdrant_client=object(), session_id=SESSION_ID)
@@ -581,8 +581,8 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         async def execute(executor, calls, *, deadline=None):
             passed_deadlines.append(deadline)
             return await original_execute(executor, calls, deadline=deadline)
-        with patch("app.chat_orchestration.monotonic", side_effect=lambda: clock[0]), \
-                patch("app.chat_orchestration.ToolExecutor.execute", new=execute):
+        with patch("app.chat.orchestrator.monotonic", side_effect=lambda: clock[0]), \
+                patch("app.chat.orchestrator.ToolExecutor.execute", new=execute):
             plan = await orchestrator.prepare_plan("Count", deadline=initial + 1)
             result = await orchestrator.generate_json(plan)
         self.assertEqual(plan.deadline, initial + 1)
@@ -611,7 +611,7 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         model.selector_hook, model.final_hook = advance_selector, advance_final
         self.rag_hook = advance_preparation
         orchestrator = self.orchestrator(model)
-        with patch("app.chat_orchestration.monotonic", side_effect=lambda: clock[0]):
+        with patch("app.chat.orchestrator.monotonic", side_effect=lambda: clock[0]):
             plan = await orchestrator.prepare_plan("Question", deadline=initial + 1)
             await self.assert_failure(orchestrator.generate_json(plan), "CHAT_TIMEOUT")
         self.assertEqual(plan.deadline, initial + 1)
@@ -624,7 +624,7 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         original_wait = asyncio.wait_for
         orchestrator = self.orchestrator(model)
         initial = monotonic()
-        with patch("app.chat_orchestration.asyncio.wait_for", wraps=original_wait) as wait:
+        with patch("app.chat.orchestrator.asyncio.wait_for", wraps=original_wait) as wait:
             plan = await orchestrator.prepare_plan("Count", deadline=initial + 10000)
         self.assertEqual(wait.call_args.args[1], 15.0)
         self.assertLessEqual(plan.deadline, initial + 121)
@@ -636,7 +636,7 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
         model = FakeModel(selection(call()))
         model.selector_hook = block
-        with patch("app.chat_orchestration.MAX_SELECTOR_SECONDS", 0.01):
+        with patch("app.chat.orchestrator.MAX_SELECTOR_SECONDS", 0.01):
             await self.assert_failure(self.orchestrator(model).prepare_plan("Count"), "CHAT_TIMEOUT")
         self.assertTrue(started.is_set())
         self.assertEqual(self.queries.calls, [])
@@ -799,11 +799,11 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(left.total)
 
     async def test_static_dependencies_do_not_import_api_or_conversation_service_or_execute_code(self):
-        path = Path(__file__).parents[1] / "app" / "chat_orchestration.py"
+        path = Path(__file__).parents[1] / "app" / "chat" / "orchestrator.py"
         tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         imports = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
-        self.assertNotIn("app.api.chat", imports)
-        self.assertNotIn("app.conversation_service", imports)
+        self.assertNotIn("app.api.routes.chat", imports)
+        self.assertNotIn("app.conversations.service", imports)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
                 self.assertNotIn(ast.unparse(node.func).split(".")[-1], {
@@ -811,7 +811,7 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
                     "begin_generation", "create_message_pair", "finalize_assistant_message", "release_generation",
                     "_messages", "_select_recent_turns",
                 })
-        self.assertIn("app.rag.pipeline", imports)
+        self.assertIn("app.chat.pipeline", imports)
         self.assertIn("app.tool_use.executor", imports)
         self.assertIn("has_more=true", FINAL_INSTRUCTION)
         self.assertIn("knowledge inside documents", SELECTOR_INSTRUCTION)

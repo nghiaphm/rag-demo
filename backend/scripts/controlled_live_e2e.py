@@ -98,12 +98,12 @@ def serve_backend(run_dir):
     from google.genai.types import HttpOptions, HttpRetryOptions
     from langchain_openai import ChatOpenAI
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
-    from app.config import settings
+    from app.shared.config import settings
     validate_backend_target(run_dir, settings)
-    import app.rag.pipeline as pipeline
-    import app.query_rewriting as rewriting
+    import app.chat.pipeline as pipeline
+    import app.chat.query_rewriting as rewriting
     import app.rag.retriever as retriever
-    import app.ingestion as ingestion
+    import app.documents.ingestion as ingestion
     from app.main import app
 
     budget = ProviderBudget(run_dir / "provider-budget.json")
@@ -210,8 +210,8 @@ def run_live(args):
         for port in (8000, 3000):
             with socket.socket() as probe:
                 probe.bind(("127.0.0.1", port))
-        from app.config import Settings, settings
-        from app.cloud_connections import CloudConnections
+        from app.shared.config import Settings, settings
+        from app.infrastructure.connections import CloudConnections
         if namespace in {settings.mongodb_db_name, settings.qdrant_collection}:
             raise RuntimeError("Test namespace must differ from default")
         isolated = Settings(mongodb_db_name=namespace, qdrant_collection=namespace, documents_dir=str(raw_dir))

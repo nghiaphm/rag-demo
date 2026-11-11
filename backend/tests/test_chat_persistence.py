@@ -10,10 +10,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.api.chat import router
-from app.conversation_models import MessageRole, MessageStatus
-from app.conversation_repository import SessionDeletedError, SessionNotFoundError
-from app.conversation_service import (
+from app.api.routes.chat import router
+from app.conversations.models import MessageRole, MessageStatus
+from app.conversations.repository import SessionDeletedError, SessionNotFoundError
+from app.conversations.service import (
     ConversationGenerationError,
     ConversationService,
 )
@@ -237,8 +237,8 @@ class ChatApiPersistenceTests(unittest.TestCase):
         return {"answer": "Answer", "sources": []}
 
     def test_no_session_keeps_stateless_response_and_skips_persistence(self):
-        with patch("app.api.chat.answer_question", return_value=self.result()), patch(
-            "app.api.chat.create_conversation_service"
+        with patch("app.api.routes.chat.answer_question", return_value=self.result()), patch(
+            "app.api.routes.chat.create_conversation_service"
         ) as create_service:
             response = TestClient(self.make_app()).post(
                 "/chat", json={"question": "Question"}
@@ -269,7 +269,7 @@ class ChatApiPersistenceTests(unittest.TestCase):
             "answer": "Không tìm thấy thông tin trong tài liệu",
             "sources": [],
         }
-        with patch("app.api.chat.answer_question", return_value=result):
+        with patch("app.api.routes.chat.answer_question", return_value=result):
             response = TestClient(self.make_app()).post(
                 "/chat", json={"question": "Outside corpus"}
             )
@@ -296,7 +296,7 @@ class ChatApiPersistenceTests(unittest.TestCase):
             "page": 2,
         }
         result = {"answer": "Facts from both [1] and [2]", "sources": [first, second]}
-        with patch("app.api.chat.answer_question", return_value=result):
+        with patch("app.api.routes.chat.answer_question", return_value=result):
             response = TestClient(self.make_app()).post(
                 "/chat", json={"question": "Compare documents"}
             )
@@ -313,9 +313,9 @@ class ChatApiPersistenceTests(unittest.TestCase):
         session_id = str(uuid4())
         service = FakePersistentChatService()
         with patch(
-            "app.api.chat.answer_question", return_value=self.result()
+            "app.api.routes.chat.answer_question", return_value=self.result()
         ) as answer, patch(
-            "app.api.chat.create_conversation_service", return_value=service
+            "app.api.routes.chat.create_conversation_service", return_value=service
         ):
             response = TestClient(self.make_app()).post(
                 "/chat", json={"question": "Question", "session_id": session_id}
@@ -348,7 +348,7 @@ class ChatApiPersistenceTests(unittest.TestCase):
             (SessionDeletedError(), 410),
         ):
             with patch(
-                "app.api.chat.create_conversation_service",
+                "app.api.routes.chat.create_conversation_service",
                 return_value=FakePersistentChatService(error),
             ):
                 response = TestClient(self.make_app()).post(
@@ -359,7 +359,7 @@ class ChatApiPersistenceTests(unittest.TestCase):
 
     def test_stateless_generation_failure_uses_safe_complete_envelope(self):
         with patch(
-            "app.api.chat.answer_question",
+            "app.api.routes.chat.answer_question",
             side_effect=RuntimeError("secret provider detail"),
         ):
             response = TestClient(self.make_app()).post(
@@ -384,7 +384,7 @@ class ChatApiPersistenceTests(unittest.TestCase):
             assistant_message_id=str(uuid4()),
         )
         with patch(
-            "app.api.chat.create_conversation_service",
+            "app.api.routes.chat.create_conversation_service",
             return_value=FakePersistentChatService(failure),
         ):
             response = TestClient(self.make_app()).post(

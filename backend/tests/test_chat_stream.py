@@ -10,13 +10,13 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.chat import _encode_provider_stream, router
-from app.config import settings
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.conversation_repository import ConversationRepositoryError, SessionNotFoundError
-from app.conversation_service import StreamingTurn
-from app.rag.pipeline import ProviderStreamChunk
-from app.sse_schema import SSETranscript
+from app.api.routes.chat import _encode_provider_stream, router
+from app.shared.config import settings
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.conversations.repository import ConversationRepositoryError, SessionNotFoundError
+from app.conversations.service import StreamingTurn
+from app.chat.pipeline import ProviderStreamChunk
+from app.api.streaming.sse_schema import SSETranscript
 
 
 class ChatStreamApiTests(unittest.TestCase):
@@ -67,9 +67,9 @@ class ChatStreamApiTests(unittest.TestCase):
                 usage={"input_tokens": 7, "output_tokens": 3, "total_tokens": 10},
             )
 
-        with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-            "app.api.chat.astream_rag_answer", provider_stream
-        ), patch("app.api.chat.record_stream_metric", side_effect=metrics.append):
+        with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+            "app.api.routes.chat.astream_rag_answer", provider_stream
+        ), patch("app.api.routes.chat.record_stream_metric", side_effect=metrics.append):
             response = TestClient(self.make_app()).post(
                 "/chat/stream", json={"question": "Question"}
             )
@@ -117,9 +117,9 @@ class ChatStreamApiTests(unittest.TestCase):
             yield ProviderStreamChunk(content=None, usage=None)
 
         with patch(
-            "app.api.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
-        ), patch("app.api.chat.astream_rag_answer", provider_stream), patch(
-            "app.api.chat.record_stream_metric", side_effect=metrics.append
+            "app.api.routes.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
+        ), patch("app.api.routes.chat.astream_rag_answer", provider_stream), patch(
+            "app.api.routes.chat.record_stream_metric", side_effect=metrics.append
         ):
             response = TestClient(self.make_app()).post(
                 "/chat/stream", json={"question": "Question"}
@@ -170,10 +170,10 @@ class ChatStreamApiTests(unittest.TestCase):
             yield ProviderStreamChunk(content="Answer", usage=None)
 
         with patch(
-            "app.api.chat.prepare_rag_stream", return_value=prepared
+            "app.api.routes.chat.prepare_rag_stream", return_value=prepared
         ) as prepare, patch(
-            "app.api.chat.create_conversation_service", return_value=service
-        ), patch("app.api.chat.astream_rag_answer", provider_stream):
+            "app.api.routes.chat.create_conversation_service", return_value=service
+        ), patch("app.api.routes.chat.astream_rag_answer", provider_stream):
             response = TestClient(self.make_app()).post(
                 "/chat/stream",
                 json={"question": "Question", "session_id": session_id},
@@ -227,10 +227,10 @@ class ChatStreamApiTests(unittest.TestCase):
             yield ProviderStreamChunk(content="partial", usage=None)
             raise RuntimeError("provider detail must not leak")
 
-        with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-            "app.api.chat.create_conversation_service", return_value=service
-        ), patch("app.api.chat.astream_rag_answer", provider_stream), patch(
-            "app.api.chat.record_stream_metric", side_effect=metrics.append
+        with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+            "app.api.routes.chat.create_conversation_service", return_value=service
+        ), patch("app.api.routes.chat.astream_rag_answer", provider_stream), patch(
+            "app.api.routes.chat.record_stream_metric", side_effect=metrics.append
         ):
             response = TestClient(self.make_app()).post(
                 "/chat/stream",
@@ -260,8 +260,8 @@ class ChatStreamApiTests(unittest.TestCase):
             finally:
                 provider_closed = True
 
-        with patch("app.api.chat.prepare_rag_stream", return_value=prepared), patch(
-            "app.api.chat.astream_rag_answer", provider_stream
+        with patch("app.api.routes.chat.prepare_rag_stream", return_value=prepared), patch(
+            "app.api.routes.chat.astream_rag_answer", provider_stream
         ), patch.object(settings, "stream_timeout_seconds", 0.01):
             response = TestClient(self.make_app()).post(
                 "/chat/stream", json={"question": "Question"}
@@ -306,9 +306,9 @@ class ChatStreamApiTests(unittest.TestCase):
             yield ProviderStreamChunk(content="answer", usage=None)
 
         with patch(
-            "app.api.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
-        ), patch("app.api.chat.create_conversation_service", return_value=Service()), patch(
-            "app.api.chat.astream_rag_answer", provider_stream
+            "app.api.routes.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
+        ), patch("app.api.routes.chat.create_conversation_service", return_value=Service()), patch(
+            "app.api.routes.chat.astream_rag_answer", provider_stream
         ):
             response = TestClient(self.make_app()).post(
                 "/chat/stream",
@@ -378,8 +378,8 @@ class ChatStreamApiTests(unittest.TestCase):
             await stream.aclose()
 
         metrics = []
-        with patch("app.api.chat.astream_rag_answer", provider_stream), patch(
-            "app.api.chat.record_stream_metric", side_effect=metrics.append
+        with patch("app.api.routes.chat.astream_rag_answer", provider_stream), patch(
+            "app.api.routes.chat.record_stream_metric", side_effect=metrics.append
         ):
             asyncio.run(exercise())
         self.assertTrue(closed.is_set())
@@ -443,9 +443,9 @@ class ChatStreamApiTests(unittest.TestCase):
                 raise SessionNotFoundError()
 
         with patch(
-            "app.api.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
-        ), patch("app.api.chat.create_conversation_service", return_value=Service()), patch(
-            "app.api.chat.astream_rag_answer"
+            "app.api.routes.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
+        ), patch("app.api.routes.chat.create_conversation_service", return_value=Service()), patch(
+            "app.api.routes.chat.astream_rag_answer"
         ) as provider:
             response = TestClient(self.make_app()).post(
                 "/chat/stream",
@@ -458,9 +458,9 @@ class ChatStreamApiTests(unittest.TestCase):
     def test_pre_header_generation_error_uses_safe_json_failure_envelope(self):
         metrics = []
         with patch(
-            "app.api.chat.prepare_rag_stream",
+            "app.api.routes.chat.prepare_rag_stream",
             side_effect=RuntimeError("private provider detail"),
-        ), patch("app.api.chat.record_stream_metric", side_effect=metrics.append):
+        ), patch("app.api.routes.chat.record_stream_metric", side_effect=metrics.append):
             response = TestClient(self.make_app()).post(
                 "/chat/stream", json={"question": "Question"}
             )
@@ -481,9 +481,9 @@ class ChatStreamApiTests(unittest.TestCase):
             yield ProviderStreamChunk(content="answer", usage=None)
 
         with patch(
-            "app.api.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
-        ), patch("app.api.chat.astream_rag_answer", provider_stream), patch(
-            "app.api.chat.record_stream_metric",
+            "app.api.routes.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])
+        ), patch("app.api.routes.chat.astream_rag_answer", provider_stream), patch(
+            "app.api.routes.chat.record_stream_metric",
             side_effect=RuntimeError("metrics backend unavailable"),
         ):
             response = TestClient(self.make_app()).post(

@@ -5,8 +5,8 @@ from uuid import uuid4
 
 from qdrant_client import QdrantClient
 
-from app.qdrant_ingestion import QdrantVectorIndex
-from app.vector_index import (
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
+from app.rag.vector_index import (
     VectorConflictError,
     VectorFilter,
     VectorIndexError,

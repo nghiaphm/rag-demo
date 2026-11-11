@@ -7,9 +7,9 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.cloud_connections import CloudConnections
-from app.document_indexes import initialize_document_indexes
-from app.ingestion import IngestionError, create_ingestion_service
+from app.infrastructure.connections import CloudConnections
+from app.documents.indexes import initialize_document_indexes
+from app.documents.ingestion import IngestionError, create_ingestion_service
 
 
 def main() -> int:

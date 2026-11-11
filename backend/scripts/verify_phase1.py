@@ -15,21 +15,22 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.config import settings
-from app.document_indexes import (
+from app.shared.config import settings
+from app.documents.indexes import (
     DOCUMENTS_COLLECTION,
     DOCUMENT_VERSIONS_COLLECTION,
     INGESTION_JOBS_COLLECTION,
 )
-from app.document_models import DocumentStatus
-from app.document_repository import MongoDocumentRepository
-from app.document_service import DocumentService
-from app.ingestion import IngestionError, IngestionService
+from app.documents.models import DocumentStatus
+from app.documents.repository import MongoDocumentRepository
+from app.documents.service import DocumentService
+from app.documents.ingestion import IngestionError, IngestionService
 from app.main import app
-from app.qdrant_ingestion import QdrantVectorIndex, VectorIndexError
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex, VectorIndexError
 from app.rag.embeddings import get_embeddings
-from app.storage import StorageError, create_file_storage
-from app.vector_index import VectorFilter
+from app.documents.ports import StorageError
+from app.infrastructure.storage import create_file_storage
+from app.rag.vector_index import VectorFilter
 
 _TEST_NAME_PATTERN = r"^p1-07-verify-[0-9a-f-]{36}\.md$"
 

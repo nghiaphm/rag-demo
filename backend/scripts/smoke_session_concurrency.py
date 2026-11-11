@@ -16,11 +16,11 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.conversation_repository import (
+from app.conversations.repository import (
     MongoConversationRepository,
     SessionConflictError,
 )
-from app.conversation_service import ConversationService
+from app.conversations.service import ConversationService
 from app.main import app
 
 
@@ -51,7 +51,7 @@ def main() -> int:
                     raise TimeoutError("smoke generation did not resume")
                 return {"answer": "first completed", "sources": []}
 
-            with patch("app.api.chat.answer_question", side_effect=slow_generate):
+            with patch("app.api.routes.chat.answer_question", side_effect=slow_generate):
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     first = executor.submit(
                         client.post,

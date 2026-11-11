@@ -29,15 +29,15 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from langchain_core.callbacks import BaseCallbackHandler
 
-from app.config import settings
-from app.cloud_connections import QdrantConnection
-from app.qdrant_ingestion import QdrantVectorIndex
+from app.shared.config import settings
+from app.infrastructure.qdrant import QdrantConnection
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.rag.chain import build_rag_chain
 from app.rag.embeddings import get_embeddings
-from app.rag.loader import load_document
+from app.rag.loaders.files import load_document
 from app.rag.retriever import get_retriever
 from app.rag.splitter import split_documents
-from app.vector_index import VectorFilter, VectorRecord, chunk_point_id
+from app.rag.vector_index import VectorFilter, VectorRecord, chunk_point_id
 from evaluation.metrics import (
     answer_fact_coverage,
     faithfulness_ratio,

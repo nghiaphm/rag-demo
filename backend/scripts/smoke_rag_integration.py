@@ -12,10 +12,10 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.citation_mapping import map_verified_citations
-from app.cloud_connections import CloudConnections
-from app.config import settings
-from app.conversation_models import (
+from app.chat.citation_mapping import map_verified_citations
+from app.infrastructure.connections import CloudConnections
+from app.shared.config import settings
+from app.conversations.models import (
     MessageRecord,
     MessageRole,
     MessageStatus,
@@ -23,7 +23,7 @@ from app.conversation_models import (
     SessionScope,
     SessionScopeMode,
 )
-from app.rag.pipeline import prepare_rag_stream
+from app.chat.pipeline import prepare_rag_stream
 from app.rag.retriever import get_retriever
 
 

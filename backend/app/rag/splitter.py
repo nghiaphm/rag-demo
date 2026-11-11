@@ -7,7 +7,7 @@ Phase 1 chỉ split text; KHÔNG embedding và KHÔNG lưu database.
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.config import settings
+from app.shared.config import settings
 
 
 def split_documents(

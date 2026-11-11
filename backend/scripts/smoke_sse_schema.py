@@ -11,8 +11,8 @@ if str(BACKEND_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.schemas import ChatResponseMode, Citation
-from app.sse_schema import (
+from app.api.schemas.chat_documents import ChatResponseMode, Citation
+from app.api.streaming.sse_schema import (
     SSECitationData,
     SSECitationEvent,
     SSEDeltaData,

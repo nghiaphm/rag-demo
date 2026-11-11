@@ -7,15 +7,8 @@ import unittest
 from pathlib import Path
 from uuid import uuid4
 
-from app.storage import (
-    FileStorage,
-    InvalidStorageKeyError,
-    LocalFileStorage,
-    StorageAlreadyExistsError,
-    StorageError,
-    build_document_storage_key,
-    create_file_storage,
-)
+from app.documents.ports import FileStorage, InvalidStorageKeyError, StorageAlreadyExistsError, StorageError, build_document_storage_key
+from app.infrastructure.storage import LocalFileStorage, create_file_storage
 
 
 class FailingStream(io.BytesIO):

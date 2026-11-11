@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from app.api.sessions import router
+from app.api.routes.sessions import router
 
-from app.conversation_models import SessionRecord, utc_now
-from app.conversation_repository import MongoConversationRepository, SessionGenerationConflictError
+from app.conversations.models import SessionRecord, utc_now
+from app.conversations.repository import MongoConversationRepository, SessionGenerationConflictError
 
 
 class SessionCollection:
@@ -88,7 +88,7 @@ class SessionActionsRepositoryTests(unittest.TestCase):
         app.include_router(router)
         app.state.cloud_connections = SimpleNamespace(mongodb=SimpleNamespace(database=object()))
         service = SimpleNamespace(delete_session=lambda _: (_ for _ in ()).throw(SessionGenerationConflictError()))
-        with patch("app.api.sessions.create_conversation_service", return_value=service):
+        with patch("app.api.routes.sessions.create_conversation_service", return_value=service):
             client = TestClient(app)
             response = client.delete(f"/sessions/{uuid4()}")
             client.close()

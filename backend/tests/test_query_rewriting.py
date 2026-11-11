@@ -5,9 +5,9 @@ from types import SimpleNamespace
 import unittest
 from uuid import uuid4
 
-from app.conversation_models import MessageRecord, MessageRole, MessageStatus
-from app.history import HistoryTurn
-from app.query_rewriting import (
+from app.conversations.models import MessageRecord, MessageRole, MessageStatus
+from app.conversations.history import HistoryTurn
+from app.chat.query_rewriting import (
     ProviderRewrite,
     QueryRewriter,
     RewriteStatus,

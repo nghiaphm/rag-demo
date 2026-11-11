@@ -13,19 +13,20 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.cloud_connections import CloudConnections
-from app.document_indexes import (
+from app.infrastructure.connections import CloudConnections
+from app.documents.indexes import (
     DOCUMENTS_COLLECTION,
     DOCUMENT_VERSIONS_COLLECTION,
     INGESTION_JOBS_COLLECTION,
     initialize_document_indexes,
 )
-from app.document_models import DocumentStatus, IngestionJobStatus
-from app.ingestion import create_ingestion_service
-from app.qdrant_ingestion import QdrantVectorIndex, VectorIndexError
-from app.storage import StorageError, create_file_storage
-from app.vector_index import VectorFilter
-from app.config import settings
+from app.documents.models import DocumentStatus, IngestionJobStatus
+from app.documents.ingestion import create_ingestion_service
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex, VectorIndexError
+from app.documents.ports import StorageError
+from app.infrastructure.storage import create_file_storage
+from app.rag.vector_index import VectorFilter
+from app.shared.config import settings
 
 
 def main() -> int:

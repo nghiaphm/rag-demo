@@ -6,13 +6,13 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from app.document_indexes import (
+from app.documents.indexes import (
     DOCUMENT_INDEXES,
     DOCUMENT_VERSION_INDEXES,
     INDEX_DEFINITIONS,
     initialize_document_indexes,
 )
-from app.document_models import (
+from app.documents.models import (
     DocumentRecord,
     DocumentStatus,
     DocumentVersionRecord,

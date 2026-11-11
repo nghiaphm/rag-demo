@@ -8,23 +8,23 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.documents import Document
 from qdrant_client import QdrantClient
 
-from app.document_models import (
+from app.documents.models import (
     DocumentStatus,
     IngestionJobRecord,
     IngestionJobStatus,
     utc_now,
 )
-from app.document_repository import RepositoryConflictError, RepositoryError
-from app.document_service import DocumentService
-from app.data_migration import DemoCorpusMigration, MigrationSource
-from app.ingestion import IngestionError, IngestionService
-from app.qdrant_ingestion import (
+from app.documents.repository import RepositoryConflictError, RepositoryError
+from app.documents.service import DocumentService
+from app.documents.migrations.demo_corpus import DemoCorpusMigration, MigrationSource
+from app.documents.ingestion import IngestionError, IngestionService
+from app.infrastructure.qdrant_vector_index import (
     QdrantVectorIndex,
     VectorCollectionMismatchError,
     VectorIndexError,
 )
-from app.storage import LocalFileStorage
-from app.vector_index import VectorFilter
+from app.infrastructure.storage import LocalFileStorage
+from app.rag.vector_index import VectorFilter
 
 
 class DeterministicEmbeddings(Embeddings):

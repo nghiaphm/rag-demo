@@ -18,24 +18,24 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from pydantic import ValidationError
 from qdrant_client import QdrantClient
 
-from app.api.documents import router as documents_router
-from app.api.chat import router as chat_router
-from app.api.sessions import _message_response
-from app.attachment_models import AttachmentReference
-from app.attachments import AttachmentUnavailableError, preview_version, resolve_attachments
-from app.conversation_models import MessageRecord, SessionRecord
-from app.conversation_repository import MongoConversationRepository
-from app.conversation_service import ConversationService
-from app.document_service import DocumentService
-from app.document_models import DocumentStatus
-from app.excel import WorkbookError, read_workbook, workbook_documents, workbook_preview
-from app.ingestion import IngestionService
-from app.qdrant_ingestion import QdrantVectorIndex
-from app.rag.pipeline import ProviderStreamChunk
-from app.rag.pipeline import _to_source
+from app.api.routes.documents import router as documents_router
+from app.api.routes.chat import router as chat_router
+from app.api.routes.sessions import _message_response
+from app.documents.attachment_models import AttachmentReference
+from app.documents.attachments import AttachmentUnavailableError, preview_version, resolve_attachments
+from app.conversations.models import MessageRecord, SessionRecord
+from app.conversations.repository import MongoConversationRepository
+from app.conversations.service import ConversationService
+from app.documents.service import DocumentService
+from app.documents.models import DocumentStatus
+from app.documents.excel.validation import WorkbookError, read_workbook, workbook_documents, workbook_preview
+from app.documents.ingestion import IngestionService
+from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
+from app.chat.pipeline import ProviderStreamChunk
+from app.chat.pipeline import _to_source
 from app.rag.retriever import get_retriever
-from app.schemas import ChatRequest
-from app.storage import LocalFileStorage
+from app.api.schemas.chat_documents import ChatRequest
+from app.infrastructure.storage import LocalFileStorage
 from test_ingestion import MemoryRepository, DeterministicEmbeddings
 from test_chat_persistence import FakeMessageRepository
 
@@ -91,7 +91,7 @@ class ExcelAttachmentTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def upload(self, name="vehicles.xlsx", content=None, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"):
-        with patch("app.api.documents.create_document_service", return_value=self.service):
+        with patch("app.api.routes.documents.create_document_service", return_value=self.service):
             return TestClient(self.app).post("/documents/upload", files={"file": (name, content or workbook_bytes(), mime)})
 
     def test_real_multisheet_upload_indexes_and_retrieves_correct_row_and_metadata(self):
@@ -123,8 +123,8 @@ class ExcelAttachmentTests(unittest.TestCase):
     def test_versioned_preview_survives_new_active_version_and_has_readonly_tables(self):
         result = self.upload().json()
         self.service.update(result["document_id"], file_name="replacement.txt", content=b"Replacement text")
-        with patch("app.api.documents.MongoDocumentRepository", return_value=self.repository), \
-             patch("app.api.documents.create_file_storage", return_value=self.storage):
+        with patch("app.api.routes.documents.MongoDocumentRepository", return_value=self.repository), \
+             patch("app.api.routes.documents.create_file_storage", return_value=self.storage):
             response = TestClient(self.app).get(f"/documents/{result['document_id']}/versions/{result['version_id']}/preview")
         self.assertEqual(response.status_code, 200, response.text)
         preview = response.json()
@@ -162,8 +162,8 @@ class ExcelAttachmentTests(unittest.TestCase):
         result = self.upload().json()
         version = self.repository.versions[result["version_id"]]
         self.repository.versions[version.version_id] = version.model_copy(update={"status": DocumentStatus.FAILED})
-        with patch("app.api.chat.MongoDocumentRepository", return_value=self.repository), \
-             patch("app.api.chat.prepare_rag_stream") as prepare:
+        with patch("app.api.routes.chat.MongoDocumentRepository", return_value=self.repository), \
+             patch("app.api.routes.chat.prepare_rag_stream") as prepare:
             response = TestClient(self.app).post("/chat/stream", json={"question": "Question", "session_id": str(uuid4()),
                 "attachments": [{key: result[key] for key in ("document_id", "version_id")}]})
         self.assertEqual(response.status_code, 409)
@@ -180,11 +180,11 @@ class ExcelAttachmentTests(unittest.TestCase):
             with self.subTest(path=path):
                 messages = FakeMessageRepository()
                 service = ConversationService(messages)
-                with patch("app.api.chat.MongoDocumentRepository", return_value=self.repository), \
-                     patch("app.api.chat.create_conversation_service", return_value=service), \
-                     patch("app.api.chat.answer_question", return_value={"answer": "Answer", "sources": []}), \
-                     patch("app.api.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])), \
-                     patch("app.api.chat.astream_rag_answer", stream):
+                with patch("app.api.routes.chat.MongoDocumentRepository", return_value=self.repository), \
+                     patch("app.api.routes.chat.create_conversation_service", return_value=service), \
+                     patch("app.api.routes.chat.answer_question", return_value={"answer": "Answer", "sources": []}), \
+                     patch("app.api.routes.chat.prepare_rag_stream", return_value=SimpleNamespace(sources=[])), \
+                     patch("app.api.routes.chat.astream_rag_answer", stream):
                     response = TestClient(self.app).post(path, json={"question": "Explain", "session_id": str(uuid4()), "attachments": references})
                 self.assertEqual(response.status_code, 200, response.text)
                 user, assistant = messages.pair
@@ -252,7 +252,7 @@ class WorkbookValidationTests(unittest.TestCase):
             with self.assertRaises(WorkbookError):
                 read_workbook(content)
         for name, limit in (("MAX_XLSX_BYTES", 1), ("MAX_SHEETS", 1), ("MAX_ROWS", 2), ("MAX_CELLS", 1), ("MAX_XLSX_EXPANDED_BYTES", 1)):
-            with self.subTest(limit=name), patch(f"app.excel.{name}", limit), self.assertRaises(WorkbookError):
+            with self.subTest(limit=name), patch(f"app.documents.excel.validation.{name}", limit), self.assertRaises(WorkbookError):
                 read_workbook(workbook_bytes())
         stream = BytesIO(workbook_bytes())
         with ZipFile(stream, "a") as archive:
@@ -277,5 +277,5 @@ class WorkbookValidationTests(unittest.TestCase):
 
     def test_repeated_headers_cannot_amplify_ingestion_beyond_text_limits(self):
         for name in ("MAX_INGEST_CHARS", "MAX_ROW_CHARS"):
-            with self.subTest(limit=name), patch(f"app.excel.{name}", 1), self.assertRaises(WorkbookError):
+            with self.subTest(limit=name), patch(f"app.documents.excel.validation.{name}", 1), self.assertRaises(WorkbookError):
                 workbook_documents(workbook_bytes())
