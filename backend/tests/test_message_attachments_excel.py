@@ -28,7 +28,9 @@ from app.conversations.repository import MongoConversationRepository
 from app.conversations.service import ConversationService
 from app.documents.service import DocumentService
 from app.documents.models import DocumentStatus
-from app.documents.excel.validation import WorkbookError, read_workbook, workbook_documents, workbook_preview
+from app.documents.excel.validation import WorkbookError, read_workbook
+from app.rag.loaders.excel import workbook_documents
+from app.documents.excel.preview import workbook_preview
 from app.documents.ingestion import IngestionService
 from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
 from app.chat.pipeline import ProviderStreamChunk
@@ -277,5 +279,5 @@ class WorkbookValidationTests(unittest.TestCase):
 
     def test_repeated_headers_cannot_amplify_ingestion_beyond_text_limits(self):
         for name in ("MAX_INGEST_CHARS", "MAX_ROW_CHARS"):
-            with self.subTest(limit=name), patch(f"app.documents.excel.validation.{name}", 1), self.assertRaises(WorkbookError):
+            with self.subTest(limit=name), patch(f"app.rag.loaders.excel.{name}", 1), self.assertRaises(WorkbookError):
                 workbook_documents(workbook_bytes())

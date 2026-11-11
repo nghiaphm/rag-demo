@@ -5,7 +5,8 @@ from pathlib import Path
 from app.documents.attachment_models import MessageAttachment
 from app.documents.models import DocumentStatus
 from app.documents.repository import RepositoryNotFoundError
-from app.documents.excel.validation import MAX_XLSX_BYTES, workbook_preview
+from app.documents.excel.validation import MAX_XLSX_BYTES
+from app.documents.excel.preview import workbook_preview
 
 
 class AttachmentUnavailableError(ValueError):

@@ -8,7 +8,8 @@ from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_core.documents import Document
-from app.documents.excel.validation import MAX_XLSX_BYTES, WorkbookError, workbook_documents
+from app.documents.excel.validation import MAX_XLSX_BYTES, WorkbookError
+from app.rag.loaders.excel import workbook_documents
 SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".md", ".markdown", ".txt", ".xlsx"})
 
 

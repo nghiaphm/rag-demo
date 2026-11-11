@@ -1,11 +1,10 @@
-"""Bounded, read-only XLSX parsing shared by ingestion and versioned previews."""
+"""Bounded, read-only XLSX validation/parsing shared by ingestion and versioned previews."""
 
 from datetime import date, datetime, time
 from io import BytesIO
 import math
 from zipfile import ZipFile
 
-from langchain_core.documents import Document
 from openpyxl import load_workbook
 
 MAX_XLSX_BYTES = 10 * 1024 * 1024
@@ -15,8 +14,6 @@ MAX_ROWS = 20_000
 MAX_COLUMNS = 200
 MAX_CELLS = 250_000
 MAX_CELL_CHARS = 32_767
-MAX_INGEST_CHARS = 16 * 1024 * 1024
-MAX_ROW_CHARS = 64 * 1024
 XLSX_MIME_TYPES = frozenset({
     "", "application/octet-stream", "application/zip",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -92,47 +89,3 @@ def read_workbook(content: bytes, *, content_type: str | None = None) -> list[di
         raise
     except Exception as exc:
         raise WorkbookError("Không thể đọc workbook XLSX; file lỗi, được mã hóa hoặc sai định dạng.") from exc
-
-
-def workbook_documents(content: bytes) -> list[Document]:
-    documents = []
-    characters = 0
-    for sheet in read_workbook(content):
-        columns = sheet["columns"]
-        rows = sheet["rows"] or [(sheet["header_row"], columns)]
-        for index, values in rows:
-            lines = [f"{columns[i] if i < len(columns) and columns[i] else f'Column {i + 1}'}: {value}"
-                     for i, value in enumerate(values)]
-            text = f"Sheet: {sheet['name']}\nRow: {index}\n" + "\n".join(lines)
-            characters += len(text)
-            if len(text) > MAX_ROW_CHARS or characters > MAX_INGEST_CHARS:
-                raise WorkbookError("Nội dung bảng vượt giới hạn 65536 ký tự mỗi hàng hoặc 16777216 ký tự sau parse.")
-            documents.append(Document(page_content=text,
-                                      metadata={"sheet_name": sheet["name"], "row_index": index}))
-    return documents
-
-
-def workbook_preview(content: bytes) -> dict:
-    sheets = read_workbook(content)
-    budget = 256 * 1024
-    remaining_rows = 200
-    previews = []
-    for sheet in sheets:
-        truncated = len(sheet["rows"]) > min(50, remaining_rows) or len(sheet["columns"]) > 30
-
-        def bounded(value, limit):
-            nonlocal budget, truncated
-            length = min(limit, budget)
-            if len(value) > length:
-                truncated = True
-            result = value[:length]
-            budget -= len(result)
-            return result
-
-        columns = [bounded(column, 200) for column in sheet["columns"][:30]]
-        rows = [[bounded(value, 2000) for value in row[:30]]
-                for _, row in sheet["rows"][:min(50, remaining_rows)]]
-        remaining_rows -= len(rows)
-        previews.append({"name": sheet["name"], "columns": columns, "rows": rows,
-                         "total_rows": len(sheet["rows"]), "truncated": truncated})
-    return {"kind": "excel", "sheets": previews, "truncated": any(sheet["truncated"] for sheet in previews)}
