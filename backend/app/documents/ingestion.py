@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -24,7 +22,7 @@ from app.documents.repository import (
     RepositoryNotFoundError,
 )
 from app.infrastructure.qdrant_vector_index import QdrantVectorIndex
-from app.rag.embeddings import get_embeddings
+from app.rag.indexing import build_vector_records, embed_chunks, parse_and_split
 from app.rag.loaders.files import SUPPORTED_EXTENSIONS, load_document
 from app.rag.splitter import split_documents
 from app.documents.ports import FileStorage, StorageError, build_document_storage_key
@@ -33,8 +31,6 @@ from app.rag.vector_index import (
     VectorFilter,
     VectorIndex,
     VectorIndexError,
-    VectorRecord,
-    chunk_point_id,
 )
 
 
@@ -166,12 +162,12 @@ class IngestionService:
             raise IngestionError("missing_storage_key")
         suffix = Path(version.file_name).suffix.lower()
         try:
-            with tempfile.TemporaryDirectory(prefix="rag-ingestion-") as directory:
-                parse_path = Path(directory) / f"source{suffix}"
-                with self.storage.open(version.storage_key) as source, parse_path.open("wb") as target:
-                    shutil.copyfileobj(source, target)
-                documents = self.loader(parse_path)
-                chunks = self.splitter(documents)
+            chunks = parse_and_split(
+                lambda: self.storage.open(version.storage_key),
+                suffix=suffix,
+                loader=self.loader,
+                splitter=self.splitter,
+            )
         except (StorageError, OSError) as exc:
             raise IngestionError("raw_file_read_failed") from exc
         except IngestionError:
@@ -191,10 +187,7 @@ class IngestionService:
             self.repository.mark_processing(version.document_id, version.version_id, job.job_id)
             chunks = self._materialize_and_split(version)
             try:
-                embeddings = self.embeddings if self.embeddings is not None else get_embeddings()
-                vectors = embeddings.embed_documents(
-                    [chunk.page_content for chunk in chunks]
-                )
+                vectors = embed_chunks(chunks, self.embeddings)
             except Exception as exc:
                 raise IngestionError("embedding_failed") from exc
             if len(vectors) != len(chunks) or not vectors:
@@ -209,27 +202,13 @@ class IngestionService:
             # Version đang xử lý chưa active; cleanup này làm retry idempotent.
             version_filter = VectorFilter(version_id=version.version_id)
             self.vector_index.delete(version_filter)
-            records = [
-                VectorRecord(
-                    point_id=chunk_point_id(version.version_id, chunk_index),
-                    document_id=version.document_id,
-                    version_id=version.version_id,
-                    chunk_index=chunk_index,
-                    file_name=version.file_name,
-                    chunk_text=chunk.page_content,
-                    page=(
-                        None
-                        if chunk.metadata.get("page") is None
-                        else int(chunk.metadata["page"])
-                    ),
-                    vector=tuple(vector),
-                    sheet_name=chunk.metadata.get("sheet_name"),
-                    row_index=chunk.metadata.get("row_index"),
-                )
-                for chunk_index, (chunk, vector) in enumerate(
-                    zip(chunks, vectors, strict=True)
-                )
-            ]
+            records = build_vector_records(
+                document_id=version.document_id,
+                version_id=version.version_id,
+                file_name=version.file_name,
+                chunks=chunks,
+                vectors=vectors,
+            )
             self.vector_index.upsert(records)
             actual_count = self.vector_index.count(version_filter)
             if actual_count != len(chunks):
