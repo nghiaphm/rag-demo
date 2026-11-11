@@ -11,3 +11,5 @@ venv/
 
 # Runtime raw-file storage (source demo files at data/documents root stay tracked)
 data/documents/documents/
+
+.kilo/
