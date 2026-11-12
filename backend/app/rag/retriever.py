@@ -98,5 +98,7 @@ def get_retriever(
         embeddings=embeddings if embeddings is not None else get_embeddings(),
         repository=resolved_repository,
         active_version_ids=active_version_ids,
-        top_k=top_k if top_k is not None else settings.top_k,
+        top_k=top_k if top_k is not None else (
+            settings.reranker_candidate_top_k if getattr(settings, "reranker_enabled", False) else settings.top_k
+        ),
     )

@@ -39,8 +39,14 @@ class Settings(BaseSettings):
     chunk_size: int = 500
     chunk_overlap: int = 50
 
-    # ----- Retrieval -----
+    # ----- Retrieval & Reranking -----
     top_k: int = 5
+    reranker_enabled: bool = False
+    reranker_provider: str = "flashrank"
+    reranker_model: str = "ms-marco-TinyBERT-L-2-v2"
+    reranker_candidate_top_k: int = 15
+    reranker_relevance_threshold: float = 0.0
+    cohere_api_key: SecretStr | None = None
 
     # ----- History-aware context budget -----
     rag_context_window_tokens: int = 8192
@@ -192,6 +198,28 @@ class Settings(BaseSettings):
     def _validate_max_answer_chars(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("CHAT_MAX_ANSWER_CHARS phải lớn hơn 0")
+        return value
+
+    @field_validator("reranker_provider")
+    @classmethod
+    def _validate_reranker_provider(cls, value: str) -> str:
+        provider = value.strip().lower()
+        if provider not in ("flashrank", "cohere", "none"):
+            raise ValueError("RERANKER_PROVIDER phải là 'flashrank', 'cohere' hoặc 'none'")
+        return provider
+
+    @field_validator("reranker_candidate_top_k")
+    @classmethod
+    def _validate_candidate_top_k(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("RERANKER_CANDIDATE_TOP_K phải lớn hơn 0")
+        return value
+
+    @field_validator("reranker_relevance_threshold")
+    @classmethod
+    def _validate_relevance_threshold(cls, value: float) -> float:
+        if value < 0.0 or value > 1.0:
+            raise ValueError("RERANKER_RELEVANCE_THRESHOLD phải từ 0.0 đến 1.0")
         return value
 
     @field_validator(

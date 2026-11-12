@@ -38,6 +38,7 @@ from app.rag.prompt import (
     get_history_aware_rag_prompt,
 )
 from app.rag.retriever import get_retriever
+from app.rag.reranker import get_reranker
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ async def prepare_rag_request(
     database: Any,
     qdrant_client: Any,
     session_id: str | None = None,
+    reranker: Any | None = None,
 ) -> PreparedRagStream:
     """Load history/scope, rewrite retrieval query, retrieve and budget one prompt."""
     document_repository = MongoDocumentRepository(database)
@@ -88,6 +90,7 @@ async def prepare_rag_request(
         history_turns=history_turns,
         active_version_ids=active_version_ids,
         retriever=retriever,
+        reranker=reranker,
     )
 
 
@@ -99,6 +102,7 @@ async def prepare_rag_request_from_components(
     retriever: Any,
     query_rewriter: Any | None = None,
     budget_builder: ContextBudgetBuilder | None = None,
+    reranker: Any | None = None,
 ) -> PreparedRagStream:
     """Pure integration seam shared by production and isolated evaluation."""
     resolved_budget_builder = budget_builder or ContextBudgetBuilder(
@@ -114,7 +118,15 @@ async def prepare_rag_request_from_components(
     rewrite = await rewriter.rewrite(
         question, history_budget.history_turns
     )
-    documents = await asyncio.to_thread(retriever.invoke, rewrite.retrieval_query)
+    raw_documents = await asyncio.to_thread(retriever.invoke, rewrite.retrieval_query)
+    resolved_reranker = reranker if reranker is not None else get_reranker()
+    documents = await asyncio.to_thread(
+        resolved_reranker.rerank,
+        rewrite.retrieval_query,
+        raw_documents,
+        top_k=settings.top_k,
+        relevance_threshold=settings.reranker_relevance_threshold,
+    )
     budget = resolved_budget_builder.build(
         system=SYSTEM_INSTRUCTION,
         history_turns=history_turns,
