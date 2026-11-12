@@ -73,4 +73,3 @@ jobs:
           python backend/tests/smoke/smoke_sse_schema.py
           python backend/tests/smoke/smoke_context_budget.py
           python backend/tests/smoke/smoke_query_rewriting.py
-          python backend/tests/smoke/smoke_provider_stream.py

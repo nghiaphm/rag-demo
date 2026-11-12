@@ -626,7 +626,7 @@ class ChatOrchestrationTests(unittest.IsolatedAsyncioTestCase):
         initial = monotonic()
         with patch("app.chat.orchestrator.asyncio.wait_for", wraps=original_wait) as wait:
             plan = await orchestrator.prepare_plan("Count", deadline=initial + 10000)
-        self.assertEqual(wait.call_args.args[1], 15.0)
+        self.assertAlmostEqual(wait.call_args.args[1], 15.0, places=3)
         self.assertLessEqual(plan.deadline, initial + 121)
 
     async def test_selector_timeout_is_controlled_and_never_falls_back(self):

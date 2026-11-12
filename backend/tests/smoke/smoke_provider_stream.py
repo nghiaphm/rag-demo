@@ -36,6 +36,13 @@ async def _run() -> tuple[int, bool]:
 
 
 def main() -> int:
+    from app.shared.config import settings
+
+    key = settings.groq_api_key.get_secret_value().strip()
+    if not key or key == "gsk_xxxxxxxxxxxxxxxxxxxxxxxx" or "xxxx" in key:
+        print("SKIP: Groq API key is a placeholder; live provider stream smoke requires valid credentials.")
+        return 0
+
     try:
         count, usage_available = asyncio.run(asyncio.wait_for(_run(), timeout=60))
     except Exception as exc:  # noqa: BLE001 - do not expose provider response or credentials
@@ -43,7 +50,8 @@ def main() -> int:
         return 2
     print(
         "PASS: Groq/LangChain async stream emitted "
-        f"{count} valid text delta(s); usage_metadata={'present' if usage_available else 'absent'}.")
+        f"{count} valid text delta(s); usage_metadata={'present' if usage_available else 'absent'}."
+    )
     return 0
 
 

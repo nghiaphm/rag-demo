@@ -10,6 +10,7 @@ from qdrant_client.http.models import (
     FieldCondition,
     Filter,
     MatchAny,
+    MatchText,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -114,6 +115,21 @@ class QdrantVectorIndex(VectorIndex):
                         field_schema=PayloadSchemaType.KEYWORD,
                         wait=True,
                     )
+            if "chunk_text" not in info.payload_schema:
+                try:
+                    from qdrant_client.http.models import TextIndexParams, TokenizerType
+                    self._client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name="chunk_text",
+                        field_schema=TextIndexParams(
+                            type="text",
+                            tokenizer=TokenizerType.WORD,
+                            lowercase=True,
+                        ),
+                        wait=True,
+                    )
+                except Exception:
+                    pass
         except VectorIndexError:
             raise
         except Exception as exc:
@@ -201,6 +217,110 @@ class QdrantVectorIndex(VectorIndex):
             raise
         except Exception as exc:
             raise VectorIndexError("Không thể query vectors từ Qdrant") from exc
+
+    def query_hybrid(
+        self,
+        query_text: str,
+        query_vector: list[float] | tuple[float, ...] | None = None,
+        *,
+        limit: int,
+        filters: VectorFilter | None = None,
+        rrf_k: int = 60,
+    ) -> list[VectorSearchResult]:
+        if limit <= 0:
+            raise ValueError("limit phải lớn hơn 0")
+        try:
+            if not self._client.collection_exists(self.collection_name):
+                return []
+        except Exception as exc:
+            raise VectorIndexError("Không thể kiểm tra tồn tại collection trong Qdrant") from exc
+
+        # 1. Dense vector search
+        dense_results: list[VectorSearchResult] = []
+        if query_vector is not None:
+            dense_results = self.query(query_vector, limit=limit, filters=filters)
+
+        # 2. Keyword text match search
+        keyword_results: list[VectorSearchResult] = []
+        clean_text = query_text.strip()
+        if clean_text:
+            try:
+                base_filter = self._to_qdrant_filter(filters)
+                text_condition = FieldCondition(key="chunk_text", match=MatchText(text=clean_text))
+                if base_filter is None:
+                    keyword_filter = Filter(must=[text_condition])
+                else:
+                    must_list = list(base_filter.must or [])
+                    must_list.append(text_condition)
+                    keyword_filter = Filter(must=must_list)
+
+                records, _ = self._client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=keyword_filter,
+                    limit=limit,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                for record in records:
+                    payload = record.payload or {}
+                    try:
+                        keyword_results.append(
+                            VectorSearchResult(
+                                point_id=str(record.id),
+                                document_id=str(payload["document_id"]),
+                                version_id=str(payload["version_id"]),
+                                chunk_index=int(payload["chunk_index"]),
+                                file_name=str(payload["file_name"]),
+                                chunk_text=str(payload["chunk_text"]),
+                                page=None if payload.get("page") is None else int(payload["page"]),
+                                score=1.0,
+                                sheet_name=payload.get("sheet_name"),
+                                row_index=payload.get("row_index"),
+                            )
+                        )
+                    except (KeyError, TypeError, ValueError):
+                        continue
+            except Exception:
+                keyword_results = []
+
+        if not keyword_results:
+            return dense_results
+        if not dense_results:
+            return keyword_results
+
+        # 3. Reciprocal Rank Fusion (RRF)
+        scores: dict[str, float] = {}
+        doc_map: dict[str, VectorSearchResult] = {}
+
+        for rank, item in enumerate(dense_results, start=1):
+            scores[item.point_id] = scores.get(item.point_id, 0.0) + (1.0 / (rrf_k + rank))
+            doc_map[item.point_id] = item
+
+        for rank, item in enumerate(keyword_results, start=1):
+            scores[item.point_id] = scores.get(item.point_id, 0.0) + (1.0 / (rrf_k + rank))
+            if item.point_id not in doc_map:
+                doc_map[item.point_id] = item
+
+        sorted_ids = sorted(scores.keys(), key=lambda pid: scores[pid], reverse=True)[:limit]
+
+        fused: list[VectorSearchResult] = []
+        for pid in sorted_ids:
+            orig = doc_map[pid]
+            fused.append(
+                VectorSearchResult(
+                    point_id=orig.point_id,
+                    document_id=orig.document_id,
+                    version_id=orig.version_id,
+                    chunk_index=orig.chunk_index,
+                    file_name=orig.file_name,
+                    chunk_text=orig.chunk_text,
+                    score=float(scores[pid]),
+                    page=orig.page,
+                    sheet_name=orig.sheet_name,
+                    row_index=orig.row_index,
+                )
+            )
+        return fused
 
     def count(self, filters: VectorFilter) -> int:
         try:
