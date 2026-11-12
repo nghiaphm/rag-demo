@@ -13,19 +13,71 @@ multi-tenancy được defer, không phải yêu cầu chặn MVP single-user n�
 Frontend Next.js: [setup/run, API env và CORS](frontend/README.md),
 [demo smoke checklist và known limitations](docs/frontend-demo-readiness.md).
 
-## Kiến trúc hiện tại
+## Kiến trúc hiện tại (Modular Monolith & Ports and Adapters)
+
+Backend đã được tái cấu trúc toàn diện theo kiến trúc **Modular Monolith** kết hợp **Ports and Adapters (Hexagonal Architecture)**. Mã nguồn được chia thành các feature packages với ranh giới trách nhiệm rõ ràng, tuân thủ nguyên tắc phụ thuộc một chiều và được tự động bảo vệ bởi bộ kiểm thử kiến trúc tĩnh qua AST (`test_dependency_rules.py`).
 
 ```text
 Browser / Next.js workspace (gọi API trực tiếp)
   │
   ▼
-FastAPI
-  ├── Document APIs ── MongoDB metadata ── LocalFileStorage
-  │                         │
-  │                         └── parse/chunk/embed ── Qdrant Cloud
-  ├── Session/message models + indexes ── MongoDB Atlas ── whole-turn history loader
-  └── /chat + /chat/stream ── history/budget/rewrite ── scoped Qdrant ── Groq LLM
+FastAPI Application (backend/app/)
+  ├── api/ (HTTP transport, request/response DTOs, SSE adapter)
+  │     ├── routes/          ── chat.py, documents.py, sessions.py
+  │     ├── schemas/         ── chat_documents.py, conversations.py
+  │     └── streaming/       ── sse_schema.py, event_adapter.py, stream_metrics.py
+  │
+  ├── chat/ (Điều phối Chat, RAG context preparation, Intent & Budget)
+  │     ├── orchestrator.py  ── Tool calling / Intention resolution
+  │     ├── pipeline.py      ── Prepared context & Generation pipeline
+  │     ├── events.py        ── Domain stream events (transport-agnostic)
+  │     └── query_rewriting, context_budget, citation_mapping
+  │
+  ├── conversations/ (Quản lý phiên hội thoại & Lịch sử tin nhắn)
+  │     ├── models.py, indexes.py, repository.py, service.py, history.py
+  │
+  ├── documents/ (Quản lý tài liệu, Versioning, Attachment, Excel)
+  │     ├── models.py, indexes.py, repository.py, service.py, queries.py
+  │     ├── ingestion.py     ── Document lifecycle & version orchestration
+  │     ├── ports.py         ── FileStorage interface contract
+  │     ├── attachments.py, attachment_models.py, tool_handlers.py
+  │     └── excel/           ── validation.py (schema/limits) + preview.py
+  │
+  ├── rag/ (Xử lý kỹ thuật RAG trung lập)
+  │     ├── loaders/         ── files.py (PDF/TXT/MD), excel.py (Document rows)
+  │     ├── splitter.py, prompt.py, llm.py, embeddings.py, retriever.py
+  │     ├── indexing.py      ── Pure technical parse, embed, vector records
+  │     └── vector_index.py  ── VectorIndex interface port contract
+  │
+  ├── tool_use/ (Quản lý và thực thi Tool)
+  │     ├── contracts.py, executor.py
+  │
+  ├── infrastructure/ (Concrete Adapters & Cloud Lifecycle)
+  │     ├── mongo.py, qdrant.py, connections.py, status.py
+  │     ├── storage.py              ── LocalFileStorage (implements FileStorage)
+  │     └── qdrant_vector_index.py  ── QdrantVectorIndex (implements VectorIndex)
+  │
+  └── shared/ (Cấu hình & Exceptions toàn hệ thống)
+        └── config.py, errors.py
 ```
+
+### Các quy tắc phụ thuộc một chiều (Architectural Invariants)
+
+Hệ thống tuân thủ nghiêm ngặt các quy tắc phụ thuộc một chiều, được xác minh tự động bằng AST qua [test_dependency_rules.py](backend/tests/architecture/test_dependency_rules.py):
+1. **`api` → `chat`, `conversations`, `documents`, `shared`**: Lớp API chỉ làm nhiệm vụ transport, validation và chuyển tiếp cho service layer; không trực tiếp import concrete infrastructure.
+2. **`chat` → `rag`, `conversations`, `tool_use`, `shared`**: Không import `api`, `infrastructure`, hoặc `sse_schema`.
+3. **`documents` → `rag`, `tool_use`, `shared`**: Miền tài liệu chỉ giao tiếp với hạ tầng qua interface port `ports.py` (`FileStorage`) và `rag/vector_index.py` (`VectorIndex`).
+4. **`rag` → `shared`**: Miền RAG thuần túy kỹ thuật, không import concrete infrastructure (Qdrant client/Mongo client), không import `chat` hay `api`.
+5. **`tool_use` → `shared`**: Độc lập hoàn toàn, không phụ thuộc vào `documents`, `chat` hay `api`.
+6. **`infrastructure` → `shared`**: Triển khai các port interfaces (`documents/ports.py`, `rag/vector_index.py`); không import `api` hoặc `chat`.
+7. **`shared`**: Tự chứa (self-contained), không import bất kỳ module nghiệp vụ nội bộ nào.
+8. **SSE Streaming Isolation**: Duy nhất `api/streaming/` được phép import `sse_schema.py`. Lớp `chat` phát sinh domain events trung lập (`chat/events.py`), được `api/streaming/event_adapter.py` chuyển thành SSE wire format (`start → metadata → delta* → done/error`) hoặc JSON format.
+
+Tài liệu chi tiết về quá trình refactor:
+- [Quyết định kiến trúc ADR-01..06](docs/refactoring/REF-02-ARCHITECTURE-DECISIONS.md)
+- [Bảng đối chiếu module nguồn -> đích](docs/refactoring/REF-01-MODULE-MAPPING.md)
+- [Nhật ký di chuyển và giải pháp kỹ thuật](docs/refactoring/REF-03-MIGRATION-LOG.md)
+- [Báo cáo nghiệm thu kiến trúc mới](docs/refactoring/REF-04-ARCHITECTURE-VERIFICATION.md)
 
 - MongoDB là source of truth cho document identity, versions, status và `active_version_id`.
 - Qdrant là retrieval index có thể dựng lại từ raw files và MongoDB metadata.
@@ -49,9 +101,9 @@ FastAPI
 HTTP routes validate/map errors rồi gọi services; repositories thực hiện MongoDB operations,
 ingestion điều phối raw storage/parser/vector adapter. Các bước qua MongoDB, filesystem và
 Qdrant không nằm trong một distributed transaction. Nguồn chính:
-[main.py](backend/app/main.py), [ingestion.py](backend/app/ingestion.py),
-[conversation_service.py](backend/app/conversation_service.py),
-[pipeline.py](backend/app/rag/pipeline.py). UI routes và modules ở
+[main.py](backend/app/main.py), [documents/ingestion.py](backend/app/documents/ingestion.py),
+[conversations/service.py](backend/app/conversations/service.py),
+[chat/pipeline.py](backend/app/chat/pipeline.py), [chat/orchestrator.py](backend/app/chat/orchestrator.py). UI routes và modules ở
 [README frontend](frontend/README.md#kiến-trúc-frontend).
 
 ### Luồng history-aware RAG
@@ -83,11 +135,11 @@ output cap. Shared builder không đồng nghĩa JSON/SSE nhận guard cùng th�
 ### Document ingestion và immutable versions
 
 Hỗ trợ ingestion `.pdf`, `.txt`, `.md`, `.markdown`, `.xlsx`
-([loader.py](backend/app/rag/loader.py), [excel.py](backend/app/excel.py)). PDF load theo trang;
-Markdown xử lý như text; XLSX chuyển hàng thành text kèm sheet/row metadata, công thức giữ
-literal, không tính toán. XLSX có giới hạn 10 MiB và kiểm tra ZIP/workbook/sheet/row/cell.
+([loaders/files.py](backend/app/rag/loaders/files.py), [excel/validation.py](backend/app/documents/excel/validation.py), [loaders/excel.py](backend/app/rag/loaders/excel.py)). PDF load theo trang;
+Markdown xử lý như text; XLSX chuyển hàng thành text kèm sheet/row metadata qua [loaders/excel.py](backend/app/rag/loaders/excel.py), công thức giữ
+literal, không tính toán. XLSX có giới hạn 10 MiB và kiểm tra an toàn ZIP/workbook/sheet/row/cell qua [excel/validation.py](backend/app/documents/excel/validation.py); preview bảng phân trang tại [excel/preview.py](backend/app/documents/excel/preview.py).
 
-Upload lưu raw immutable → tạo document/version/job → parse/chunk → embed → ghi chunk plan →
+Upload lưu raw immutable → tạo document/version/job → ủy nhiệm [rag/indexing.py](backend/app/rag/indexing.py) parse/chunk/embed → ghi chunk plan →
 upsert Qdrant → kiểm tra count → publish `active_version_id`. Update và re-index tạo version mới;
 re-index đọc raw của active version, không sửa version cũ. Candidate lỗi thông thường không
 thay active version đã publish. DELETE unpublish trước cleanup vectors và giữ raw/versions/jobs.
@@ -95,8 +147,8 @@ thay active version đã publish. DELETE unpublish trước cleanup vectors và 
 Retry chỉ nhận version FAILED. Reconciler chưa bao phủ job PENDING hoặc PROCESSING chưa có
 chunk plan; selector giới hạn jobs trước khi lọc eligibility có thể bỏ đói job mới hơn.
 Không có bảo đảm tự phục hồi toàn bộ sau process crash hay mọi tình huống concurrent cleanup.
-Chi tiết: [ingestion.py](backend/app/ingestion.py),
-[document_repository.py](backend/app/document_repository.py), [giới hạn](#giới-hạn-hiện-tại).
+Chi tiết: [documents/ingestion.py](backend/app/documents/ingestion.py), [rag/indexing.py](backend/app/rag/indexing.py),
+[documents/repository.py](backend/app/documents/repository.py), [giới hạn](#giới-hạn-hiện-tại).
 
 ## Yêu cầu
 
@@ -151,8 +203,8 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 Không commit `.env`. Health checks và scripts không in URI, API keys hoặc raw provider
 exceptions.
 
-`create_file_storage` resolve path tương đối theo `PROJECT_ROOT`, không theo CWD; path tuyệt đối
-được giữ nguyên ([storage.py](backend/app/storage.py)). Giữ CWD rõ ràng cho lệnh/module/scripts.
+`create_file_storage` ([infrastructure/storage.py](backend/app/infrastructure/storage.py)) triển khai interface port `FileStorage` ([documents/ports.py](backend/app/documents/ports.py)) và resolve path tương đối theo `PROJECT_ROOT`, không theo CWD; path tuyệt đối
+được giữ nguyên. Giữ CWD rõ ràng cho lệnh/module/scripts.
 Chỉ browser được nhận `NEXT_PUBLIC_API_BASE_URL`; provider/database secrets thuộc backend.
 
 ## Chạy backend
@@ -259,7 +311,7 @@ Atomic ở đây chỉ là guard acquisition/sequence reservation trên một se
 Message-pair insertion, STREAMING transition, terminal write và release là các thao tác riêng,
 có compensation best-effort; không có exactly-once logical replay guarantee. Lỗi setup có thể
 để placeholder chưa terminal; lỗi release sau terminal write đã thành công có thể làm wire
-outcome khác history. Xem [stream lifecycle](#post-chatstream) và [assessment](RAG-CODEBASE-ASSESSMENT-0C.md).
+outcome khác history. Xem [stream lifecycle](#post-chatstream) và [assessment](docs/audits/RAG-CODEBASE-ASSESSMENT-0C.md).
 
 Khi request có `session_id`, retrieval chỉ dùng active versions thuộc scope lưu trên server.
 Whole-turn history gần nhất được chọn theo budget; query phụ thuộc context có thể được rewrite
@@ -321,7 +373,7 @@ không biến thành nút citation. Không suy ra semantic grounding từ UUID h
 tối đa 20, không trùng pair và bắt buộc có `session_id`. Backend kiểm tra version thuộc document,
 document chưa bị delete và version INDEXED; filename được resolve phía server. User message lưu
 IDs cùng filename và history trả lại references đó
-([attachment_models.py](backend/app/attachment_models.py), [attachments.py](backend/app/attachments.py)).
+([documents/attachment_models.py](backend/app/documents/attachment_models.py), [documents/attachments.py](backend/app/documents/attachments.py)).
 
 Ví dụ request body sau khi tạo session và upload/index thành công (thay các placeholder bằng UUID thật):
 
@@ -422,8 +474,8 @@ Deadline trên không bao phủ preparation, iterator close hay terminal persist
 Setup/encoder-prefix/send lỗi và hard process kill chưa có bảo đảm cleanup toàn diện;
 guard/placeholder có thể bị bỏ lại. Finalization bình thường ghi terminal trước khi emit terminal
 SSE, nhưng release lỗi sau commit có thể gây wire/history mismatch. Không có automatic stale-guard
-recovery. Tham khảo [chat.py](backend/app/api/chat.py),
-[conversation_service.py](backend/app/conversation_service.py).
+recovery. Tham khảo [api/routes/chat.py](backend/app/api/routes/chat.py),
+[conversations/service.py](backend/app/conversations/service.py), [api/streaming/event_adapter.py](backend/app/api/streaming/event_adapter.py).
 
 Mỗi request stream ghi một metric one-shot bằng monotonic clock: `first_event_ms`, nullable
 `first_content_ms`, `total_latency_ms`, `delta_count`, mode và safe outcome. Thời gian bắt đầu
@@ -502,7 +554,8 @@ control; ba source files ở root vẫn được track.
 
 Lệnh migration có thể ghi raw/MongoDB/Qdrant và gọi embeddings; chỉ chạy với data/namespace đã
 được duyệt. Kết quả lịch sử không bảo đảm rerun thành công. Nguồn:
-[manifest](backend/migration/demo_corpus.json), [migration](backend/app/data_migration.py).
+[manifest](backend/migration/demo_corpus.json), [migration](backend/app/documents/migrations/demo_corpus.py),
+[script](backend/scripts/migrate_demo_corpus.py).
 
 ## Verification
 
@@ -513,8 +566,8 @@ Các kết quả M/P/F phase bên dưới là **HISTORICAL_EVIDENCE**, không ph
 DESIGN_RISK là tình huống cần xác minh, không phải production incident đã chứng minh;
 source-confirmed defect cũng không nhất thiết đã được tái hiện runtime. Không có official test
 baseline 0C-A được công bố ở đây và không cộng các số test có thể overlap.
-[Assessment](RAG-CODEBASE-ASSESSMENT-0C.md) giữ 26 finding IDs với classification gốc;
-[kế hoạch reconciliation](README-GAP-REPORT-0D.md) không phải evidence chạy tests.
+[Assessment](docs/audits/RAG-CODEBASE-ASSESSMENT-0C.md) giữ 26 finding IDs với classification gốc;
+[kế hoạch reconciliation](docs/audits/README-GAP-REPORT-0D.md) không phải evidence chạy tests.
 
 ### Offline và tác động local
 
@@ -522,16 +575,23 @@ Kiểm tra offline/unit từ project root, không cần ghi dữ liệu cloud:
 
 ```powershell
 Push-Location backend
+# Chạy toàn bộ test suite (393 tests PASS: unit, integration, architecture)
 python -m unittest discover -s tests -v
-python -m unittest tests.test_history tests.test_context_budget `
-  tests.test_query_rewriting tests.test_rag_integration tests.test_history_evaluation -v
+
+# Chạy theo từng layer kiểm thử
+python -m unittest discover -s tests/unit -v
+python -m unittest discover -s tests/integration -v
+python -m unittest discover -s tests/architecture -v
+
 python -m compileall -q app evaluation scripts tests
 python -m pip check
 Pop-Location
-# Offline deterministic schema/budget/rewrite checks, từ project root
-python backend/scripts/smoke_sse_schema.py
-python backend/scripts/smoke_context_budget.py
-python backend/scripts/smoke_query_rewriting.py
+
+# Offline deterministic smoke checks, từ project root
+python backend/tests/smoke/smoke_sse_schema.py
+python backend/tests/smoke/smoke_context_budget.py
+python backend/tests/smoke/smoke_query_rewriting.py
+python backend/tests/smoke/smoke_provider_stream.py
 ```
 
 Unit fixtures dùng fakes/in-memory/temp files; `compileall` ghi bytecode/cache, `pip check` chỉ
@@ -558,53 +618,53 @@ python backend/scripts/verify_phase1.py
 python backend/scripts/verify_cutover.py
 
 # Vector adapter contract trên Qdrant Cloud
-python backend/scripts/smoke_vector_adapter.py
+python backend/tests/integration/smoke_vector_adapter.py
 
 # P2-01 models/indexes trên MongoDB Atlas; test data được cleanup chính xác
 python backend/scripts/init_mongodb_indexes.py
-python backend/scripts/smoke_conversation_models.py
+python backend/tests/integration/smoke_conversation_models.py
 
 # P2-02 Session APIs; isolated test session/messages được cleanup chính xác
-python backend/scripts/smoke_session_api.py
+python backend/tests/integration/smoke_session_api.py
 
 # P2-03 persistent /chat success/failure lifecycle; exact cleanup
-python backend/scripts/smoke_message_persistence.py
+python backend/tests/integration/smoke_message_persistence.py
 
 # P2-04 two concurrent HTTP requests + Atlas atomic guard
-python backend/scripts/smoke_session_concurrency.py
+python backend/tests/integration/smoke_session_concurrency.py
 
 # P2-05 restart persistence, ordering/pagination và failure/delete contracts
 python backend/scripts/verify_phase2.py
 
 # P3-01/P3-04 unified JSON contract, legacy projection, fallback, multi-document và safe failure
-python backend/scripts/smoke_response_contract.py
+python backend/tests/integration/smoke_response_contract.py
 
 # P3-02 read-only real Qdrant candidate → verified citation mapping
-python backend/scripts/smoke_citation_mapping.py
+python backend/tests/integration/smoke_citation_mapping.py
 
 # P4-01 stateless SSE với mocked answer; lifespan vẫn có thể tạo cloud indexes
-python backend/scripts/smoke_stream_endpoint.py
+python backend/tests/integration/smoke_stream_endpoint.py
 
 # P4-02 read-only Groq/LangChain async provider stream
-python backend/scripts/smoke_provider_stream.py
+python backend/tests/smoke/smoke_provider_stream.py
 
 # P4-03 Atlas persistent lifecycle (deterministic provider; exact cleanup)
-python backend/scripts/smoke_stream_lifecycle.py
+python backend/tests/integration/smoke_stream_lifecycle.py
 
 # P4-04 post-header error + timeout persistence on Atlas; exact cleanup
-python backend/scripts/smoke_stream_errors.py
+python backend/tests/integration/smoke_stream_errors.py
 
 # P4-05 latency metrics, empty/partial streams, reconstruction + Atlas persistence
-python backend/scripts/smoke_stream_metrics.py
+python backend/tests/integration/smoke_stream_metrics.py
 
 # P5-01 Atlas session scope, stable order, paging và whole-turn filtering
-python backend/scripts/smoke_history_loader.py
+python backend/tests/integration/smoke_history_loader.py
 
 # P5-04 live selected scope, budgeted history/context và citation provenance; exact cleanup
-python backend/scripts/smoke_rag_integration.py
+python backend/tests/integration/smoke_rag_integration.py
 
 # P5-05 paired baseline/history-aware trên isolated eval collection
-python backend/scripts/eval_history_cli.py --no-reindex
+python backend/evaluation/runner/eval_history_cli.py --no-reindex
 
 # M-06 cross-phase: real Atlas/Qdrant/embedding + deterministic rewrite/generation
 python backend/scripts/verify_m06.py
@@ -640,21 +700,21 @@ conditional rewrite gọi Groq. `--no-reindex` bỏ corpus writes nhưng vẫn t
 `--out` ghi file kết quả, nên dùng tên run mới thay vì ghi đè evidence có sẵn.
 
 ```powershell
-python backend/scripts/eval_cli.py
-python backend/scripts/eval_cli.py --no-reindex
-python backend/scripts/eval_cli.py --out backend/evaluation/results/run.json
-python backend/scripts/eval_history_cli.py --no-reindex
-python backend/scripts/eval_history_cli.py --no-reindex --retrieval-only --out backend/evaluation/results/run_retrieval.json
+python backend/evaluation/runner/eval_cli.py
+python backend/evaluation/runner/eval_cli.py --no-reindex
+python backend/evaluation/runner/eval_cli.py --out backend/evaluation/results/run.json
+python backend/evaluation/runner/eval_history_cli.py --no-reindex
+python backend/evaluation/runner/eval_history_cli.py --no-reindex --retrieval-only --out backend/evaluation/results/run_retrieval.json
 ```
 
-Lần chạy đầu cần `python backend/scripts/eval_history_cli.py` để index corpus eval nếu collection
+Lần chạy đầu cần `python backend/evaluation/runner/eval_history_cli.py` để index corpus eval nếu collection
 chưa có dữ liệu. Các lần sau dùng `--no-reindex`. Live generation tiêu thụ quota Groq; khi quota
 không khả dụng, `--retrieval-only` vẫn xác minh Qdrant retrieval, conditional rewrite và context
 budget nhưng cố ý ghi các metric answer/faithfulness/referent-answer là `null`. Conditional
 rewrite vẫn có thể gọi Groq; chế độ này không bảo đảm không dùng quota LLM.
 
-- Corpus: `backend/evaluation/corpus/`.
-- Golden set: 9 cases, gồm 7 in-document và 2 fallback.
+- Corpus: `backend/evaluation/datasets/corpus/`.
+- Golden set: 9 cases, gồm 7 in-document và 2 fallback tại `backend/evaluation/datasets/golden_set.json`.
 - Collection eval thực tế: `f"{settings.qdrant_collection[:250]}_eval"`. Với mặc định là
   `rag_documents_eval`. U01: application name gồm 250 ký tự hợp lệ + `_eval` (tổng 255) được
   config chấp nhận và có thể bằng chính derived eval name. Chưa có guard bảo đảm namespace
@@ -663,7 +723,7 @@ rewrite vẫn có thể gọi Groq; chế độ này không bảo đảm không 
   latency và token usage nếu provider trả metadata.
 - Provider errors được retry tối đa ba lần rồi ghi nhận theo case.
 
-P5-05 dùng `history_golden_set.json` với 5 nhóm: pronoun/follow-up, topic switch,
+P5-05 dùng `backend/evaluation/datasets/history_golden_set.json` với 5 nhóm: pronoun/follow-up, topic switch,
 long session, out-of-document và cross-document. Mỗi case chạy theo cặp baseline không có
 history và history-aware trên cùng collection eval, sau đó ghi retrieval hit/recall, fact
 coverage, faithfulness proxy, fallback/referent accuracy, context budget, latency và token.
@@ -694,8 +754,8 @@ Các giới hạn khi đọc kết quả:
   đầy đủ (U02). Latency/tokens lịch sử không phải retry-inclusive cost ledger; missing usage không
   có nghĩa zero cost.
 
-Nguồn: [eval_cli.py](backend/scripts/eval_cli.py), [eval_history_cli.py](backend/scripts/eval_history_cli.py),
-[metrics.py](backend/evaluation/metrics.py). Historical outputs:
+Nguồn: [eval_cli.py](backend/evaluation/runner/eval_cli.py), [eval_history_cli.py](backend/evaluation/runner/eval_history_cli.py),
+[metrics.py](backend/evaluation/scoring/metrics.py), [history_eval.py](backend/evaluation/scoring/history_eval.py). Historical outputs:
 [M-05](backend/evaluation/results/m05_qdrant_eval.json),
 [P5](backend/evaluation/results/p5_history_eval.json). Chưa có current end-to-end quality certification.
 
@@ -704,64 +764,93 @@ Nguồn: [eval_cli.py](backend/scripts/eval_cli.py), [eval_history_cli.py](backe
 ```text
 backend/
 ├── app/
-│   ├── api/                    # document/chat/session routes
-│   ├── rag/                    # parse/split/embed/retrieve; pipeline JSON/SSE dùng chung
-│   │   └── chain.py            # alternate LCEL chain cho single-turn evaluator
-│   ├── attachments.py         # resolve immutable refs + version preview
-│   ├── attachment_models.py
-│   ├── excel.py               # XLSX validation, row text và bounded preview
-│   ├── cloud_connections.py    # MongoDB/Qdrant lifecycle
-│   ├── conversation_models.py  # session/message persistence contract
-│   ├── conversation_indexes.py # stable ordering/query indexes
-│   ├── conversation_repository.py
-│   ├── conversation_service.py
-│   ├── conversation_schemas.py
-│   ├── history.py              # stable whole-turn loader + session scope
-│   ├── context_budget.py       # system/history/chunk/query/output allocations
-│   ├── query_rewriting.py      # conditional rewrite + grounded safe fallback
-│   ├── citation_mapping.py     # verified server-side source mapping
-│   ├── sse_schema.py           # typed SSE contract + reconstruction rules
-│   ├── stream_metrics.py       # first-event/content/total latency
-│   ├── document_models.py      # Mongo records/status
-│   ├── document_repository.py  # Mongo persistence
-│   ├── storage.py              # FileStorage + LocalFileStorage
-│   ├── ingestion.py            # raw → parse/chunk/embed → Qdrant → activate
-│   ├── vector_index.py         # backend-neutral vector contract
-│   ├── qdrant_ingestion.py     # Qdrant adapter
-│   └── data_migration.py       # idempotent demo migration
-├── evaluation/
-│   ├── corpus/                   # non-sensitive eval inputs; namespace caveat xem Evaluation
-│   ├── golden_set.json           # single-turn baseline cases
-│   ├── history_golden_set.json   # P5 multi-turn paired cases
-│   ├── history_eval.py           # deterministic scoring/summary helpers
-│   └── results/                  # timestamped and P5 reports
-├── migration/demo_corpus.json
-├── scripts/
-│   ├── migrate_demo_corpus.py
-│   ├── smoke_conversation_models.py
-│   ├── smoke_session_api.py
-│   ├── smoke_message_persistence.py
-│   ├── smoke_session_concurrency.py
-│   ├── smoke_response_contract.py
-│   ├── smoke_citation_mapping.py
-│   ├── smoke_sse_schema.py
-│   ├── verify_phase1.py
-│   ├── verify_phase2.py
-│   ├── verify_m06.py
-│   ├── verify_cutover.py
-│   ├── eval_cli.py
-│   └── eval_history_cli.py
-└── tests/
+│   ├── main.py                          # Composition root & FastAPI lifespan
+│   ├── api/                             # API Transport Layer
+│   │   ├── routes/                      # chat.py, documents.py, sessions.py
+│   │   ├── schemas/                     # chat_documents.py, conversations.py (DTOs)
+│   │   └── streaming/                   # sse_schema.py, event_adapter.py, stream_metrics.py
+│   ├── chat/                            # Application Orchestration & Pipeline
+│   │   ├── orchestrator.py              # Tool calling & user intention resolution
+│   │   ├── pipeline.py                  # RAG context preparation & prompt execution
+│   │   ├── events.py                    # Transport-agnostic domain streaming events
+│   │   ├── query_rewriting.py           # Context-aware query rewriting
+│   │   ├── context_budget.py            # Token budget allocation
+│   │   └── citation_mapping.py          # Grounded citation mapping
+│   ├── conversations/                   # Session & Message Persistence Domain
+│   │   ├── models.py                    # SessionRecord, MessageRecord entities
+│   │   ├── indexes.py                   # Compound MongoDB indexes
+│   │   ├── repository.py                # Mongo persistence repository
+│   │   ├── service.py                   # Application service & guard lifecycle
+│   │   └── history.py                   # Whole-turn history loader & session scope
+│   ├── documents/                       # Document Management Domain
+│   │   ├── models.py                    # DocumentRecord, DocumentVersionRecord entities
+│   │   ├── indexes.py                   # Document collection indexes
+│   │   ├── repository.py                # Mongo persistence repository
+│   │   ├── service.py                   # Document CRUD & versioning service
+│   │   ├── queries.py                   # Read queries cho Tool Use
+│   │   ├── ingestion.py                 # Document lifecycle & storage orchestration
+│   │   ├── ports.py                     # FileStorage interface contract
+│   │   ├── attachments.py, attachment_models.py
+│   │   ├── tool_handlers.py             # Tool execution handlers
+│   │   ├── excel/                       # validation.py (schema/limits) + preview.py
+│   │   └── migrations/                  # demo_corpus.py (ingestion demo corpus)
+│   ├── rag/                             # RAG Technical Processing
+│   │   ├── loaders/                     # files.py (PDF/TXT/MD), excel.py (Doc rows)
+│   │   ├── splitter.py                  # Text splitter
+│   │   ├── indexing.py                  # Parse, chunk, embed, vector records builder
+│   │   ├── embeddings.py                # Google Gemini embeddings adapter
+│   │   ├── retriever.py                 # Active-version scoped LangChain retriever
+│   │   ├── prompt.py                    # Prompt templates
+│   │   ├── llm.py                       # Groq ChatGroq LLM adapter
+│   │   ├── vector_index.py              # Neutral VectorIndex port contract
+│   │   └── chain.py                     # Legacy LCEL chain (cho alternate eval)
+│   ├── tool_use/                        # Tool Use Engine
+│   │   ├── contracts.py                 # ToolCall, ToolDefinition, ToolResult
+│   │   └── executor.py                  # Tool registry & execution router
+│   ├── infrastructure/                  # Concrete Adapters
+│   │   ├── mongo.py, qdrant.py          # Database clients lifecycle
+│   │   ├── connections.py, status.py    # Cloud connectivity status
+│   │   ├── storage.py                   # LocalFileStorage (implements FileStorage)
+│   │   └── qdrant_vector_index.py       # QdrantVectorIndex (implements VectorIndex)
+│   └── shared/                          # Cross-Cutting Concerns
+│       ├── config.py                    # Settings & PROJECT_ROOT
+│       └── errors.py                    # Base domain exceptions
+├── evaluation/                          # RAG Evaluation Suite
+│   ├── datasets/                        # golden_set.json, history_golden_set.json, corpus/
+│   ├── runner/                          # eval_cli.py, eval_history_cli.py
+│   ├── scoring/                         # metrics.py, history_eval.py
+│   └── results/                         # Eval reports
+├── scripts/                             # Operational & Verification Scripts
+│   ├── migrate_demo_corpus.py           # CLI nạp demo corpus
+│   ├── controlled_live_e2e.py           # Controlled live verification
+│   └── verify_*.py                      # Cutover, QA & Milestone verifications
+└── tests/                               # Comprehensive Automated Test Suite (393 tests)
+    ├── unit/                            # Unit tests logic nghiệp vụ (23 files)
+    ├── integration/                     # Integration tests & live smokes (30 files)
+    ├── smoke/                           # Deterministic offline smoke tests (4 files)
+    └── architecture/                    # test_dependency_rules.py (AST rule enforcer)
+
+docs/                                    # Project Documentation (xem docs/README.md)
+├── README.md                            # Mục lục tài liệu toàn dự án
+├── refactoring/                         # Tài liệu Backend Structural Refactoring
+│   ├── REF-00-BASELINE-AUDIT.md         # Audit baseline trước refactor
+│   ├── REF-01-MODULE-MAPPING.md         # Bảng đối chiếu module nguồn -> đích
+│   ├── REF-02-ARCHITECTURE-DECISIONS.md # Quyết định kiến trúc ADR-01..06
+│   ├── REF-03-MIGRATION-LOG.md          # Nhật ký di chuyển & xử lý lỗi
+│   └── REF-04-ARCHITECTURE-VERIFICATION.md # Báo cáo nghiệm thu kiến trúc mới
+├── acceptance/                          # Báo cáo nghiệm thu (R2-06A, R2-06B)
+├── audits/                              # Báo cáo kiểm toán hệ thống (0B, 0C, 0D, R0)
+├── archive/                             # Tài liệu lưu trữ (PROJECT_LOG_V1)
+└── changelog/ & bugs/                   # Lịch sử thay đổi & phân tích lỗi
 
 frontend/
-├── app/                       # /chat, /chat/[sessionId], /documents và root redirect
-├── components/                # workspace, document/attachment/citation UI
-├── hooks/                     # React state lifecycle
-├── lib/                       # API clients, controllers, SSE parser
-├── types/                     # DTOs
-├── tests/                     # Node và offline contract exporter
-├── e2e/                       # Playwright mock scenarios
-└── scripts/                   # mock/build/browser tooling
+├── app/                                 # Next.js App Router (/chat, /documents)
+├── components/                          # Workspace UI, attachments, citations
+├── hooks/                               # React lifecycle hooks
+├── lib/                                 # API clients, SSE parser, controllers
+├── types/                               # TypeScript DTOs
+├── tests/                               # Node tests & contract validation
+└── e2e/                                 # Playwright scenarios
 ```
 
 ## Rollback M-05
@@ -835,5 +924,5 @@ Không chạy `docker compose down -v` nếu còn cần rollback vì lệnh đó
   nhưng chưa enforce model-space identity. Same-dimension model drift là design risk, không phải
   bằng chứng collection hiện đang mixed. Không tự re-index application/eval data theo docs này.
 
-Chi tiết và classification của 26 findings ở [assessment](RAG-CODEBASE-ASSESSMENT-0C.md),
+Chi tiết và classification của 26 findings ở [assessment](docs/audits/RAG-CODEBASE-ASSESSMENT-0C.md),
 không được coi tất cả design risks là confirmed bugs hoặc các kết quả lịch sử là current PASS.
