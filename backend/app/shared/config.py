@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # ----- Streaming -----
     stream_timeout_seconds: float = 120.0
 
+    # ----- Tool orchestration & limits -----
+    tool_selector_timeout_seconds: float = 15.0
+    chat_turn_timeout_seconds: float = 120.0
+    chat_max_answer_chars: int = 1_000_000
+    provider_capability_status: str = "NOT_VERIFIED"
+
     # ----- Storage -----
     documents_dir: str = "./data/documents"
     storage_backend: str = "local"
@@ -172,6 +178,20 @@ class Settings(BaseSettings):
     def _validate_stream_timeout(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("STREAM_TIMEOUT_SECONDS phải lớn hơn 0")
+        return value
+
+    @field_validator("tool_selector_timeout_seconds", "chat_turn_timeout_seconds")
+    @classmethod
+    def _validate_chat_timeouts(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("Timeouts phải lớn hơn 0")
+        return value
+
+    @field_validator("chat_max_answer_chars")
+    @classmethod
+    def _validate_max_answer_chars(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("CHAT_MAX_ANSWER_CHARS phải lớn hơn 0")
         return value
 
     @field_validator(
