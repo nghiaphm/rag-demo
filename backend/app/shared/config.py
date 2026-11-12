@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # ----- Chunking -----
     chunk_size: int = 500
     chunk_overlap: int = 50
+    parent_child_enabled: bool = False
+    parent_chunk_size: int = 1200
+    parent_chunk_overlap: int = 100
+    child_chunk_size: int = 300
+    child_chunk_overlap: int = 30
 
     # ----- Retrieval & Reranking -----
     top_k: int = 5
@@ -47,6 +52,11 @@ class Settings(BaseSettings):
     reranker_candidate_top_k: int = 15
     reranker_relevance_threshold: float = 0.0
     cohere_api_key: SecretStr | None = None
+
+    # ----- Multi-Query Expansion -----
+    multi_query_enabled: bool = False
+    multi_query_count: int = 3
+    multi_query_timeout_seconds: float = 10.0
 
     # ----- Hybrid Search (Dense + Keyword BM25) -----
     hybrid_search_enabled: bool = False

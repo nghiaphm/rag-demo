@@ -39,6 +39,7 @@ from app.rag.prompt import (
 )
 from app.rag.retriever import get_retriever
 from app.rag.reranker import get_reranker
+from app.chat.multi_query import create_multi_query_expander
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,27 @@ class PreparedRagStream:
     rewrite: QueryRewriteResult | None = None
 
 
+async def _retrieve_for_queries(retriever: Any, queries: list[str]) -> list[Document]:
+    """Retrieve candidate documents across one or more expanded queries with deduplication."""
+    if not queries:
+        return []
+    if len(queries) == 1:
+        return await asyncio.to_thread(retriever.invoke, queries[0])
+
+    combined_docs: list[Document] = []
+    seen: set[Any] = set()
+    for q in queries:
+        docs = await asyncio.to_thread(retriever.invoke, q)
+        for doc in docs:
+            cid = doc.metadata.get("chunk_id")
+            pid = doc.metadata.get("parent_id")
+            key = cid or pid or (doc.metadata.get("version_id"), doc.metadata.get("chunk_index")) or doc.page_content
+            if key not in seen:
+                seen.add(key)
+                combined_docs.append(doc)
+    return combined_docs
+
+
 async def prepare_rag_request(
     question: str,
     *,
@@ -62,6 +84,7 @@ async def prepare_rag_request(
     qdrant_client: Any,
     session_id: str | None = None,
     reranker: Any | None = None,
+    multi_query_expander: Any | None = None,
 ) -> PreparedRagStream:
     """Load history/scope, rewrite retrieval query, retrieve and budget one prompt."""
     document_repository = MongoDocumentRepository(database)
@@ -91,6 +114,7 @@ async def prepare_rag_request(
         active_version_ids=active_version_ids,
         retriever=retriever,
         reranker=reranker,
+        multi_query_expander=multi_query_expander,
     )
 
 
@@ -103,6 +127,7 @@ async def prepare_rag_request_from_components(
     query_rewriter: Any | None = None,
     budget_builder: ContextBudgetBuilder | None = None,
     reranker: Any | None = None,
+    multi_query_expander: Any | None = None,
 ) -> PreparedRagStream:
     """Pure integration seam shared by production and isolated evaluation."""
     resolved_budget_builder = budget_builder or ContextBudgetBuilder(
@@ -118,7 +143,9 @@ async def prepare_rag_request_from_components(
     rewrite = await rewriter.rewrite(
         question, history_budget.history_turns
     )
-    raw_documents = await asyncio.to_thread(retriever.invoke, rewrite.retrieval_query)
+    expander = multi_query_expander or create_multi_query_expander(settings)
+    queries = await expander.expand(rewrite.retrieval_query)
+    raw_documents = await _retrieve_for_queries(retriever, queries)
     resolved_reranker = reranker if reranker is not None else get_reranker()
     documents = await asyncio.to_thread(
         resolved_reranker.rerank,
