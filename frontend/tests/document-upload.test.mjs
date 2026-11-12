@@ -181,8 +181,13 @@ test("pending UI has no progress percentage or fabricated backend state; indexed
 
 test("offline backend filename contract matches frontend validation for supported/invalid fixtures", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
+  const python = process.env.PYTHON || (fs.existsSync(path.join(root, ".venv", "Scripts", "python.exe"))
+    ? path.join(root, ".venv", "Scripts", "python.exe")
+    : (fs.existsSync(path.join(root, ".venv", "bin", "python"))
+        ? path.join(root, ".venv", "bin", "python")
+        : "python"));
   const names = ["fixture.pdf", "fixture.MD", "fixture.markdown", "fixture.txt", "fixture.xlsx", "fixture.exe", ".pdf", "../fixture.txt"];
-  const run = spawnSync(path.join(root, ".venv", "Scripts", "python.exe"), ["-c", String.raw`
+  const run = spawnSync(python, ["-c", String.raw`
 import json, socket, sys
 sys.path.insert(0, 'backend')
 def blocked(*args, **kwargs):
@@ -191,8 +196,8 @@ socket.socket.connect = blocked
 socket.socket.connect_ex = blocked
 socket.create_connection = blocked
 from fastapi import UploadFile, HTTPException
-from app.api.documents import _validated_file_name
-from app.rag.loader import SUPPORTED_EXTENSIONS
+from app.api.routes.documents import _validated_file_name
+from app.rag.loaders.files import SUPPORTED_EXTENSIONS
 values = []
 for name in json.loads(sys.argv[1]):
     try:

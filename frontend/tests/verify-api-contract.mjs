@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +8,11 @@ import ts from "typescript";
 // Offline schema parity check. No lifespan, cloud clients, provider calls or installs.
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = path.dirname(frontend);
-const python = path.join(root, ".venv", "Scripts", "python.exe");
+const python = process.env.PYTHON || (fs.existsSync(path.join(root, ".venv", "Scripts", "python.exe"))
+  ? path.join(root, ".venv", "Scripts", "python.exe")
+  : (fs.existsSync(path.join(root, ".venv", "bin", "python"))
+      ? path.join(root, ".venv", "bin", "python")
+      : "python"));
 const exported = spawnSync(python, ["-c", String.raw`
 import json, socket, sys
 from types import SimpleNamespace
@@ -19,8 +24,8 @@ socket.socket.connect_ex = blocked
 socket.create_connection = blocked
 from app.main import app, health, dependency_health
 import app.main as main
-from app.cloud_connections import ConnectionStatus
-from app.sse_schema import SSEStartEvent, SSEMetadataEvent, SSECitationEvent, SSEDeltaEvent, SSEDoneEvent, SSEErrorEvent
+from app.infrastructure.status import ConnectionStatus
+from app.api.streaming.sse_schema import SSEStartEvent, SSEMetadataEvent, SSECitationEvent, SSEDeltaEvent, SSEDoneEvent, SSEErrorEvent
 from pydantic import TypeAdapter
 spec = app.openapi()
 schemas = spec['components']['schemas'].copy()

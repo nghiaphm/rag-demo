@@ -98,10 +98,15 @@ function isStreamError(stage, kind, status = null) {
 
 test("error classification matches backend Python whitespace, preserves NEL/BOM and every delta", async () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
-  const python = spawnSync(path.join(root, ".venv", "Scripts", "python.exe"), ["-c",
+  const python = process.env.PYTHON || (fs.existsSync(path.join(root, ".venv", "Scripts", "python.exe"))
+    ? path.join(root, ".venv", "Scripts", "python.exe")
+    : (fs.existsSync(path.join(root, ".venv", "bin", "python"))
+        ? path.join(root, ".venv", "bin", "python")
+        : "python"));
+  const pythonRun = spawnSync(python, ["-c",
     "import json; print(json.dumps([chr(n) for n in range(0x110000) if chr(n).isspace()]))"], { encoding: "utf8" });
-  assert.equal(python.status, 0, "Existing Python whitespace reference must be available");
-  const whitespace = JSON.parse(python.stdout);
+  assert.equal(pythonRun.status, 0, "Existing Python whitespace reference must be available");
+  const whitespace = JSON.parse(pythonRun.stdout);
   for (const content of [...whitespace, whitespace.join(""), "\ufeff", " text\n"]) {
     const expected = content === "\ufeff" || content.includes("text") ? "PARTIAL" : "FAILED";
     const transcript = frame("start", eventData.start) + frame("metadata", eventData.metadata)

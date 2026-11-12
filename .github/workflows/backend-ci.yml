@@ -1,0 +1,76 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+      - ".env.example"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+      - ".env.example"
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-ci:
+    name: Backend CI (Architecture, Unit & Offline Tests)
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONPATH: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Check dependency integrity (pip check)
+        run: |
+          pip check
+
+      - name: Compile Python bytecode
+        run: |
+          python -m compileall -q backend/app backend/tests backend/evaluation backend/scripts
+
+      - name: Prepare environment configuration
+        run: |
+          cp .env.example .env
+
+      - name: Run Architecture Rules Tests
+        run: |
+          python -m unittest discover -s backend/tests/architecture -v
+
+      - name: Run Unit Tests
+        run: |
+          python -m unittest discover -s backend/tests/unit -v
+
+      - name: Run Integration Tests (Offline)
+        run: |
+          python -m unittest discover -s backend/tests/integration -v
+
+      - name: Run Offline Smoke Tests
+        run: |
+          python backend/tests/smoke/smoke_sse_schema.py
+          python backend/tests/smoke/smoke_context_budget.py
+          python backend/tests/smoke/smoke_query_rewriting.py
+          python backend/tests/smoke/smoke_provider_stream.py

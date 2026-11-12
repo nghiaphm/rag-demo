@@ -59,7 +59,11 @@ test("parses the backend LF transcript and preserves exact delta whitespace", ()
 });
 
 test("parses deterministic frames emitted by backend encode_sse_event", () => {
-  const python = path.join(root, ".venv", "Scripts", "python.exe");
+  const python = process.env.PYTHON || (fs.existsSync(path.join(root, ".venv", "Scripts", "python.exe"))
+    ? path.join(root, ".venv", "Scripts", "python.exe")
+    : (fs.existsSync(path.join(root, ".venv", "bin", "python"))
+        ? path.join(root, ".venv", "bin", "python")
+        : "python"));
   const generated = spawnSync(python, ["-c", String.raw`
 import socket, sys
 sys.path.insert(0, 'backend')
@@ -67,8 +71,8 @@ def blocked(*args, **kwargs): raise RuntimeError('F1-03: network disabled')
 socket.socket.connect = blocked
 socket.socket.connect_ex = blocked
 socket.create_connection = blocked
-from app.schemas import ChatError, ChatResponseMode
-from app.sse_schema import *
+from app.api.schemas.chat_documents import ChatError, ChatResponseMode
+from app.api.streaming.sse_schema import *
 events = [
   SSEStartEvent(data=SSEStartData(sequence=1, request_id='11111111-1111-4111-8111-111111111111', session_id=None, user_message_id=None, assistant_message_id=None, mode=ChatResponseMode.STATELESS)),
   SSEMetadataEvent(data=SSEMetadataData(sequence=2, model=None, sources=[])),

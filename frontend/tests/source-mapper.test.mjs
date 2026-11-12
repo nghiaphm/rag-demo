@@ -102,7 +102,12 @@ test("user messages never borrow assistant citation metadata", () => {
 });
 
 test("offline backend fixture verifies ordinal parity and actual PDF loader zero-based pages", () => {
-  const result = spawnSync(path.join(root, ".venv", "Scripts", "python.exe"), ["-c", String.raw`
+  const python = process.env.PYTHON || (fs.existsSync(path.join(root, ".venv", "Scripts", "python.exe"))
+    ? path.join(root, ".venv", "Scripts", "python.exe")
+    : (fs.existsSync(path.join(root, ".venv", "bin", "python"))
+        ? path.join(root, ".venv", "bin", "python")
+        : "python"));
+  const result = spawnSync(python, ["-c", String.raw`
 import json, socket, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, 'backend')
@@ -111,8 +116,8 @@ def blocked(*args, **kwargs):
 socket.socket.connect = blocked
 socket.socket.connect_ex = blocked
 socket.create_connection = blocked
-from app.citation_mapping import map_verified_citations
-from app.rag.loader import load_document
+from app.chat.citation_mapping import map_verified_citations
+from app.rag.loaders.files import load_document
 from pypdf import PdfWriter
 with tempfile.TemporaryDirectory() as folder:
     pdf = Path(folder) / 'fixture.pdf'
