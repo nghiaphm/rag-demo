@@ -240,10 +240,15 @@ async def _close(iterator: object) -> None:
 async def _wait(operation: Callable[[], Awaitable[Any]], deadline: float | None,
                 limit: float | None = None) -> Any:
     started = monotonic()
-    cutoff = deadline
     if limit is not None:
-        cutoff = started + limit if cutoff is None else min(cutoff, started + limit)
-    remaining = None if cutoff is None else cutoff - started
+        remaining = limit if deadline is None else min(limit, max(0.0, deadline - started))
+        cutoff = started + remaining
+    elif deadline is not None:
+        remaining = max(0.0, deadline - started)
+        cutoff = deadline
+    else:
+        remaining = None
+        cutoff = None
     if remaining is not None and remaining <= 0:
         raise ChatOrchestrationError("CHAT_TIMEOUT")
     try:

@@ -23,7 +23,11 @@ export const metadata: Metadata = {
   description: "Không gian hỏi đáp và quản lý tài liệu.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || null;
   return (
     <html
