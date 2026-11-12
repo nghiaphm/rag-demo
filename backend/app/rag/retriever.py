@@ -42,11 +42,22 @@ class QdrantActiveVersionRetriever(BaseRetriever):
         version_ids = self._allowed_versions()
         if not version_ids:
             return []
-        results = self.vector_index.query(
-            self.embeddings.embed_query(query),
-            limit=self.top_k,
-            filters=VectorFilter(version_ids=version_ids),
-        )
+        query_vector = self.embeddings.embed_query(query)
+        filters = VectorFilter(version_ids=version_ids)
+        if getattr(settings, "hybrid_search_enabled", False):
+            results = self.vector_index.query_hybrid(
+                query_text=query,
+                query_vector=query_vector,
+                limit=self.top_k,
+                filters=filters,
+                rrf_k=getattr(settings, "hybrid_rrf_k", 60),
+            )
+        else:
+            results = self.vector_index.query(
+                query_vector,
+                limit=self.top_k,
+                filters=filters,
+            )
         return [
             Document(
                 page_content=result.chunk_text,

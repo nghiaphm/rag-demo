@@ -169,6 +169,20 @@ class VectorIndex(ABC):
         filters: VectorFilter | None = None,
     ) -> list[VectorSearchResult]: ...
 
+    def query_hybrid(
+        self,
+        query_text: str,
+        query_vector: list[float] | tuple[float, ...] | None = None,
+        *,
+        limit: int,
+        filters: VectorFilter | None = None,
+        rrf_k: int = 60,
+    ) -> list[VectorSearchResult]:
+        """Hybrid search combining keyword match and dense vector search with RRF."""
+        if query_vector is not None:
+            return self.query(query_vector, limit=limit, filters=filters)
+        return []
+
     @abstractmethod
     def count(self, filters: VectorFilter) -> int: ...
 

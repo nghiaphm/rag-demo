@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     reranker_relevance_threshold: float = 0.0
     cohere_api_key: SecretStr | None = None
 
+    # ----- Hybrid Search (Dense + Keyword BM25) -----
+    hybrid_search_enabled: bool = False
+    hybrid_rrf_k: int = 60
+
     # ----- History-aware context budget -----
     rag_context_window_tokens: int = 8192
     rag_system_max_tokens: int = 1024
@@ -220,6 +224,13 @@ class Settings(BaseSettings):
     def _validate_relevance_threshold(cls, value: float) -> float:
         if value < 0.0 or value > 1.0:
             raise ValueError("RERANKER_RELEVANCE_THRESHOLD phải từ 0.0 đến 1.0")
+        return value
+
+    @field_validator("hybrid_rrf_k")
+    @classmethod
+    def _validate_hybrid_rrf_k(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("HYBRID_RRF_K phải lớn hơn 0")
         return value
 
     @field_validator(
