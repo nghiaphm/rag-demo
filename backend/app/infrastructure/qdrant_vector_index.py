@@ -208,6 +208,8 @@ class QdrantVectorIndex(VectorIndex):
                             score=float(point.score),
                             sheet_name=payload.get("sheet_name"),
                             row_index=payload.get("row_index"),
+                            parent_id=payload.get("parent_id"),
+                            parent_text=payload.get("parent_text"),
                         )
                     )
                 except (KeyError, TypeError, ValueError) as exc:
@@ -276,6 +278,8 @@ class QdrantVectorIndex(VectorIndex):
                                 score=1.0,
                                 sheet_name=payload.get("sheet_name"),
                                 row_index=payload.get("row_index"),
+                                parent_id=payload.get("parent_id"),
+                                parent_text=payload.get("parent_text"),
                             )
                         )
                     except (KeyError, TypeError, ValueError):
@@ -318,6 +322,8 @@ class QdrantVectorIndex(VectorIndex):
                     page=orig.page,
                     sheet_name=orig.sheet_name,
                     row_index=orig.row_index,
+                    parent_id=orig.parent_id,
+                    parent_text=orig.parent_text,
                 )
             )
         return fused

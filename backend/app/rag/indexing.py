@@ -65,6 +65,8 @@ def build_vector_records(
             vector=tuple(vector),
             sheet_name=chunk.metadata.get("sheet_name"),
             row_index=chunk.metadata.get("row_index"),
+            parent_id=chunk.metadata.get("parent_id"),
+            parent_text=chunk.metadata.get("parent_text"),
         )
         for chunk_index, (chunk, vector) in enumerate(
             zip(chunks, vectors, strict=True)

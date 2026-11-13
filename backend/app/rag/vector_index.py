@@ -46,6 +46,8 @@ class VectorRecord:
     page: int | None = None
     sheet_name: str | None = None
     row_index: int | None = None
+    parent_id: str | None = None
+    parent_text: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "point_id", canonical_uuid(self.point_id, "point_id"))
@@ -65,7 +67,7 @@ class VectorRecord:
             raise ValueError("page không được âm")
 
     def payload(self) -> dict[str, str | int | None]:
-        return {
+        data: dict[str, str | int | None] = {
             "document_id": self.document_id,
             "version_id": self.version_id,
             "chunk_id": self.point_id,
@@ -73,8 +75,14 @@ class VectorRecord:
             "file_name": self.file_name,
             "page": self.page,
             "chunk_text": self.chunk_text,
-            **({"sheet_name": self.sheet_name, "row_index": self.row_index} if self.sheet_name is not None else {}),
         }
+        if self.sheet_name is not None:
+            data["sheet_name"] = self.sheet_name
+            data["row_index"] = self.row_index
+        if self.parent_id is not None:
+            data["parent_id"] = self.parent_id
+            data["parent_text"] = self.parent_text
+        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +137,8 @@ class VectorSearchResult:
     page: int | None = None
     sheet_name: str | None = None
     row_index: int | None = None
+    parent_id: str | None = None
+    parent_text: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "point_id", canonical_uuid(self.point_id, "point_id"))

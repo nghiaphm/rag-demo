@@ -58,23 +58,37 @@ class QdrantActiveVersionRetriever(BaseRetriever):
                 limit=self.top_k,
                 filters=filters,
             )
-        return [
-            Document(
-                page_content=result.chunk_text,
-                metadata={
-                    "source": result.file_name,
-                    "file_name": result.file_name,
-                    "document_id": result.document_id,
-                    "version_id": result.version_id,
-                    "chunk_id": result.point_id,
-                    "chunk_index": result.chunk_index,
-                    "page": result.page,
-                    "score": result.score,
-                    **({"sheet_name": result.sheet_name, "row_index": result.row_index} if result.sheet_name is not None else {}),
-                },
+        documents: list[Document] = []
+        seen_parents: set[str] = set()
+        parent_child_active = getattr(settings, "parent_child_enabled", False)
+
+        for result in results:
+            if parent_child_active and result.parent_id and result.parent_text:
+                if result.parent_id in seen_parents:
+                    continue
+                seen_parents.add(result.parent_id)
+                content = result.parent_text
+            else:
+                content = result.chunk_text
+
+            documents.append(
+                Document(
+                    page_content=content,
+                    metadata={
+                        "source": result.file_name,
+                        "file_name": result.file_name,
+                        "document_id": result.document_id,
+                        "version_id": result.version_id,
+                        "chunk_id": result.point_id,
+                        "chunk_index": result.chunk_index,
+                        "page": result.page,
+                        "score": result.score,
+                        **({"sheet_name": result.sheet_name, "row_index": result.row_index} if result.sheet_name is not None else {}),
+                        **({"parent_id": result.parent_id} if result.parent_id is not None else {}),
+                    },
+                )
             )
-            for result in results
-        ]
+        return documents
 
 
 def get_retriever(
