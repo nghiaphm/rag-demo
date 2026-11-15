@@ -68,3 +68,19 @@ def build_document_storage_key(document_id: str, version_id: str) -> str:
     except (TypeError, ValueError, AttributeError) as exc:
         raise InvalidStorageKeyError("document_id và version_id phải là UUID hợp lệ") from exc
     return f"documents/{canonical_document_id}/{canonical_version_id}/original"
+
+
+class IngestionQueueError(Exception):
+    """Raised when enqueuing an async ingestion job fails."""
+
+
+class IngestionQueue(ABC):
+    """Port gửi tác vụ ingestion bất đồng bộ tới background worker (ARQ/Redis)."""
+
+    @abstractmethod
+    async def enqueue_ingestion(self, *, version_id: str, job_id: str) -> str | None:
+        """Đưa job xử lý document version vào hàng đợi và trả queue job ID."""
+
+    async def close(self) -> None:
+        """Đóng connection pool nếu adapter có giữ tài nguyên."""
+        return None

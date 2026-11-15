@@ -122,10 +122,10 @@ Mọi thay đổi trong 6 Phase bắt buộc tuân thủ các ràng buộc sau c
 **Mục tiêu**: Hoàn thiện luồng bất đồng bộ thực tế trên Backend và nâng cấp đầy đủ tính năng UX/UI trên Frontend, sẵn sàng triển khai.
 
 ### 5.1 Async Ingestion Worker (Redis + ARQ)
-- [ ] Thêm `arq` và `redis` vào `backend/requirements.txt`.
-- [ ] Xây dựng ARQ worker (`backend/app/workers/ingestion_worker.py`) xử lý tác vụ `parse -> chunk -> embed -> upsert Qdrant -> activate` bất đồng bộ ngoài HTTP request.
-- [ ] Cập nhật `POST /documents/upload` và `PUT /documents/{id}` trả về HTTP `202 Accepted` kèm `job_id` ngay lập tức (khi `ASYNC_INGESTION_ENABLED=true`).
-- [ ] Frontend `/documents` tự động polling hoặc cập nhật trạng thái real-time (`PENDING` $\rightarrow$ `PROCESSING` $\rightarrow$ `INDEXED`).
+- [x] Thêm `arq` và `redis` vào `backend/requirements.txt`.
+- [x] Xây dựng ARQ worker (`backend/app/workers/ingestion_worker.py`) xử lý tác vụ `parse -> chunk -> embed -> upsert Qdrant -> activate` bất đồng bộ ngoài HTTP request.
+- [x] Cập nhật `POST /documents/upload` và `PUT /documents/{id}` trả về HTTP `202 Accepted` kèm `job_id` ngay lập tức (khi `ASYNC_INGESTION_ENABLED=true`).
+- [x] Frontend `/documents` tự động polling hoặc cập nhật trạng thái real-time (`PENDING` $\rightarrow$ `PROCESSING` $\rightarrow$ `INDEXED`).
 
 ### 5.2 Document Scope Selector (Backend API + Frontend UI)
 - [ ] Mở API `PATCH /sessions/{session_id}/scope` hỗ trợ chuyển đổi giữa `ALL_ACTIVE` và `SELECTED_DOCUMENTS` (danh sách `document_ids` đã có sẵn ở `conversations/models.py`).

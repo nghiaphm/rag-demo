@@ -47,6 +47,7 @@ class IngestionResult:
     file_name: str
     num_chunks: int
     activated: bool
+    status: DocumentStatus = DocumentStatus.INDEXED
 
 
 class IngestionService:
@@ -80,20 +81,27 @@ class IngestionService:
             raise IngestionError("unsupported_file_type", "Định dạng file không được hỗ trợ.")
         return safe_name
 
-    def ingest(
+    def _prepare_upload(
         self,
         *,
         file_name: str,
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
-    ) -> IngestionResult:
+        owner_id: str | None = None,
+        allowed_roles: list[str] | None = None,
+    ) -> tuple[DocumentVersionRecord, IngestionJobRecord]:
         safe_name = self._safe_file_name(file_name)
         if not content:
             raise IngestionError("empty_file", "File rỗng.")
 
         if document_id is None:
-            document = DocumentRecord(file_name=safe_name, source_key=source_key)
+            document = DocumentRecord(
+                file_name=safe_name,
+                source_key=source_key,
+                owner_id=owner_id,
+                allowed_roles=list(allowed_roles or []),
+            )
             version_number = 1
         else:
             if source_key is not None:
@@ -139,6 +147,67 @@ class IngestionService:
                 raise IngestionError("metadata_create_failed") from exc
             raise
 
+        return version, job
+
+    def ingest(
+        self,
+        *,
+        file_name: str,
+        content: bytes,
+        document_id: str | None = None,
+        source_key: str | None = None,
+        owner_id: str | None = None,
+        allowed_roles: list[str] | None = None,
+    ) -> IngestionResult:
+        version, job = self._prepare_upload(
+            file_name=file_name,
+            content=content,
+            document_id=document_id,
+            source_key=source_key,
+            owner_id=owner_id,
+            allowed_roles=allowed_roles,
+        )
+        return self._process(version, job)
+
+    def prepare_ingest(
+        self,
+        *,
+        file_name: str,
+        content: bytes,
+        document_id: str | None = None,
+        source_key: str | None = None,
+        owner_id: str | None = None,
+        allowed_roles: list[str] | None = None,
+    ) -> IngestionResult:
+        """Lưu raw file & metadata (UPLOADED/PENDING) để worker xử lý bất đồng bộ."""
+        version, job = self._prepare_upload(
+            file_name=file_name,
+            content=content,
+            document_id=document_id,
+            source_key=source_key,
+            owner_id=owner_id,
+            allowed_roles=allowed_roles,
+        )
+        return IngestionResult(
+            document_id=version.document_id,
+            version_id=version.version_id,
+            job_id=job.job_id,
+            file_name=version.file_name,
+            num_chunks=0,
+            activated=False,
+            status=DocumentStatus.UPLOADED,
+        )
+
+    def process_version(self, version_id: str, job_id: str) -> IngestionResult:
+        """Thực thi pipeline parse -> chunk -> embed -> upsert -> activate cho worker."""
+        try:
+            version = self.repository.get_version(version_id)
+            job = self.repository.get_job(job_id)
+        except RepositoryError as exc:
+            raise IngestionError("metadata_read_failed") from exc
+        if self.repository.is_document_deleted(version.document_id):
+            self._fail_before_activation(version, job, "document_deleted")
+            raise IngestionError("document_deleted", "Document đã bị xóa/unpublish.")
         return self._process(version, job)
 
     def retry(self, version_id: str) -> IngestionResult:

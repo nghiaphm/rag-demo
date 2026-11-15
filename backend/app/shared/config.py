@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     rate_limit_requests_per_minute: int = 60
     max_tokens_per_turn: int = 8192
 
+    # ----- Async Ingestion Worker (Phase 5.1) -----
+    async_ingestion_enabled: bool = False
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:

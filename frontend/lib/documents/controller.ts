@@ -18,12 +18,20 @@ export interface DocumentsServices {
   get: (id: string, signal: AbortSignal) => Promise<DocumentDetail>;
 }
 
+export function hasPendingIngestion(state: DocumentsState): boolean {
+  const isPendingStatus = (status: string) => status === "UPLOADED" || status === "PROCESSING";
+  if (state.items.some(item => isPendingStatus(item.status))) return true;
+  if (state.detail && isPendingStatus(state.detail.status)) return true;
+  return state.detail?.versions.some(version => isPendingStatus(version.status)) ?? false;
+}
+
 export class DocumentsController {
   private state: DocumentsState = { status: "idle", items: [], includeDeleted: false, nextOffset: 0,
     hasMore: false, error: null, selectedId: null, detailStatus: "idle", detail: null, detailError: null };
   private readonly listeners = new Set<() => void>();
   private listAbort: AbortController | null = null;
   private detailAbort: AbortController | null = null;
+  private pollAbort: AbortController | null = null;
   constructor(private readonly services: DocumentsServices, private readonly pageSize = 20) {
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 500) throw new TypeError("Invalid document page size.");
   }
@@ -38,6 +46,8 @@ export class DocumentsController {
   }
   private async load(reset: boolean) {
     if (!reset && (this.listAbort || !this.state.hasMore)) return;
+    this.pollAbort?.abort();
+    this.pollAbort = null;
     this.listAbort?.abort();
     const abort = new AbortController();
     this.listAbort = abort;
@@ -102,7 +112,50 @@ export class DocumentsController {
       nextOffset: Math.max(0, this.state.nextOffset - (remove && existed ? 1 : 0)),
       detail, detailStatus: "ready", detailError: null });
   };
+  /** Silent background poll while documents are UPLOADED/PROCESSING; never wipes visible items. */
+  readonly refresh = async () => {
+    if (this.listAbort) return;
+    this.pollAbort?.abort();
+    const abort = new AbortController();
+    this.pollAbort = abort;
+    const limit = Math.min(500, Math.max(this.pageSize, this.state.items.length || this.pageSize));
+    const includeDeleted = this.state.includeDeleted;
+    const selectedId = this.state.selectedId;
+    try {
+      const items = await this.services.list({ offset: 0, limit, include_deleted: includeDeleted }, abort.signal);
+      if (abort.signal.aborted || this.pollAbort !== abort || this.listAbort) return;
+      let detail = this.state.detail;
+      let detailStatus = this.state.detailStatus;
+      if (selectedId && !this.detailAbort) {
+        try {
+          const refreshedDetail = await this.services.get(selectedId, abort.signal);
+          if (!abort.signal.aborted && this.state.selectedId === selectedId && refreshedDetail.document_id === selectedId) {
+            detail = refreshedDetail;
+            detailStatus = "ready";
+          }
+        } catch {
+          // Keep last known detail on transient poll error.
+        }
+      }
+      if (abort.signal.aborted || this.pollAbort !== abort) return;
+      this.publish({
+        ...this.state,
+        status: "ready",
+        items,
+        nextOffset: items.length,
+        hasMore: items.length === limit,
+        detail,
+        detailStatus,
+        error: null,
+      });
+    } catch {
+      // Silent poll failures leave existing UI intact; explicit reload surfaces errors.
+    } finally {
+      if (this.pollAbort === abort) this.pollAbort = null;
+    }
+  };
   dispose() {
+    this.pollAbort?.abort();
     this.listAbort?.abort();
     this.detailAbort?.abort();
   }

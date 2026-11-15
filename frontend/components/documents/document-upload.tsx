@@ -23,7 +23,9 @@ export function UploadFeedback({ state }: { state: UploadState }) {
     {state.result.status ? <DocumentStatusBadge status={state.result.status} /> : <p>Phản hồi chưa cung cấp trạng thái tài liệu.</p>}
     {state.result.status === "INDEXED" && state.result.activated
       ? <p>Phiên bản đã được index và kích hoạt theo phản hồi dịch vụ.</p>
-      : <p>Kiểm tra tài liệu trong danh sách để xem trạng thái và phiên bản hoạt động.</p>}
+      : state.result.status === "UPLOADED" || state.result.status === "PROCESSING"
+        ? <p>Tài liệu đã vào hàng đợi xử lý bất đồng bộ (Job: {state.result.job_id}). Danh sách sẽ tự động cập nhật trạng thái.</p>
+        : <p>Kiểm tra tài liệu trong danh sách để xem trạng thái và phiên bản hoạt động.</p>}
     <p className="break-all text-xs text-muted-foreground">Document: {state.result.document_id}<br />Version: {state.result.version_id}</p>
   </div>
   return null

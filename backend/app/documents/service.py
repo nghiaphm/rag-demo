@@ -85,6 +85,25 @@ class DocumentService:
             document_id=document_id, file_name=file_name, content=content
         )
 
+    def prepare_update(
+        self, document_id: str, *, file_name: str, content: bytes
+    ) -> IngestionResult:
+        """Tạo version mới ở trạng thái UPLOADED/PENDING để worker xử lý bất đồng bộ."""
+        return self.ingestion.prepare_ingest(
+            document_id=document_id, file_name=file_name, content=content
+        )
+
+    def mark_enqueue_failed(
+        self,
+        *,
+        document_id: str,
+        version_id: str,
+        job_id: str,
+        error_code: str = "queue_unavailable",
+    ) -> None:
+        """Ghi nhận lỗi hàng đợi để tránh version/job bị treo ở trạng thái UPLOADED."""
+        self.repository.mark_failed(document_id, version_id, job_id, error_code)
+
     def reindex(self, document_id: str) -> IngestionResult:
         document = self.repository.get_document(document_id)
         if document.status == DocumentStatus.DELETED:
