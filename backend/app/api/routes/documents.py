@@ -8,6 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.api.dependencies.auth import get_current_user
 from app.shared.auth import UserContext, can_access_resource
+from app.shared.config import settings
 
 from app.documents.repository import (
     RepositoryConflictError,
@@ -18,7 +19,7 @@ from app.documents.service import DocumentService, DocumentSummary, create_docum
 from app.documents.ingestion import IngestionError, IngestionResult
 from app.rag.loaders.files import SUPPORTED_EXTENSIONS
 from app.documents.attachments import AttachmentUnavailableError, preview_version
-from app.documents.ports import StorageError
+from app.documents.ports import IngestionQueueError, StorageError
 from app.documents.excel.validation import MAX_XLSX_BYTES, WorkbookError, read_workbook
 from app.api.schemas.chat_documents import (
     DocumentPreviewResponse,
@@ -75,8 +76,38 @@ def _index_response(result: IngestionResult) -> DocumentIndexInfo:
         job_id=result.job_id,
         file_name=result.file_name,
         num_chunks=result.num_chunks,
+        status=result.status,
         activated=result.activated,
     )
+
+
+async def _enqueue_async_ingestion(
+    request: Request,
+    service: DocumentService,
+    result: IngestionResult,
+    response: Response,
+) -> DocumentIndexInfo:
+    queue = getattr(request.app.state, "ingestion_queue", None)
+    if queue is None:
+        await run_in_threadpool(
+            service.mark_enqueue_failed,
+            document_id=result.document_id,
+            version_id=result.version_id,
+            job_id=result.job_id,
+        )
+        raise HTTPException(status_code=503, detail="Ingestion queue chưa sẵn sàng.")
+    try:
+        await queue.enqueue_ingestion(version_id=result.version_id, job_id=result.job_id)
+    except IngestionQueueError as exc:
+        await run_in_threadpool(
+            service.mark_enqueue_failed,
+            document_id=result.document_id,
+            version_id=result.version_id,
+            job_id=result.job_id,
+        )
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    response.status_code = 202
+    return _index_response(result)
 
 
 def _version_response(version) -> DocumentVersionInfo:
@@ -162,18 +193,39 @@ async def document_preview(document_id: UUID, version_id: UUID, request: Request
         raise HTTPException(status_code=503, detail="Document metadata unavailable") from exc
 
 
-@router.post("/upload", response_model=DocumentIndexInfo, status_code=201)
+@router.post(
+    "/upload",
+    response_model=DocumentIndexInfo,
+    status_code=201,
+    responses={202: {"model": DocumentIndexInfo, "description": "Async ingestion accepted"}},
+)
 async def upload_document(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
     current_user: UserContext | None = Depends(get_current_user),
 ) -> DocumentIndexInfo:
-    """Tạo document identity mới và index version đầu tiên."""
+    """Tạo document identity mới và index version đầu tiên (hoặc enqueue nếu async)."""
     file_name, content = await _read_upload(file)
     service = await _service(request)
+    kwargs = {"owner_id": current_user.user_id} if current_user is not None else {}
+    if settings.async_ingestion_enabled:
+        try:
+            result = await run_in_threadpool(
+                service.ingestion.prepare_ingest,
+                file_name=file_name,
+                content=content,
+                **kwargs,
+            )
+        except Exception as exc:
+            _handle_error(exc)
+        return await _enqueue_async_ingestion(request, service, result, response)
     try:
         result = await run_in_threadpool(
-            service.ingestion.ingest, file_name=file_name, content=content
+            service.ingestion.ingest,
+            file_name=file_name,
+            content=content,
+            **kwargs,
         )
     except Exception as exc:
         _handle_error(exc)
@@ -232,13 +284,32 @@ async def get_document(
     )
 
 
-@router.put("/{document_id}", response_model=DocumentIndexInfo, status_code=201)
+@router.put(
+    "/{document_id}",
+    response_model=DocumentIndexInfo,
+    status_code=201,
+    responses={202: {"model": DocumentIndexInfo, "description": "Async ingestion accepted"}},
+)
 async def update_document(
-    request: Request, document_id: UUID, file: UploadFile = File(...)
+    request: Request,
+    response: Response,
+    document_id: UUID,
+    file: UploadFile = File(...),
 ) -> DocumentIndexInfo:
     """Tạo immutable version mới từ raw file mới; active cũ được giữ nếu fail."""
     file_name, content = await _read_upload(file)
     service = await _service(request)
+    if settings.async_ingestion_enabled:
+        try:
+            result = await run_in_threadpool(
+                service.prepare_update,
+                str(document_id),
+                file_name=file_name,
+                content=content,
+            )
+        except Exception as exc:
+            _handle_error(exc)
+        return await _enqueue_async_ingestion(request, service, result, response)
     try:
         result = await run_in_threadpool(
             service.update,

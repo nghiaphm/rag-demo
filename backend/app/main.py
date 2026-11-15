@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import auth, chat, documents, sessions
 from app.infrastructure.connections import CloudConnections
+from app.infrastructure.ingestion_queue import get_ingestion_queue
 from app.infrastructure.observability import get_tracer
 from app.infrastructure.semantic_cache import get_rate_limiter, get_semantic_cache
 from app.shared.config import settings
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     app.state.tracer = get_tracer(settings)
     app.state.semantic_cache = get_semantic_cache(settings)
     app.state.rate_limiter = get_rate_limiter(settings)
+    app.state.ingestion_queue = get_ingestion_queue(settings)
     statuses = await run_in_threadpool(cloud_connections.connect_all)
     if statuses["mongodb"].ok:
         await run_in_threadpool(
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.ingestion_queue.close()
         app.state.tracer.flush()
         await run_in_threadpool(cloud_connections.close)
 
