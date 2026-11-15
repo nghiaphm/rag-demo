@@ -95,26 +95,26 @@ Mọi thay đổi trong 6 Phase bắt buộc tuân thủ các ràng buộc sau c
 **Mục tiêu**: Tăng tốc độ phản hồi bằng Semantic Cache và bảo mật dữ liệu doanh nghiệp bằng Auth/RBAC + Access-aware Retrieval + Bounded Execution.
 
 ### 4.1 Authentication & RBAC
-- [ ] Thêm model `User` & `Role` (`admin`, `editor`, `viewer` hoặc `department` tags) vào MongoDB (`backend/app/auth/` hoặc `conversations/`/`documents/`).
-- [ ] Xây dựng JWT Authentication (Login/Register/Refresh) và FastAPI dependency `get_current_user` (có `AUTH_ENABLED` flag hoặc override hook để không làm vỡ 460+ offline tests).
-- [ ] Gắn `owner_id` và `allowed_roles` vào `DocumentRecord`, `SessionRecord`, và Qdrant point payload.
+- [x] Thêm model `User` & `Role` (`admin`, `editor`, `viewer` hoặc `department` tags) vào MongoDB (`backend/app/auth/` hoặc `conversations/`/`documents/`).
+- [x] Xây dựng JWT Authentication (Login/Register/Refresh) và FastAPI dependency `get_current_user` (có `AUTH_ENABLED` flag hoặc override hook để không làm vỡ 460+ offline tests).
+- [x] Gắn `owner_id` và `allowed_roles` vào `DocumentRecord`, `SessionRecord`, và Qdrant point payload.
 
 ### 4.2 Access-aware Retrieval
-- [ ] Mở rộng `VectorFilter` trong `backend/app/rag/vector_index.py` và `_to_qdrant_filter` trong `qdrant_vector_index.py` để bắt buộc lọc theo `allowed_roles` / `owner_id` của user hiện tại ở mức Qdrant query.
-- [ ] Bảo vệ toàn bộ endpoints `/documents`, `/sessions`, `/chat` chống truy cập chéo (IDOR protection).
+- [x] Mở rộng `VectorFilter` trong `backend/app/rag/vector_index.py` và `_to_qdrant_filter` trong `qdrant_vector_index.py` để bắt buộc lọc theo `allowed_roles` / `owner_id` của user hiện tại ở mức Qdrant query.
+- [x] Bảo vệ toàn bộ endpoints `/documents`, `/sessions`, `/chat` chống truy cập chéo (IDOR protection).
 
 ### 4.3 RBAC-aware Semantic Cache
-- [ ] Định nghĩa port `SemanticCache` và triển khai adapter dùng **Redis** (hoặc Qdrant cache collection) tại `backend/app/infrastructure/semantic_cache.py`.
-- [ ] **Bảo mật Cache**: Cache key/filter bắt buộc phải phân vùng theo `permission_scope` (`allowed_roles`) và `active_version_snapshot` để tuyệt đối không rò rỉ câu trả lời giữa các user khác quyền (tránh Cache Poisoning).
-- [ ] Invalidate cache tự động khi có tài liệu mới được `INDEXED` hoặc bị `DELETE`.
+- [x] Định nghĩa port `SemanticCache` và triển khai adapter dùng **Redis** (hoặc Qdrant cache collection) tại `backend/app/infrastructure/semantic_cache.py`.
+- [x] **Bảo mật Cache**: Cache key/filter bắt buộc phải phân vùng theo `permission_scope` (`allowed_roles`) và `active_version_snapshot` để tuyệt đối không rò rỉ câu trả lời giữa các user khác quyền (tránh Cache Poisoning).
+- [x] Invalidate cache tự động khi có tài liệu mới được `INDEXED` hoặc bị `DELETE`.
 
 ### 4.4 Bounded Execution Hardening
-- [ ] Bổ sung giới hạn cứng: `MAX_AGENT_STEPS`, `MAX_TOKENS_PER_TURN` trong `ContextBudgetConfig` và Rate Limiting per-user trên Redis.
-- [ ] Viết test bảo mật & cache trong `backend/tests/unit/test_rbac_and_cache.py`.
+- [x] Bổ sung giới hạn cứng: `MAX_AGENT_STEPS`, `MAX_TOKENS_PER_TURN` trong `ContextBudgetConfig` và Rate Limiting per-user trên Redis.
+- [x] Viết test bảo mật & cache trong `backend/tests/unit/test_rbac_and_cache.py`.
 
 **Definition of Done (Phase 4)**:
-- [ ] User không thể retrieve hoặc preview tài liệu ngoài phân quyền RBAC.
-- [ ] Câu hỏi lặp lại (cùng quyền, cùng ngữ nghĩa $\ge 0.95$) trả về từ Semantic Cache trong `< 100ms`.
+- [x] User không thể retrieve hoặc preview tài liệu ngoài phân quyền RBAC.
+- [x] Câu hỏi lặp lại (cùng quyền, cùng ngữ nghĩa $\ge 0.95$) trả về từ Semantic Cache trong `< 100ms`.
 
 ---
 
