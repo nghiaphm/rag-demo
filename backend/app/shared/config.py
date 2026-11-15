@@ -101,6 +101,17 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # ----- Corrective RAG (Phase 2) -----
+    corrective_rag_enabled: bool = False
+    corrective_max_retries: int = 1
+    corrective_grader_model: str = "llama-3.1-8b-instant"
+    web_search_fallback_enabled: bool = False
+    tavily_api_key: SecretStr | None = None
+
+    # ----- Agentic Orchestration (Phase 3) -----
+    agentic_mode_enabled: bool = False
+    max_agent_steps: int = 4
+
     # ----- Auth, RBAC, Semantic Cache & Rate Limiting (Phase 4) -----
     auth_enabled: bool = False
     jwt_secret_key: SecretStr = SecretStr("dev-insecure-secret-change-in-production")

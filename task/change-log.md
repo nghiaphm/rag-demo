@@ -74,32 +74,74 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Phase 2 – Self-corrective Retrieval
-> **Trạng thái**: Chưa bắt đầu  
+> **Trạng thái**: Hoàn thành  
 > **Phạm vi**: `Retrieval Grader` · `Fallback` · `Query Correction` · `Evidence Evaluation`
 
 ### Thay đổi đã thực hiện
-- *(Chưa có cập nhật)*
+- **Self-corrective Retrieval (`backend/app/chat/corrective.py`)**:
+  - `RetrievalGrader`: Đánh giá độ liên quan (`RELEVANT` / `AMBIGUOUS` / `IRRELEVANT`) của chunks sau rerank (hỗ trợ cả LLM JSON grader có timeout fallback lẫn deterministic lexical grader offline).
+  - `QueryCorrector`: Viết lại câu truy vấn khi kết quả retrieval không đạt, đảm bảo không lặp lại các query đã thử trong `tried_queries`.
+  - `CorrectiveRagRunner`: Điều phối vòng lặp grade $\rightarrow$ correct $\rightarrow$ re-retrieve trong giới hạn `corrective_max_retries` và `deadline`, phát Langfuse spans (`retrieval_grade`, `query_correction`, `retrieval_grade_retry`, `web_search_fallback`) và `on_status` callback.
+  - `EvidenceEvaluator`: Kiểm tra post-generation groundedness giữa câu trả lời và chunks.
+- **Fallback Strategy & Web Search Port**:
+  - Định nghĩa port `WebSearchProvider` + `NoOpWebSearchProvider` tại `backend/app/rag/web_search.py` và adapter `TavilyWebSearchProvider` tại `backend/app/infrastructure/web_search.py` (bật qua `WEB_SEARCH_FALLBACK_ENABLED`).
+  - Khi hết retry và không bật web fallback, trả về strict grounded empty context để tránh hallucination.
+- **Pipeline & SSE Status Extension**:
+  - Tích hợp `CorrectiveRagRunner` vào `prepare_rag_request_from_components` trong `backend/app/chat/pipeline.py` (bật qua `CORRECTIVE_RAG_ENABLED`).
+  - Thêm `ChatStatusEvent` (`chat/events.py`), `SSEStatusEvent` (`api/streaming/sse_schema.py`), và `status_frame` (`api/streaming/event_adapter.py`) hoàn toàn tương thích ngược.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có cập nhật)*
+- **Thêm mới**:
+  - `backend/app/chat/corrective.py`
+  - `backend/app/rag/web_search.py`
+  - `backend/app/infrastructure/web_search.py`
+  - `backend/tests/unit/test_corrective_rag.py`
+- **Chỉnh sửa**:
+  - `backend/app/shared/config.py`
+  - `.env.example`
+  - `backend/app/chat/pipeline.py`
+  - `backend/app/chat/events.py`
+  - `backend/app/api/streaming/sse_schema.py`
+  - `backend/app/api/streaming/event_adapter.py`
 
 ### Kết quả kiểm thử
-- *(Chưa có cập nhật)*
+- **Architecture AST tests**: `9/9 PASS` (`tests/architecture`).
+- **Backend Unit tests**: `269/269 PASS` (`tests/unit`, gồm 11 tests mới trong `test_corrective_rag.py`).
+- **Backend Integration tests**: `153/153 PASS` (`tests/integration`).
 
 ---
 
 ## Phase 3 – Agentic Orchestration
-> **Trạng thái**: Chưa bắt đầu  
+> **Trạng thái**: Hoàn thành  
 > **Phạm vi**: `Single Agent` · `Tool Calling` · `Planning` · `Stateful Workflow` · `Iterative Retrieval`
 
 ### Thay đổi đã thực hiện
-- *(Chưa có cập nhật)*
+- **Agent Tool Registry & `rag_search`**:
+  - Mở rộng `backend/app/tool_use/contracts.py` với `rag_search` (`RagSearchArguments`) trong `ToolName`, `ALLOWED_TOOL_NAMES` và `validate_arguments`.
+  - Tạo `backend/app/chat/agent_tools.py` cung cấp `rag_search_tool_definition()`, `query_excel_table_tool_definition()`, `agent_tool_schemas()`, synchronous `create_rag_search_handler()` và `create_query_excel_handler()`.
+  - Tạo `backend/app/documents/excel/query.py` (`query_workbook_bytes`) hỗ trợ lọc theo cột và tổng hợp (`rows`, `count`, `sum`, `avg`, `min`, `max`) trên file `.xlsx` qua `read_workbook`.
+- **Stateful Iterative Agent Loop**:
+  - Tạo `backend/app/chat/agent.py` với `AgentState` (`messages`, `step_count`, `max_steps`, `collected_sources`, `tool_history`, `deadline`) và `AgenticRunner` thực thi vòng lặp **Plan $\rightarrow$ Tool Execution $\rightarrow$ Observe $\rightarrow$ Re-plan / Final Answer** (giới hạn `max_agent_steps`, tổng hợp cuối khi chạm trần bước, ghi trace spans & usage ledger).
+  - Nâng cấp `backend/app/chat/orchestrator.py` hỗ trợ `AGENTIC_MODE_ENABLED` và `MAX_AGENT_STEPS` (bảo toàn 100% hành vi legacy 1-round khi tắt cờ).
+  - Bổ sung `agentic_mode_enabled` và `max_agent_steps` vào `config.py` và `.env.example`.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có cập nhật)*
+- **Thêm mới**:
+  - `backend/app/chat/agent.py`
+  - `backend/app/chat/agent_tools.py`
+  - `backend/app/documents/excel/query.py`
+  - `backend/tests/unit/test_agentic_orchestrator.py`
+  - `backend/tests/unit/test_query_excel_table.py`
+- **Chỉnh sửa**:
+  - `backend/app/shared/config.py`
+  - `.env.example`
+  - `backend/app/tool_use/contracts.py`
+  - `backend/app/chat/orchestrator.py`
 
 ### Kết quả kiểm thử
-- *(Chưa có cập nhật)*
+- **Architecture AST tests**: `9/9 PASS` (`tests/architecture`).
+- **Backend Unit tests**: `276/276 PASS` (`tests/unit`, gồm `test_agentic_orchestrator.py` & `test_query_excel_table.py`).
+- **Backend Integration tests**: `153/153 PASS` (`tests/integration`).
 
 ---
 
@@ -119,7 +161,7 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 
 ### Kết quả kiểm thử
 - `tests/architecture`: **9/9 PASS**
-- `tests/unit`: **265/265 PASS** (bao gồm `test_rbac_and_cache.py`)
+- `tests/unit`: **283/283 PASS** (bao gồm `test_rbac_and_cache.py`)
 - `tests/integration`: **153/153 PASS**
 
 ---

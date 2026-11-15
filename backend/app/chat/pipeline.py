@@ -41,6 +41,7 @@ from app.rag.prompt import (
 from app.rag.retriever import get_retriever
 from app.rag.reranker import get_reranker
 from app.chat.multi_query import create_multi_query_expander
+from app.chat.corrective import CorrectiveOutcome, CorrectiveRagRunner
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class PreparedRagStream:
     active_version_ids: tuple[str, ...] = ()
     budget: BudgetedContext | None = None
     rewrite: QueryRewriteResult | None = None
+    corrective_outcome: CorrectiveOutcome | None = None
 
 
 async def _retrieve_for_queries(retriever: Any, queries: list[str]) -> list[Document]:
@@ -88,6 +90,7 @@ async def prepare_rag_request(
     multi_query_expander: Any | None = None,
     tracer: Tracer | None = None,
     trace: TraceContext | None = None,
+    corrective_runner: CorrectiveRagRunner | None = None,
 ) -> PreparedRagStream:
     """Load history/scope, rewrite retrieval query, retrieve and budget one prompt."""
     document_repository = MongoDocumentRepository(database)
@@ -120,6 +123,7 @@ async def prepare_rag_request(
         multi_query_expander=multi_query_expander,
         tracer=tracer,
         trace=trace,
+        corrective_runner=corrective_runner,
     )
 
 
@@ -135,6 +139,7 @@ async def prepare_rag_request_from_components(
     multi_query_expander: Any | None = None,
     tracer: Tracer | None = None,
     trace: TraceContext | None = None,
+    corrective_runner: CorrectiveRagRunner | None = None,
 ) -> PreparedRagStream:
     """Pure integration seam shared by production and isolated evaluation."""
     active_trace = trace or (tracer or NoOpTracer()).trace(
@@ -178,6 +183,32 @@ async def prepare_rag_request_from_components(
         )
         span.set_output({"selected_count": len(documents)})
 
+    final_retrieval_query = rewrite.retrieval_query
+    corrective_outcome: CorrectiveOutcome | None = None
+    if corrective_runner is not None or settings.corrective_rag_enabled:
+        runner = corrective_runner or CorrectiveRagRunner(max_retries=settings.corrective_max_retries)
+
+        async def _retrieve_and_rerank(retry_query: str) -> list[Document]:
+            retry_queries = await expander.expand(retry_query)
+            retry_raw = await _retrieve_for_queries(retriever, retry_queries)
+            return await asyncio.to_thread(
+                resolved_reranker.rerank,
+                retry_query,
+                retry_raw,
+                top_k=settings.top_k,
+                relevance_threshold=settings.reranker_relevance_threshold,
+            )
+
+        corrective_outcome = await runner.run(
+            question=question,
+            initial_query=rewrite.retrieval_query,
+            initial_documents=documents,
+            retrieve_and_rerank=_retrieve_and_rerank,
+            trace=active_trace,
+        )
+        documents = corrective_outcome.documents
+        final_retrieval_query = corrective_outcome.final_query
+
     with active_trace.span("context_budget", input={"candidate_count": len(documents)}) as span:
         budget = resolved_budget_builder.build(
             system=SYSTEM_INSTRUCTION,
@@ -205,11 +236,12 @@ async def prepare_rag_request_from_components(
         prompt_value=prompt_value,
         sources=[_to_source(document) for document in selected_documents],
         original_query=question,
-        retrieval_query=rewrite.retrieval_query,
+        retrieval_query=final_retrieval_query,
         history_turns=budget.history_turns,
         active_version_ids=active_version_ids,
         budget=budget,
         rewrite=rewrite,
+        corrective_outcome=corrective_outcome,
     )
 
 
