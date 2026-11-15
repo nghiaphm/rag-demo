@@ -8,12 +8,12 @@ from typing import Any, Callable, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-ToolName = Literal["count_documents", "list_documents", "rag_search"]
+ToolName = Literal["count_documents", "list_documents", "rag_search", "query_excel_table"]
 ToolErrorCode = Literal[
     "TOOL_UNKNOWN", "TOOL_INVALID_ARGUMENTS", "TOOL_QUERY_FAILED",
     "TOOL_TIMEOUT", "TOOL_OUTPUT_LIMIT", "TOOL_LIMIT_EXCEEDED",
 ]
-ALLOWED_TOOL_NAMES = frozenset({"count_documents", "list_documents", "rag_search"})
+ALLOWED_TOOL_NAMES = frozenset({"count_documents", "list_documents", "rag_search", "query_excel_table"})
 MAX_ARGUMENT_BYTES = 2 * 1024
 MAX_RESULT_BYTES = 8 * 1024
 MAX_BATCH_RESULT_BYTES = 16 * 1024
@@ -35,6 +35,21 @@ class RagSearchArguments(BaseModel):
 
     query: str = Field(min_length=1, max_length=1000, description="Focused search query for document chunks.")
     top_k: int = Field(default=5, ge=1, le=10, description="Maximum number of chunks to return.")
+
+
+class QueryExcelTableArguments(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    file_name: str | None = Field(default=None, min_length=1, max_length=255, description="Target .xlsx file name (optional if unambiguous).")
+    sheet_name: str | None = Field(default=None, min_length=1, max_length=128, description="Worksheet name (defaults to first sheet).")
+    filter_column: str | None = Field(default=None, min_length=1, max_length=128, description="Column header to filter rows by.")
+    filter_value: str | None = Field(default=None, min_length=1, max_length=255, description="Substring/value to match in filter_column (case-insensitive).")
+    aggregate_column: str | None = Field(default=None, min_length=1, max_length=128, description="Numeric column header for sum/avg/min/max.")
+    operation: Literal["rows", "count", "sum", "avg", "min", "max"] = Field(
+        default="rows",
+        description="Structured query operation: rows, count, sum, avg, min, or max.",
+    )
+    limit: int = Field(default=10, ge=1, le=25, description="Maximum rows returned when operation is rows.")
 
 
 class ToolError(TypedDict):
@@ -131,6 +146,7 @@ def validate_arguments(name: str, arguments: object) -> dict[str, Any]:
             "count_documents": CountDocumentsArguments,
             "list_documents": ListDocumentsArguments,
             "rag_search": RagSearchArguments,
+            "query_excel_table": QueryExcelTableArguments,
         }
         model = argument_models[name]
         return model.model_validate(value).model_dump()

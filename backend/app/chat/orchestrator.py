@@ -41,6 +41,7 @@ from app.chat.agent import AGENT_SYSTEM_INSTRUCTION, AgenticRunner
 from app.chat.agent_tools import (
     agent_tool_schemas,
     create_agent_tool_registry,
+    create_query_excel_handler,
     create_rag_search_handler,
 )
 
@@ -290,6 +291,7 @@ class ChatOrchestrator:
         agentic_mode: bool | None = None,
         max_agent_steps: int | None = None,
         rag_search_fn: Callable[[str, int], list[Any]] | None = None,
+        excel_loader_fn: Callable[[str | None], tuple[str, bytes]] | None = None,
     ) -> None:
         if type(tools_enabled) is not bool:
             raise ValueError("tools_enabled phải là boolean")
@@ -303,6 +305,7 @@ class ChatOrchestrator:
         self.agentic_mode = settings.agentic_mode_enabled if agentic_mode is None else agentic_mode
         self.max_agent_steps = settings.max_agent_steps if max_agent_steps is None else max_agent_steps
         self.rag_search_fn = rag_search_fn
+        self.excel_loader_fn = excel_loader_fn
 
     def _schemas(self) -> list[dict]:
         return [{"type": "function", "function": {
@@ -541,9 +544,15 @@ class ChatOrchestrator:
                         active_version_ids=plan.active_version_ids,
                         collected_sources=collected_sources,
                     )
+                    excel_handler = (
+                        create_query_excel_handler(excel_loader_fn=self.excel_loader_fn)
+                        if self.excel_loader_fn is not None
+                        else None
+                    )
                     registry = create_agent_tool_registry(
                         self.queries,
                         rag_search_handler=rag_handler,
+                        query_excel_handler=excel_handler,
                     )
                     runner = AgenticRunner(
                         model=plan.model,

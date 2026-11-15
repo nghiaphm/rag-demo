@@ -7,12 +7,14 @@ from typing import Any
 
 from langchain_core.documents import Document
 
+from app.documents.excel.query import query_workbook_bytes
 from app.documents.queries import DocumentQueries
 from app.documents.tool_handlers import create_document_tool_registry, document_tool_definitions
 from app.rag.reranker import get_reranker
 from app.rag.retriever import get_retriever
 from app.shared.config import settings
 from app.tool_use.contracts import (
+    QueryExcelTableArguments,
     RagSearchArguments,
     ToolContractError,
     ToolDefinition,
@@ -36,15 +38,37 @@ def rag_search_tool_definition() -> ToolDefinition:
     )
 
 
-def agent_tool_definitions(*, include_rag_search: bool = True) -> tuple[ToolDefinition, ...]:
+def query_excel_table_tool_definition() -> ToolDefinition:
+    """Tool schema allowing the Agent to filter or aggregate structured .xlsx tables."""
+    return ToolDefinition(
+        name="query_excel_table",
+        description=(
+            "Query structured rows or compute aggregations (count, sum, avg, min, max) "
+            "from an uploaded .xlsx spreadsheet, optionally filtering by a column value."
+        ),
+        arguments_type=QueryExcelTableArguments,
+    )
+
+
+def agent_tool_definitions(
+    *,
+    include_rag_search: bool = True,
+    include_excel_query: bool = True,
+) -> tuple[ToolDefinition, ...]:
     """Return tool definitions exposed to the Agentic Orchestrator."""
-    base = tuple(document_tool_definitions())
+    tools: list[ToolDefinition] = list(document_tool_definitions())
     if include_rag_search:
-        return (*base, rag_search_tool_definition())
-    return base
+        tools.append(rag_search_tool_definition())
+    if include_excel_query:
+        tools.append(query_excel_table_tool_definition())
+    return tuple(tools)
 
 
-def agent_tool_schemas(*, include_rag_search: bool = True) -> list[dict[str, Any]]:
+def agent_tool_schemas(
+    *,
+    include_rag_search: bool = True,
+    include_excel_query: bool = True,
+) -> list[dict[str, Any]]:
     """OpenAI-compatible function tool schemas for model.bind_tools()."""
     return [
         {
@@ -55,7 +79,10 @@ def agent_tool_schemas(*, include_rag_search: bool = True) -> list[dict[str, Any
                 "parameters": definition.input_schema(),
             },
         }
-        for definition in agent_tool_definitions(include_rag_search=include_rag_search)
+        for definition in agent_tool_definitions(
+            include_rag_search=include_rag_search,
+            include_excel_query=include_excel_query,
+        )
     ]
 
 
@@ -142,15 +169,54 @@ def create_rag_search_handler(
     return _rag_search
 
 
+def create_query_excel_handler(
+    *,
+    excel_loader_fn: Callable[[str | None], tuple[str, bytes]] | None = None,
+) -> ToolHandler:
+    """Build a synchronous ToolExecutor-compatible query_excel_table handler."""
+
+    def _query_excel(arguments: object) -> ToolEnvelope:
+        try:
+            values = validate_arguments("query_excel_table", arguments)
+        except ToolContractError as exc:
+            return failure_result("query_excel_table", exc.code)
+
+        if excel_loader_fn is None:
+            return failure_result("query_excel_table", "TOOL_QUERY_FAILED")
+
+        try:
+            resolved_name, content = excel_loader_fn(values.get("file_name"))
+            result = query_workbook_bytes(
+                content,
+                sheet_name=values.get("sheet_name"),
+                filter_column=values.get("filter_column"),
+                filter_value=values.get("filter_value"),
+                aggregate_column=values.get("aggregate_column"),
+                operation=values.get("operation", "rows"),
+                limit=int(values.get("limit", 10)),
+            )
+            result["file_name"] = resolved_name
+            return success_result("query_excel_table", result)
+        except ValueError:
+            return failure_result("query_excel_table", "TOOL_INVALID_ARGUMENTS")
+        except Exception:
+            return failure_result("query_excel_table", "TOOL_QUERY_FAILED")
+
+    return _query_excel
+
+
 def create_agent_tool_registry(
     queries: DocumentQueries | None,
     *,
     rag_search_handler: ToolHandler | None = None,
+    query_excel_handler: ToolHandler | None = None,
 ) -> dict[str, ToolHandler]:
-    """Assemble combined read-only document + rag_search registry for AgenticRunner."""
+    """Assemble combined read-only document + rag_search + query_excel_table registry."""
     registry: dict[str, ToolHandler] = {}
     if queries is not None:
         registry.update(create_document_tool_registry(queries))
     if rag_search_handler is not None:
         registry["rag_search"] = rag_search_handler
+    if query_excel_handler is not None:
+        registry["query_excel_table"] = query_excel_handler
     return registry
