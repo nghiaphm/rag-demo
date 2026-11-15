@@ -8,8 +8,10 @@ from typing import Any
 from uuid import UUID
 
 from anyio import from_thread
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from app.api.dependencies.auth import get_current_user
+from app.shared.auth import UserContext
 from app.documents.attachments import AttachmentUnavailableError, resolve_attachments
 from app.documents.repository import MongoDocumentRepository, RepositoryError
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -55,6 +57,19 @@ from app.api.streaming.stream_metrics import StreamMetricTracker, record_stream_
 
 
 router = APIRouter(tags=["chat"])
+
+
+async def _enforce_rate_limit(request: Request, current_user: UserContext | None) -> None:
+    if not settings.rate_limit_enabled:
+        return
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if limiter is None:
+        return
+    client_host = getattr(getattr(request, "client", None), "host", None) or "anonymous"
+    key = current_user.user_id if current_user is not None else client_host
+    allowed = await limiter.allow(key, limit=settings.rate_limit_requests_per_minute, window_seconds=60)
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Quá giới hạn số lượt yêu cầu. Vui lòng thử lại sau.")
 
 
 def _finish_stream_metric(
@@ -290,8 +305,13 @@ async def _answer_with_tools(
     response_model=ChatResponse,
     responses={502: {"model": ChatResponse, "description": "Generation failed"}},
 )
-async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONResponse:
+async def chat(
+    payload: ChatRequest,
+    request: Request,
+    current_user: UserContext | None = Depends(get_current_user),
+) -> ChatResponse | JSONResponse:
     """Trả lời câu hỏi bằng RAG pipeline (retrieve top-k -> prompt -> LLM)."""
+    await _enforce_rate_limit(request, current_user)
     persistent = payload.session_id is not None
     request_id = new_uuid()
     tools_enabled = settings.tool_use_enabled
@@ -403,9 +423,12 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
     },
 )
 async def chat_stream(
-    payload: ChatRequest, request: Request
+    payload: ChatRequest,
+    request: Request,
+    current_user: UserContext | None = Depends(get_current_user),
 ) -> StreamingResponse | JSONResponse:
     """P4-04 SSE endpoint with bounded provider execution and safe termination."""
+    await _enforce_rate_limit(request, current_user)
     persistent = payload.session_id is not None
     request_id = new_uuid()
     tracker = StreamMetricTracker()

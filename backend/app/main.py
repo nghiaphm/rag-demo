@@ -10,9 +10,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import chat, documents, sessions
+from app.api.routes import auth, chat, documents, sessions
 from app.infrastructure.connections import CloudConnections
 from app.infrastructure.observability import get_tracer
+from app.infrastructure.semantic_cache import get_rate_limiter, get_semantic_cache
 from app.shared.config import settings
 from app.conversations.indexes import initialize_conversation_indexes
 from app.documents.indexes import initialize_document_indexes
@@ -24,6 +25,8 @@ async def lifespan(app: FastAPI):
     cloud_connections = CloudConnections(settings)
     app.state.cloud_connections = cloud_connections
     app.state.tracer = get_tracer(settings)
+    app.state.semantic_cache = get_semantic_cache(settings)
+    app.state.rate_limiter = get_rate_limiter(settings)
     statuses = await run_in_threadpool(cloud_connections.connect_all)
     if statuses["mongodb"].ok:
         await run_in_threadpool(
@@ -48,8 +51,13 @@ app.add_middleware(
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_headers=(
+        ["Content-Type", "Authorization"]
+        if settings.auth_enabled
+        else ["Content-Type"]
+    ),
 )
+app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(sessions.router)
