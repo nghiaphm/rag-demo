@@ -101,6 +101,20 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # ----- Auth, RBAC, Semantic Cache & Rate Limiting (Phase 4) -----
+    auth_enabled: bool = False
+    jwt_secret_key: SecretStr = SecretStr("dev-insecure-secret-change-in-production")
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_minutes: int = 60 * 24 * 7
+    semantic_cache_enabled: bool = False
+    semantic_cache_similarity_threshold: float = 0.95
+    semantic_cache_ttl_seconds: int = 3600
+    redis_url: str = "redis://localhost:6379/0"
+    rate_limit_enabled: bool = False
+    rate_limit_requests_per_minute: int = 60
+    max_tokens_per_turn: int = 8192
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:

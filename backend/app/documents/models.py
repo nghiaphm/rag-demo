@@ -60,6 +60,8 @@ class DocumentRecord(MongoRecord):
     active_version_id: str | None = None
     status: DocumentStatus = DocumentStatus.UPLOADED
     cleanup_pending: bool = False
+    owner_id: str | None = Field(default=None, min_length=1, max_length=128)
+    allowed_roles: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     deleted_at: datetime | None = None
