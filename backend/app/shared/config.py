@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     web_search_fallback_enabled: bool = False
     tavily_api_key: SecretStr | None = None
 
+    # ----- Agentic Orchestration (Phase 3) -----
+    agentic_mode_enabled: bool = False
+    max_agent_steps: int = 4
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:
