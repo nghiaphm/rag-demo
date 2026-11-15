@@ -1,0 +1,144 @@
+# RAG Workspace — Implementation Change Log
+
+Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định kỹ thuật, các file được thêm/chỉnh sửa và kết quả kiểm thử qua từng Phase nâng cấp để phục vụ review và đối chiếu.
+
+---
+
+## Baseline (Pre-Phase 1) — Trạng thái trước khi bắt đầu nâng cấp
+- **Thời điểm**: 2026-11-15 (Nhánh `refactor/architecture`, commit `6b26dd7`)
+- **Kiến trúc hiện hữu**:
+  - Backend FastAPI **Modular Monolith** theo **Ports & Adapters (Hexagonal Architecture)** với AST dependency rules (`tests/architecture/test_dependency_rules.py`).
+  - **Advanced RAG** đã hoàn thành:
+    - Post-retrieval Reranker (`backend/app/rag/reranker.py` — FlashRank ONNX, Cohere, PassThrough).
+    - Hybrid Search Dense + BM25 Keyword với Reciprocal Rank Fusion (`backend/app/infrastructure/qdrant_vector_index.py`).
+    - Parent-Child Hierarchical Chunking (`backend/app/rag/splitter.py`, `backend/app/rag/retriever.py`).
+    - Multi-Query Expansion (`backend/app/chat/multi_query.py`, `backend/app/chat/pipeline.py`).
+  - **Tool Use**: Groq Selector (`tool_choice="auto"`) + `ToolExecutor` (`count_documents`, `list_documents`) trong `backend/app/tool_use/` và `backend/app/documents/tool_handlers.py`.
+  - **Frontend**: Next.js 16 (App Router) + React 19 + Tailwind CSS v4 + SSE streaming + Mock API server.
+  - **Documentation**: Đã chuẩn hóa 3 file `README.md` (`README.md`, `backend/README.md`, `frontend/README.md`) bằng tiếng Anh.
+- **Trạng thái kiểm thử Baseline**:
+  - Backend: 251 unit tests PASS + Architecture AST tests PASS.
+  - Frontend: 210 Node unit tests PASS + `typecheck` PASS + `lint` PASS.
+
+---
+
+## Phase 1 – Evaluation & Observability
+> **Trạng thái**: Hoàn thành  
+> **Phạm vi**: `RAGAS` · `Langfuse` · `Evaluation Dataset` · `Docker Compose` (+ Redis)
+
+### Thay đổi đã thực hiện
+- **RAGAS Evaluation & Baseline Runner**:
+  - Xây dựng module tính 4 chỉ số RAGAS (`Context Precision`, `Context Recall`, `Faithfulness`, `Answer Relevancy`) hỗ trợ cả chế độ deterministic offline và hook `llm_judge`, kèm hàm tính `compute_latency_percentiles` (`p50`, `p95`, `mean`, `ttft_p50`, `ttft_p95`).
+  - Tạo CLI `baseline_eval.py` chạy đánh giá trên `golden_set.json` (9 cases) + `corpus/`, đo latency và token usage, xuất báo cáo JSON & Markdown vào `backend/evaluation/results/`.
+- **Observability (Ports & Adapters)**:
+  - Định nghĩa `Tracer`, `TraceContext`, `SpanContext` và fallback `NoOpTracer` tại `backend/app/shared/observability.py` (không phụ thuộc SDK bên ngoài).
+  - Triển khai `LangfuseTracer` (lazy import `langfuse`, safe error swallowing) và `get_tracer()` tại `backend/app/infrastructure/observability.py`.
+  - Bổ sung cấu hình `langfuse_enabled`, `langfuse_public_key`, `langfuse_secret_key`, `langfuse_host` vào `config.py` và `.env.example`.
+  - Gắn trace spans cho `query_rewrite`, `multi_query`, `retrieval`, `rerank`, `context_budget` trong `chat/pipeline.py` và `chat_turn` / `llm_generation` trong `chat/orchestrator.py`, inject từ `app.state.tracer` tại `main.py` và `api/routes/chat.py`.
+- **Containerization**:
+  - Tạo `backend/Dockerfile`, `frontend/Dockerfile` và `docker-compose.yml` (gồm `backend`, `frontend`, `redis:7-alpine`, và profile `local-infra` cho `qdrant` & `mongo`).
+
+### Files thêm mới / chỉnh sửa
+- **Thêm mới**:
+  - `backend/app/shared/observability.py`
+  - `backend/app/infrastructure/observability.py`
+  - `backend/evaluation/scoring/ragas_metrics.py`
+  - `backend/evaluation/runner/baseline_eval.py`
+  - `backend/evaluation/results/phase1_baseline.json`
+  - `backend/evaluation/results/phase1_baseline.md`
+  - `backend/tests/unit/test_observability.py`
+  - `backend/tests/unit/test_ragas_metrics.py`
+  - `backend/Dockerfile`
+  - `frontend/Dockerfile`
+  - `docker-compose.yml`
+- **Chỉnh sửa**:
+  - `backend/app/shared/config.py`
+  - `.env.example`
+  - `backend/app/main.py`
+  - `backend/app/chat/pipeline.py`
+  - `backend/app/chat/orchestrator.py`
+  - `backend/app/api/routes/chat.py`
+
+### Kết quả kiểm thử & Baseline Metrics
+- **Architecture AST tests**: `9/9 PASS` (`tests/architecture`).
+- **Backend Unit tests**: `258/258 PASS` (`tests/unit`, gồm `test_observability.py` & `test_ragas_metrics.py`).
+- **Backend Integration tests**: `153/153 PASS` (`tests/integration`).
+- **Docker Compose**: `docker compose config --quiet` exited `0` (hợp lệ).
+- **Offline Baseline (`golden_set.json`, 9 cases)**:
+  - `Context Precision`: `1.0000`
+  - `Context Recall`: `0.7778`
+  - `Faithfulness`: `0.7778`
+  - `Answer Relevancy`: `0.7722`
+  - `Overall Score`: `0.8319`
+
+---
+
+## Phase 2 – Self-corrective Retrieval
+> **Trạng thái**: Chưa bắt đầu  
+> **Phạm vi**: `Retrieval Grader` · `Fallback` · `Query Correction` · `Evidence Evaluation`
+
+### Thay đổi đã thực hiện
+- *(Chưa có cập nhật)*
+
+### Files thêm mới / chỉnh sửa
+- *(Chưa có cập nhật)*
+
+### Kết quả kiểm thử
+- *(Chưa có cập nhật)*
+
+---
+
+## Phase 3 – Agentic Orchestration
+> **Trạng thái**: Chưa bắt đầu  
+> **Phạm vi**: `Single Agent` · `Tool Calling` · `Planning` · `Stateful Workflow` · `Iterative Retrieval`
+
+### Thay đổi đã thực hiện
+- *(Chưa có cập nhật)*
+
+### Files thêm mới / chỉnh sửa
+- *(Chưa có cập nhật)*
+
+### Kết quả kiểm thử
+- *(Chưa có cập nhật)*
+
+---
+
+## Phase 4 – Performance & Security
+> **Trạng thái**: Chưa bắt đầu  
+> **Phạm vi**: `Semantic Cache` · `Auth/RBAC` · `Access-aware Retrieval` · `Bounded Execution`
+
+### Thay đổi đã thực hiện
+- *(Chưa có cập nhật)*
+
+### Files thêm mới / chỉnh sửa
+- *(Chưa có cập nhật)*
+
+### Kết quả kiểm thử
+- *(Chưa có cập nhật)*
+
+---
+
+## Phase 5 – Production Workflow
+> **Trạng thái**: Chưa bắt đầu  
+> **Phạm vi**: `ARQ Worker` · `Redis` · `Document Scope Selector` · `PDF Viewer` · `Deployment`
+
+### Thay đổi đã thực hiện
+- *(Chưa có cập nhật)*
+
+### Files thêm mới / chỉnh sửa
+- *(Chưa có cập nhật)*
+
+### Kết quả kiểm thử
+- *(Chưa có cập nhật)*
+
+---
+
+## Phase 6 – Final Evaluation
+> **Trạng thái**: Chưa bắt đầu  
+> **Phạm vi**: `Advanced RAG vs Corrective RAG vs Agentic RAG`
+
+### Thay đổi đã thực hiện
+- *(Chưa có cập nhật)*
+
+### Kết quả Benchmark định lượng
+- *(Chưa có cập nhật)*

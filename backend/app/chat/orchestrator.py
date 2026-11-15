@@ -19,6 +19,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, Huma
 from langchain_core.messages.utils import convert_to_openai_messages, count_tokens_approximately
 
 from app.shared.config import settings
+from app.shared.observability import NoOpTracer, TraceContext, Tracer
 from app.chat.context_budget import ApproximateTokenCounter, ContextBudgetConfig
 from app.conversations.repository import ConversationRepositoryError, MongoConversationRepository
 from app.documents.queries import DocumentQueries
@@ -276,6 +277,7 @@ class ChatOrchestrator:
         budget_config: ContextBudgetConfig | None = None,
         tools_enabled: bool = False,
         rag_prepare: Callable[..., Awaitable[PreparedRagStream]] | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         if type(tools_enabled) is not bool:
             raise ValueError("tools_enabled phải là boolean")
@@ -285,6 +287,7 @@ class ChatOrchestrator:
         self.config = budget_config or ContextBudgetConfig.from_settings(settings)
         self.tools_enabled = tools_enabled
         self.rag_prepare = rag_prepare or prepare_rag_request
+        self.tracer: Tracer = tracer or NoOpTracer()
 
     def _schemas(self) -> list[dict]:
         return [{"type": "function", "function": {
@@ -361,6 +364,11 @@ class ChatOrchestrator:
         session_id: str | None = None, deadline: float | None = None,
     ) -> PreparedChatAnswer:
         ledger = UsageLedger()
+        trace = self.tracer.trace(
+            "chat_turn",
+            session_id=session_id,
+            input={"question": question, "tools_enabled": self.tools_enabled},
+        )
         try:
             if type(question) is not str or not question.strip():
                 raise ChatOrchestrationError("CHAT_INVALID_QUESTION")
@@ -402,9 +410,15 @@ class ChatOrchestrator:
                     executor=ToolExecutor(create_document_tool_registry(self.queries)),
                     model=model, _owner=self,
                 )
-            rag = await _wait(lambda: self.rag_prepare(
-                question, database=database, qdrant_client=qdrant_client, session_id=session_id,
-            ), deadline)
+            if self.rag_prepare is prepare_rag_request:
+                rag = await _wait(lambda: self.rag_prepare(
+                    question, database=database, qdrant_client=qdrant_client, session_id=session_id,
+                    trace=trace,
+                ), deadline)
+            else:
+                rag = await _wait(lambda: self.rag_prepare(
+                    question, database=database, qdrant_client=qdrant_client, session_id=session_id,
+                ), deadline)
             if self.tools_enabled and rag.rewrite is not None:
                 metrics = rag.rewrite.metrics
                 for _ in range(metrics.provider_calls):
@@ -477,25 +491,34 @@ class ChatOrchestrator:
         self._claim(plan)
         entry = None
         adapter = _FinalModel(plan.model, self.config.output_reserve_tokens)
+        trace = self.tracer.trace("llm_generation_turn", input={"route": plan.route})
         try:
-            if plan.route == "DOCUMENT_TOOLS":
-                messages, notice = await self._tool_context(plan)
-                entry = plan.ledger.begin("final")
-                response = await _wait(lambda: adapter.ainvoke(messages), plan.deadline)
-                answer = _text(response)
-                if not answer.strip():
-                    raise ChatOrchestrationError("CHAT_EMPTY_ANSWER")
-                plan.ledger.complete(entry, adapter.usage)
-                result = {"answer": notice + answer, "sources": [], "usage": plan.usage}
-            else:
-                self._check_rag_context(plan)
-                entry = plan.ledger.begin("final")
-                result = await _wait(lambda: generate_prepared_answer(
-                    plan.rag, llm=adapter if plan.tools_enabled else plan.model,
-                ), plan.deadline)
-                plan.ledger.complete(entry, adapter.usage if plan.tools_enabled else result["usage"])
-                if plan.tools_enabled:
-                    result["usage"] = plan.usage
+            with trace.span("llm_generation", input={"route": plan.route}) as span:
+                if plan.route == "DOCUMENT_TOOLS":
+                    messages, notice = await self._tool_context(plan)
+                    entry = plan.ledger.begin("final")
+                    response = await _wait(lambda: adapter.ainvoke(messages), plan.deadline)
+                    answer = _text(response)
+                    if not answer.strip():
+                        raise ChatOrchestrationError("CHAT_EMPTY_ANSWER")
+                    plan.ledger.complete(entry, adapter.usage)
+                    result = {"answer": notice + answer, "sources": [], "usage": plan.usage}
+                else:
+                    self._check_rag_context(plan)
+                    entry = plan.ledger.begin("final")
+                    result = await _wait(lambda: generate_prepared_answer(
+                        plan.rag, llm=adapter if plan.tools_enabled else plan.model,
+                    ), plan.deadline)
+                    plan.ledger.complete(entry, adapter.usage if plan.tools_enabled else result["usage"])
+                    if plan.tools_enabled:
+                        result["usage"] = plan.usage
+                if result.get("usage"):
+                    span.record_usage(
+                        prompt_tokens=result["usage"].get("input_tokens", 0) or 0,
+                        completion_tokens=result["usage"].get("output_tokens", 0) or 0,
+                        total_tokens=result["usage"].get("total_tokens", 0) or 0,
+                    )
+                span.set_output({"answer_chars": len(result["answer"]), "source_count": len(result.get("sources", []))})
             if len(result["answer"]) > MAX_ANSWER_CHARS:
                 raise ChatOrchestrationError("CHAT_OUTPUT_LIMIT")
             return result

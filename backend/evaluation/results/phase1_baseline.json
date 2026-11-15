@@ -1,0 +1,227 @@
+{
+  "generated_at": "2026-11-15T07:09:09.135181+00:00",
+  "mode": "offline",
+  "dataset": "golden_set.json",
+  "total_cases": 9,
+  "ragas_summary": {
+    "context_precision": 1.0,
+    "context_recall": 0.7778,
+    "faithfulness": 0.7778,
+    "answer_relevancy": 0.7722,
+    "overall_score": 0.8319
+  },
+  "latency_summary": {
+    "p50_ms": 0.14,
+    "p95_ms": 0.2,
+    "mean_ms": 0.15,
+    "ttft_p50_ms": 0.14,
+    "ttft_p95_ms": 0.2
+  },
+  "token_usage_summary": {
+    "total_prompt_tokens": 843,
+    "total_completion_tokens": 431,
+    "total_tokens": 1274
+  },
+  "cases": [
+    {
+      "id": "vector-backend",
+      "question": "Hệ thống dùng vector database nào cho retrieval runtime?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "qdrant.md",
+        "llm-embedding.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "overall_score": 1.0
+      },
+      "latency_ms": 0.219,
+      "ttft_ms": 0.216,
+      "tokens": {
+        "prompt": 121,
+        "completion": 61,
+        "total": 182
+      }
+    },
+    {
+      "id": "qdrant-collection",
+      "question": "Collection Qdrant mặc định của ứng dụng tên gì?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "qdrant.md",
+        "chunking.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "overall_score": 1.0
+      },
+      "latency_ms": 0.176,
+      "ttft_ms": 0.174,
+      "tokens": {
+        "prompt": 132,
+        "completion": 61,
+        "total": 193
+      }
+    },
+    {
+      "id": "active-version-filter",
+      "question": "Retriever cho phép những Qdrant points thuộc version nào?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "qdrant.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.95,
+        "overall_score": 0.9875
+      },
+      "latency_ms": 0.141,
+      "ttft_ms": 0.139,
+      "tokens": {
+        "prompt": 70,
+        "completion": 61,
+        "total": 131
+      }
+    },
+    {
+      "id": "chunk-size",
+      "question": "chunk_size mặc định là bao nhiêu ký tự?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "chunking.md",
+        "qdrant.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "overall_score": 1.0
+      },
+      "latency_ms": 0.15,
+      "ttft_ms": 0.148,
+      "tokens": {
+        "prompt": 131,
+        "completion": 62,
+        "total": 193
+      }
+    },
+    {
+      "id": "chunk-overlap",
+      "question": "chunk_overlap mặc định là bao nhiêu ký tự?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "chunking.md",
+        "qdrant.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "overall_score": 1.0
+      },
+      "latency_ms": 0.142,
+      "ttft_ms": 0.141,
+      "tokens": {
+        "prompt": 131,
+        "completion": 62,
+        "total": 193
+      }
+    },
+    {
+      "id": "embedding-dim",
+      "question": "Vector của gemini-embedding-001 có bao nhiêu chiều?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "overall_score": 1.0
+      },
+      "latency_ms": 0.123,
+      "ttft_ms": 0.122,
+      "tokens": {
+        "prompt": 119,
+        "completion": 51,
+        "total": 170
+      }
+    },
+    {
+      "id": "embedding-change",
+      "question": "Khi đổi embedding model thì phải làm gì với dữ liệu?",
+      "expect_fallback": false,
+      "retrieved_sources": [
+        "llm-embedding.md",
+        "qdrant.md"
+      ],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 1.0,
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "overall_score": 1.0
+      },
+      "latency_ms": 0.123,
+      "ttft_ms": 0.122,
+      "tokens": {
+        "prompt": 123,
+        "completion": 51,
+        "total": 174
+      }
+    },
+    {
+      "id": "oob-capital",
+      "question": "Thủ đô của Nhật Bản là gì?",
+      "expect_fallback": true,
+      "retrieved_sources": [],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 0.0,
+        "faithfulness": 0.0,
+        "answer_relevancy": 0.0,
+        "overall_score": 0.25
+      },
+      "latency_ms": 0.119,
+      "ttft_ms": 0.118,
+      "tokens": {
+        "prompt": 7,
+        "completion": 11,
+        "total": 18
+      }
+    },
+    {
+      "id": "oob-gold",
+      "question": "Giá vàng thế giới hôm nay là bao nhiêu?",
+      "expect_fallback": true,
+      "retrieved_sources": [],
+      "ragas": {
+        "context_precision": 1.0,
+        "context_recall": 0.0,
+        "faithfulness": 0.0,
+        "answer_relevancy": 0.0,
+        "overall_score": 0.25
+      },
+      "latency_ms": 0.122,
+      "ttft_ms": 0.121,
+      "tokens": {
+        "prompt": 9,
+        "completion": 11,
+        "total": 20
+      }
+    }
+  ]
+}
