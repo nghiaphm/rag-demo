@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
 
+    # ----- Corrective RAG (Phase 2) -----
+    corrective_rag_enabled: bool = False
+    corrective_max_retries: int = 1
+    corrective_grader_model: str = "llama-3.1-8b-instant"
+    web_search_fallback_enabled: bool = False
+    tavily_api_key: SecretStr | None = None
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:
