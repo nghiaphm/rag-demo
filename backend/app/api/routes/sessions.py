@@ -2,8 +2,11 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+
+from app.api.dependencies.auth import get_current_user
+from app.shared.auth import UserContext, can_access_resource
 
 from app.conversations.models import MessageRecord, SessionRecord
 from app.conversations.repository import (
@@ -116,24 +119,47 @@ async def list_sessions(
 
 
 @router.get("/{session_id}", response_model=SessionResponse)
-async def get_session(request: Request, session_id: UUID) -> SessionResponse:
+async def get_session(
+    request: Request,
+    session_id: UUID,
+    current_user: UserContext | None = Depends(get_current_user),
+) -> SessionResponse:
     service = await _service(request)
     try:
         session = await run_in_threadpool(service.get_session, str(session_id))
     except Exception as exc:
         _handle_error(exc)
+    if not can_access_resource(
+        user=current_user,
+        owner_id=session.user_id,
+        allowed_roles=session.allowed_roles,
+    ):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập session này.")
     return _session_response(session)
 
 
 @router.patch("/{session_id}", response_model=SessionResponse)
 async def update_session_title(
-    payload: UpdateSessionTitleRequest, request: Request, session_id: UUID
+    payload: UpdateSessionTitleRequest,
+    request: Request,
+    session_id: UUID,
+    current_user: UserContext | None = Depends(get_current_user),
 ) -> SessionResponse:
     service = await _service(request)
     try:
+        if current_user is not None:
+            existing = await run_in_threadpool(service.get_session, str(session_id))
+            if not can_access_resource(
+                user=current_user,
+                owner_id=existing.user_id,
+                allowed_roles=existing.allowed_roles,
+            ):
+                raise HTTPException(status_code=403, detail="Không có quyền cập nhật session này.")
         session = await run_in_threadpool(
             service.update_title, str(session_id), title=payload.title
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         _handle_error(exc)
     return _session_response(session)
@@ -145,15 +171,26 @@ async def list_session_messages(
     session_id: UUID,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
+    current_user: UserContext | None = Depends(get_current_user),
 ) -> MessagePageResponse:
     service = await _service(request)
     try:
+        if current_user is not None:
+            existing = await run_in_threadpool(service.get_session, str(session_id))
+            if not can_access_resource(
+                user=current_user,
+                owner_id=existing.user_id,
+                allowed_roles=existing.allowed_roles,
+            ):
+                raise HTTPException(status_code=403, detail="Không có quyền đọc session này.")
         page = await run_in_threadpool(
             service.list_messages,
             str(session_id),
             offset=offset,
             limit=limit,
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         _handle_error(exc)
     return MessagePageResponse(
@@ -165,10 +202,24 @@ async def list_session_messages(
 
 
 @router.delete("/{session_id}", response_model=DeleteSessionResponse)
-async def delete_session(request: Request, session_id: UUID) -> DeleteSessionResponse:
+async def delete_session(
+    request: Request,
+    session_id: UUID,
+    current_user: UserContext | None = Depends(get_current_user),
+) -> DeleteSessionResponse:
     service = await _service(request)
     try:
+        if current_user is not None:
+            existing = await run_in_threadpool(service.get_session, str(session_id))
+            if not can_access_resource(
+                user=current_user,
+                owner_id=existing.user_id,
+                allowed_roles=existing.allowed_roles,
+            ):
+                raise HTTPException(status_code=403, detail="Không có quyền xóa session này.")
         result = await run_in_threadpool(service.delete_session, str(session_id))
+    except HTTPException:
+        raise
     except Exception as exc:
         _handle_error(exc)
     return DeleteSessionResponse(

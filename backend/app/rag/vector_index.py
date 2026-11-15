@@ -48,6 +48,8 @@ class VectorRecord:
     row_index: int | None = None
     parent_id: str | None = None
     parent_text: str | None = None
+    owner_id: str | None = None
+    allowed_roles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "point_id", canonical_uuid(self.point_id, "point_id"))
@@ -82,6 +84,10 @@ class VectorRecord:
         if self.parent_id is not None:
             data["parent_id"] = self.parent_id
             data["parent_text"] = self.parent_text
+        if self.owner_id is not None:
+            data["owner_id"] = self.owner_id
+        if self.allowed_roles:
+            data["allowed_roles"] = list(self.allowed_roles)
         return data
 
 
@@ -91,6 +97,8 @@ class VectorFilter:
     version_id: str | None = None
     version_ids: tuple[str, ...] | None = None
     file_name: str | None = None
+    owner_id: str | None = None
+    allowed_roles: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.document_id is not None:
@@ -122,6 +130,8 @@ class VectorFilter:
             and self.version_id is None
             and self.version_ids is None
             and self.file_name is None
+            and self.owner_id is None
+            and self.allowed_roles is None
         )
 
 
@@ -139,6 +149,8 @@ class VectorSearchResult:
     row_index: int | None = None
     parent_id: str | None = None
     parent_text: str | None = None
+    owner_id: str | None = None
+    allowed_roles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "point_id", canonical_uuid(self.point_id, "point_id"))
