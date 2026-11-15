@@ -122,9 +122,9 @@ class TestAgenticOrchestrator(unittest.IsolatedAsyncioTestCase):
             result["usage"],
             {"input_tokens": 85, "output_tokens": 29, "total_tokens": 114},
         )
-        # Verify tool schemas exposed all 3 tools
+        # Verify tool schemas exposed all 4 agentic tools
         tool_names = {t["function"]["name"] for t in model.bound_calls[0][0]}
-        self.assertEqual(tool_names, {"count_documents", "list_documents", "rag_search"})
+        self.assertEqual(tool_names, {"count_documents", "list_documents", "rag_search", "query_excel_table"})
 
     async def test_agentic_max_steps_guard_forces_bounded_final_synthesis(self) -> None:
         model = _ScriptedAgentModel(
