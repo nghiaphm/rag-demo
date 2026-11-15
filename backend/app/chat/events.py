@@ -11,3 +11,11 @@ class ProviderStreamChunk:
 
     content: str | None
     usage: dict[str, int] | None
+
+
+@dataclass(frozen=True)
+class ChatStatusEvent:
+    """Intermediate execution status emitted during multi-step RAG/Agentic flows."""
+
+    step: str
+    message: str

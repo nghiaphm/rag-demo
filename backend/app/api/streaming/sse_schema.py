@@ -57,6 +57,11 @@ class SSEDeltaData(_EventData):
     content: str = Field(min_length=1, max_length=1_000_000)
 
 
+class SSEStatusData(_EventData):
+    step: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=500)
+
+
 class SSEDoneData(_EventData):
     status: Literal["COMPLETED"] = "COMPLETED"
     usage: ChatUsage | None
@@ -92,6 +97,11 @@ class SSEDeltaEvent(_Event):
     data: SSEDeltaData
 
 
+class SSEStatusEvent(_Event):
+    event: Literal["status"] = "status"
+    data: SSEStatusData
+
+
 class SSEDoneEvent(_Event):
     event: Literal["done"] = "done"
     data: SSEDoneData
@@ -106,6 +116,7 @@ SSEEvent = Annotated[
     SSEStartEvent
     | SSEMetadataEvent
     | SSECitationEvent
+    | SSEStatusEvent
     | SSEDeltaEvent
     | SSEDoneEvent
     | SSEErrorEvent,
