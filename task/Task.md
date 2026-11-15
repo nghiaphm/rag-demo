@@ -49,24 +49,24 @@ Mọi thay đổi trong 6 Phase bắt buộc tuân thủ các ràng buộc sau c
 **Mục tiêu**: Hệ thống tự phát hiện kết quả retrieval kém chất lượng và chủ động sửa truy vấn hoặc dùng fallback an toàn trước khi sinh câu trả lời.
 
 ### 2.1 Retrieval Grader & Query Correction
-- [ ] Thêm cờ cấu hình: `CORRECTIVE_RAG_ENABLED`, `CORRECTIVE_MAX_RETRIES` (mặc định `1` hoặc `2`), `CORRECTIVE_GRADER_MODEL` (ưu tiên model nhanh như `llama-3.1-8b-instant`).
-- [ ] Xây dựng module `backend/app/chat/corrective.py`:
+- [x] Thêm cờ cấu hình: `CORRECTIVE_RAG_ENABLED`, `CORRECTIVE_MAX_RETRIES` (mặc định `1`), `CORRECTIVE_GRADER_MODEL` (`llama-3.1-8b-instant`).
+- [x] Xây dựng module `backend/app/chat/corrective.py`:
   - `RetrievalGrader`: Chấm điểm mức độ liên quan (`RELEVANT` / `AMBIGUOUS` / `IRRELEVANT`) của top-k chunks sau Reranker đối với câu hỏi.
   - `QueryCorrector`: Khi kết quả bị đánh giá `IRRELEVANT` hoặc rỗng, tự động phân tích nguyên nhân và viết lại câu truy vấn tối ưu hơn (tránh lặp lại query cũ), sau đó chạy lại retrieval (tôn trọng `turn_deadline`).
 
 ### 2.2 Fallback & Evidence Evaluation
-- [ ] Xây dựng cơ chế **Fallback Strategy** khi hết số lần retry mà vẫn không đủ tài liệu:
+- [x] Xây dựng cơ chế **Fallback Strategy** khi hết số lần retry mà vẫn không đủ tài liệu:
   - Chế độ mặc định (Strict Grounded): Trả về thông báo an toàn không tìm thấy bằng chứng trong thư viện, tuyệt đối không hallucinate.
-  - Chế độ mở rộng (Optional): Interface `WebSearchProvider` tại `rag/` + adapter (Tavily/DuckDuckGo) bật qua cờ `WEB_SEARCH_FALLBACK_ENABLED`.
-- [ ] Xây dựng **Evidence Evaluation** (Post-generation Groundedness Check) kiểm tra xem câu trả lời dự kiến có bám sát chunks hay không trước khi chốt `COMPLETED`.
+  - Chế độ mở rộng (Optional): Interface `WebSearchProvider` tại `rag/web_search.py` + adapter `TavilyWebSearchProvider` tại `infrastructure/web_search.py` bật qua cờ `WEB_SEARCH_FALLBACK_ENABLED`.
+- [x] Xây dựng **Evidence Evaluation** (`EvidenceEvaluator` - Post-generation Groundedness Check) kiểm tra xem câu trả lời dự kiến có bám sát chunks hay không trước khi chốt `COMPLETED`.
 
 ### 2.3 Streaming Status & Unit Tests
-- [ ] Mở rộng `chat/events.py` và `api/streaming/sse_schema.py` hỗ trợ event `status` (ví dụ: *"Đang đánh giá độ phù hợp tài liệu..."*, *"Đang tối ưu lại câu truy vấn..."*).
-- [ ] Viết unit tests offline trong `backend/tests/unit/test_corrective_rag.py` (test grader pass, retry loop, max retries fallback, timeout bound).
+- [x] Mở rộng `chat/events.py` (`ChatStatusEvent`) và `api/streaming/sse_schema.py` (`SSEStatusEvent`) + `event_adapter.py` (`status_frame`) hỗ trợ event `status`.
+- [x] Viết unit tests offline trong `backend/tests/unit/test_corrective_rag.py` (test grader pass, retry loop, max retries fallback, web fallback, evidence evaluation, timeout bound).
 
 **Definition of Done (Phase 2)**:
-- [ ] Hệ thống tự động retry query khi tài liệu không khớp và không bị lặp vô hạn.
-- [ ] Toàn bộ test cũ + mới PASS 100%.
+- [x] Hệ thống tự động retry query khi tài liệu không khớp và không bị lặp vô hạn.
+- [x] Toàn bộ test cũ + mới PASS 100%.
 
 ---
 
