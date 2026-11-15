@@ -110,3 +110,71 @@ test("HTTP failures never remove a session or replay a protected action", async 
     assert.match(controller.getSnapshot().mutationError, /Không tự gửi lại/);
   }
 });
+
+test("updateSessionScope validates scope payloads and calls PATCH /sessions/:id/scope", async () => {
+  const calls = [];
+  const docA = id(10);
+  const docB = id(11);
+  const client = {
+    request: async (path, options) => {
+      calls.push([path, options]);
+      return {
+        status: 200,
+        data: { ...session(1), scope: { mode: options.json.mode, document_ids: options.json.document_ids } },
+      };
+    },
+  };
+
+  const selected = await api.updateSessionScope(client, id(1), {
+    mode: "SELECTED_DOCUMENTS",
+    document_ids: [docA.toUpperCase(), docB],
+  });
+  assert.equal(selected.scope.mode, "SELECTED_DOCUMENTS");
+  assert.deepEqual(selected.scope.document_ids, [docA, docB]);
+  assert.equal(calls[0][0], `/sessions/${id(1)}/scope`);
+  assert.equal(calls[0][1].method, "PATCH");
+
+  const reset = await api.updateSessionScope(client, id(1), {
+    mode: "ALL_ACTIVE",
+    document_ids: [],
+  });
+  assert.equal(reset.scope.mode, "ALL_ACTIVE");
+  assert.deepEqual(reset.scope.document_ids, []);
+
+  await assert.rejects(api.updateSessionScope(client, id(1), { mode: "SELECTED_DOCUMENTS", document_ids: [] }));
+  await assert.rejects(api.updateSessionScope(client, id(1), { mode: "ALL_ACTIVE", document_ids: [docA] }));
+  await assert.rejects(api.updateSessionScope(client, id(1), { mode: "SELECTED_DOCUMENTS", document_ids: [docA, docA] }));
+  await assert.rejects(api.updateSessionScope(client, id(1), { mode: "SELECTED_DOCUMENTS", document_ids: ["not-a-uuid"] }));
+  await assert.rejects(api.updateSessionScope({
+    request: async () => ({ status: 200, data: session(2) }),
+  }, id(1), { mode: "ALL_ACTIVE" }));
+  assert.equal(calls.length, 2);
+});
+
+test("ChatController applies pending SELECTED_DOCUMENTS scope right after creating a new session", async () => {
+  const { ChatController } = load("lib/chat/controller");
+  const events = [];
+  const docId = id(20);
+  const createdSessionId = id(21);
+  const controller = new ChatController({
+    createSession: async () => {
+      events.push("createSession");
+      return { session_id: createdSessionId };
+    },
+    updateScope: async (sessionId, scope) => {
+      events.push(["updateScope", sessionId, scope]);
+      return { ...session(21), session_id: sessionId, scope };
+    },
+    stream: async (payload) => {
+      events.push(["stream", payload.session_id]);
+      return { ok: true };
+    },
+  });
+
+  controller.setPendingScope({ mode: "SELECTED_DOCUMENTS", document_ids: [docId] });
+  const accepted = await controller.submit("Hỏi trong tài liệu đã chọn");
+  assert.equal(accepted, true);
+  assert.deepEqual(events[0], "createSession");
+  assert.deepEqual(events[1], ["updateScope", createdSessionId, { mode: "SELECTED_DOCUMENTS", document_ids: [docId] }]);
+  assert.deepEqual(events[2], ["stream", createdSessionId]);
+});

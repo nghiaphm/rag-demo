@@ -14,11 +14,14 @@ from app.conversations.models import (
     MessageRole,
     MessageStatus,
     SessionRecord,
+    SessionScope,
+    SessionScopeMode,
     utc_now,
 )
 from app.conversations.repository import (
     SessionDeleteResult,
     SessionDeletedError,
+    SessionGenerationConflictError,
     SessionNotFoundError,
 )
 from app.conversations.service import MessagePage, SessionPage
@@ -70,6 +73,16 @@ class FakeConversationService:
         )
         return self.session
 
+    def update_scope(self, session_id, *, mode, document_ids=None):
+        self.get_session(session_id)
+        if self.session.active_generation_id is not None:
+            raise SessionGenerationConflictError("Active generation")
+        scope = SessionScope(mode=mode, document_ids=document_ids or [])
+        self.session = self.session.model_copy(
+            update={"scope": scope, "updated_at": utc_now()}
+        )
+        return self.session
+
     def list_messages(self, session_id, *, offset, limit):
         self.get_session(session_id)
         self.history_args = (offset, limit)
@@ -86,6 +99,9 @@ class DeletedConversationService(FakeConversationService):
         raise SessionDeletedError()
 
     def update_title(self, session_id, *, title):
+        raise SessionDeletedError()
+
+    def update_scope(self, session_id, *, mode, document_ids=None):
         raise SessionDeletedError()
 
     def list_messages(self, session_id, *, offset, limit):
@@ -167,6 +183,59 @@ class SessionApiTests(unittest.TestCase):
         response = TestClient(self.make_app(database=None)).get("/sessions")
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("mongodb", response.text.lower())
+
+    def test_update_scope_switches_modes_and_enforces_validation_and_conflicts(self):
+        fake = FakeConversationService()
+        session_id = fake.session.session_id
+        doc_a = str(uuid4())
+        doc_b = str(uuid4())
+        with patch(
+            "app.api.routes.sessions.create_conversation_service", return_value=fake
+        ):
+            client = TestClient(self.make_app())
+            selected = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "SELECTED_DOCUMENTS", "document_ids": [doc_a, doc_b]},
+            )
+            all_active = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "ALL_ACTIVE", "document_ids": []},
+            )
+            empty_selected = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "SELECTED_DOCUMENTS", "document_ids": []},
+            )
+            non_empty_all = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "ALL_ACTIVE", "document_ids": [doc_a]},
+            )
+            duplicate_docs = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "SELECTED_DOCUMENTS", "document_ids": [doc_a, doc_a]},
+            )
+            invalid_doc = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "SELECTED_DOCUMENTS", "document_ids": ["not-a-uuid"]},
+            )
+            fake.session = fake.session.model_copy(
+                update={"active_generation_id": str(uuid4())}
+            )
+            conflict = client.patch(
+                f"/sessions/{session_id}/scope",
+                json={"mode": "ALL_ACTIVE", "document_ids": []},
+            )
+
+        self.assertEqual(selected.status_code, 200)
+        self.assertEqual(selected.json()["scope"]["mode"], "SELECTED_DOCUMENTS")
+        self.assertEqual(selected.json()["scope"]["document_ids"], [doc_a, doc_b])
+        self.assertEqual(all_active.status_code, 200)
+        self.assertEqual(all_active.json()["scope"]["mode"], "ALL_ACTIVE")
+        self.assertEqual(all_active.json()["scope"]["document_ids"], [])
+        self.assertEqual(empty_selected.status_code, 422)
+        self.assertEqual(non_empty_all.status_code, 422)
+        self.assertEqual(duplicate_docs.status_code, 422)
+        self.assertEqual(invalid_doc.status_code, 422)
+        self.assertEqual(conflict.status_code, 409)
 
 
 if __name__ == "__main__":

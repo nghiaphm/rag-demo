@@ -79,7 +79,25 @@ export function createQaMockServer({ delayMs = 600, deltaMs = 250 } = {}) {
         const session = makeSession(randomUUID(), "QA new chat"); sessions.unshift(session); histories.set(session.session_id, []);
         json(201, session); return;
       }
-      const sessionRoute = /^\/sessions\/([^/]+)(\/messages)?$/.exec(path);
+      const sessionRoute = /^\/sessions\/([^/]+)(\/messages|\/scope)?$/.exec(path);
+      if (sessionRoute && sessionRoute[2] === "/scope" && method === "PATCH") {
+        const session = sessions.find(item => item.session_id === sessionRoute[1]);
+        if (!session) { json(404, { detail: "Not found" }); return; }
+        if (deleted.has(session.session_id)) { json(410, { detail: "Deleted" }); return; }
+        const history = histories.get(session.session_id) ?? [];
+        if (history.some(item => item.status === "STREAMING")) { json(409, { detail: "Active generation" }); return; }
+        const payload = JSON.parse(body.toString());
+        const docIds = Array.isArray(payload.document_ids) ? payload.document_ids : [];
+        if (payload.mode === "ALL_ACTIVE" && docIds.length === 0) {
+          session.scope = { mode: "ALL_ACTIVE", document_ids: [] };
+        } else if (payload.mode === "SELECTED_DOCUMENTS" && docIds.length > 0 && new Set(docIds).size === docIds.length) {
+          session.scope = { mode: "SELECTED_DOCUMENTS", document_ids: docIds };
+        } else {
+          json(422, { detail: [] }); return;
+        }
+        session.updated_at = new Date().toISOString();
+        json(200, session); return;
+      }
       if (sessionRoute && !sessionRoute[2] && ["PATCH", "DELETE"].includes(method)) {
         const session = sessions.find(item => item.session_id === sessionRoute[1]);
         if (!session) { json(404, { detail: "Not found" }); return; }
