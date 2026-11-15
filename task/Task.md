@@ -74,20 +74,20 @@ Mọi thay đổi trong 6 Phase bắt buộc tuân thủ các ràng buộc sau c
 **Mục tiêu**: Nâng cấp `ChatOrchestrator` từ bộ định tuyến 1 vòng (Tool HOẶC RAG) thành Single Agent có khả năng lập kế hoạch, gọi đa công cụ lặp lại (Iterative Retrieval) và tự điều chỉnh trạng thái.
 
 ### 3.1 Mở rộng Tool Registry cho Agent
-- [ ] Bổ sung **`rag_search`** thành một Tool chính thức trong `tool_use/` / `rag/` để Agent có thể chủ động gọi tìm kiếm tài liệu nhiều lần với các từ khóa khác nhau trong cùng 1 lượt chat.
+- [x] Bổ sung **`rag_search`** thành một Tool chính thức (`tool_use/contracts.py` + `chat/agent_tools.py`) để Agent có thể chủ động gọi tìm kiếm tài liệu nhiều lần với các từ khóa khác nhau trong cùng 1 lượt chat.
 - [ ] (Tùy chọn mở rộng) Bổ sung **`query_excel_table`** cho phép Agent lọc/tổng hợp dữ liệu có cấu trúc trên file `.xlsx` đã upload thay vì chỉ tìm text thuần.
 
 ### 3.2 Stateful Iterative Agent Loop
-- [ ] Nâng cấp `backend/app/chat/orchestrator.py` (hỗ trợ cờ `AGENTIC_MODE_ENABLED`):
-  - Chuyển từ 1-shot selector sang **AgentState** (`messages`, `step_count`, `collected_sources`, `tool_history`, `deadline`).
-  - Cho phép vòng lặp **Plan $\rightarrow$ Tool Execution $\rightarrow$ Observe $\rightarrow$ Re-plan / Final Answer** (tối đa `MAX_AGENT_STEPS = 4` vòng).
-  - Cho phép kết hợp cả Tool Metadata (`list_documents`) + `rag_search` trong cùng một câu hỏi phức hợp (VD: *"Tìm các file báo cáo Q3 và tóm tắt doanh thu trong đó"*).
-- [ ] Cập nhật `ToolExecutor` giữ nguyên cơ chế sandbox threadpool, 64KB byte cap và kiểm soát `turn_deadline` tổng.
-- [ ] Viết unit & integration tests trong `backend/tests/unit/test_agentic_orchestrator.py` (test multi-step tool + RAG, max steps guard, backward compatibility khi `AGENTIC_MODE_ENABLED=false`).
+- [x] Nâng cấp `backend/app/chat/orchestrator.py` (hỗ trợ cờ `AGENTIC_MODE_ENABLED` & `MAX_AGENT_STEPS = 4`):
+  - Chuyển từ 1-shot selector sang **AgentState** (`messages`, `step_count`, `collected_sources`, `tool_history`, `deadline`) tại `backend/app/chat/agent.py`.
+  - Cho phép vòng lặp **Plan $\rightarrow$ Tool Execution $\rightarrow$ Observe $\rightarrow$ Re-plan / Final Answer** (tối đa `MAX_AGENT_STEPS = 4` vòng, có forced final synthesis khi chạm ngưỡng).
+  - Cho phép kết hợp cả Tool Metadata (`count_documents`, `list_documents`) + `rag_search` trong cùng một câu hỏi phức hợp.
+- [x] Cập nhật `ToolExecutor` giữ nguyên cơ chế sandbox threadpool, 8KB/16KB byte cap và kiểm soát `turn_deadline` tổng.
+- [x] Viết unit tests offline trong `backend/tests/unit/test_agentic_orchestrator.py` (test multi-step tool + RAG, max steps guard, backward compatibility khi `AGENTIC_MODE_ENABLED=false`).
 
 **Definition of Done (Phase 3)**:
-- [ ] Agent giải quyết được câu hỏi đa bước cần kết hợp metadata tool và nhiều lần gọi `rag_search`.
-- [ ] Khi tắt `AGENTIC_MODE_ENABLED`, hành vi legacy (1-round tool use & direct RAG) được bảo toàn 100%.
+- [x] Agent giải quyết được câu hỏi đa bước cần kết hợp metadata tool và nhiều lần gọi `rag_search`.
+- [x] Khi tắt `AGENTIC_MODE_ENABLED`, hành vi legacy (1-round tool use & direct RAG) được bảo toàn 100%.
 
 ---
 

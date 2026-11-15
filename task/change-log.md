@@ -112,17 +112,33 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Phase 3 – Agentic Orchestration
-> **Trạng thái**: Chưa bắt đầu  
+> **Trạng thái**: Hoàn thành  
 > **Phạm vi**: `Single Agent` · `Tool Calling` · `Planning` · `Stateful Workflow` · `Iterative Retrieval`
 
 ### Thay đổi đã thực hiện
-- *(Chưa có cập nhật)*
+- **Agent Tool Registry & `rag_search`**:
+  - Mở rộng `backend/app/tool_use/contracts.py` với `rag_search` (`RagSearchArguments`) trong `ToolName`, `ALLOWED_TOOL_NAMES` và `validate_arguments`.
+  - Tạo `backend/app/chat/agent_tools.py` cung cấp `rag_search_tool_definition()`, `agent_tool_schemas()`, synchronous `create_rag_search_handler()` (tích hợp `get_retriever` + `get_reranker` và tích lũy `collected_sources` không trùng lặp) và `create_agent_tool_registry()`.
+- **Stateful Iterative Agent Loop**:
+  - Tạo `backend/app/chat/agent.py` với `AgentState` (`messages`, `step_count`, `max_steps`, `collected_sources`, `tool_history`, `deadline`) và `AgenticRunner` thực thi vòng lặp **Plan $\rightarrow$ Tool Execution $\rightarrow$ Observe $\rightarrow$ Re-plan / Final Answer** (giới hạn `max_agent_steps`, tổng hợp cuối khi chạm trần bước, ghi trace spans & usage ledger).
+  - Nâng cấp `backend/app/chat/orchestrator.py` hỗ trợ `AGENTIC_MODE_ENABLED` và `MAX_AGENT_STEPS` (bảo toàn 100% hành vi legacy 1-round khi tắt cờ).
+  - Bổ sung `agentic_mode_enabled` và `max_agent_steps` vào `config.py` và `.env.example`.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có cập nhật)*
+- **Thêm mới**:
+  - `backend/app/chat/agent.py`
+  - `backend/app/chat/agent_tools.py`
+  - `backend/tests/unit/test_agentic_orchestrator.py`
+- **Chỉnh sửa**:
+  - `backend/app/shared/config.py`
+  - `.env.example`
+  - `backend/app/tool_use/contracts.py`
+  - `backend/app/chat/orchestrator.py`
 
 ### Kết quả kiểm thử
-- *(Chưa có cập nhật)*
+- **Architecture AST tests**: `9/9 PASS` (`tests/architecture`).
+- **Backend Unit tests**: `273/273 PASS` (`tests/unit`, gồm 4 tests mới trong `test_agentic_orchestrator.py`).
+- **Backend Integration tests**: `153/153 PASS` (`tests/integration`).
 
 ---
 
