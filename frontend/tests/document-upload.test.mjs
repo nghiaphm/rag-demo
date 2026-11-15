@@ -212,3 +212,19 @@ print(json.dumps({'extensions': sorted(SUPPORTED_EXTENSIONS), 'valid': values}))
   assert.deepEqual(backend.extensions, [...DOCUMENT_UPLOAD_EXTENSIONS].sort());
   assert.deepEqual(backend.valid, names.map(name => validateUploadFile({ name, size: 1 }) === null));
 });
+
+test("async 202 Accepted upload preserves UPLOADED status and displays queued job feedback", async () => {
+  const result = await uploadDocument({
+    request: async () => ({
+      status: 202,
+      data: receipt({ status: "UPLOADED", activated: false, num_chunks: 0 }),
+      headers: new Headers(),
+    }),
+  }, file());
+  assert.equal(result.status, "UPLOADED");
+  assert.equal(result.activated, false);
+  const html = render({ phase: "received", result, error: null });
+  assert.match(html, /hàng đợi xử lý bất đồng bộ/);
+  assert(html.includes(result.job_id));
+  assert(!html.includes("được index và kích hoạt"));
+});

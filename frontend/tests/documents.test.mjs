@@ -22,7 +22,7 @@ function load(relative) {
 }
 const { listDocuments, getDocument } = load("lib/api/documents");
 const { createApiClient } = load("lib/api/client");
-const { DocumentsController } = load("lib/documents/controller");
+const { DocumentsController, hasPendingIngestion } = load("lib/documents/controller");
 const { DocumentsDataView, DocumentDetailPanel, DocumentsPreview } = load("components/documents/documents-preview");
 const id = n => `${n.toString(16).padStart(8, "0")}-1111-4111-8111-111111111111`;
 const document = (n, overrides = {}) => ({ document_id: id(n), file_name: `guide-${n}.pdf`, status: "INDEXED",
@@ -212,4 +212,31 @@ test("overlapping pages fail explicitly instead of duplicating documents", async
   assert.equal(controller.getSnapshot().status, "error");
   assert.equal(controller.getSnapshot().items.length, 1);
   assert.equal(controller.getSnapshot().nextOffset, 1);
+});
+
+test("hasPendingIngestion and silent refresh track UPLOADED -> PROCESSING -> INDEXED without clearing items", async () => {
+  let step = 0;
+  const controller = new DocumentsController({
+    list: async () => {
+      step++;
+      if (step === 1) return [document(1, { status: "UPLOADED", active_version_id: null, chunk_count: 0 })];
+      if (step === 2) return [document(1, { status: "PROCESSING", active_version_id: null, chunk_count: 0 })];
+      return [document(1, { status: "INDEXED", chunk_count: 4 })];
+    },
+    get: async () => detail(1, { status: step < 3 ? "PROCESSING" : "INDEXED", chunk_count: step < 3 ? 0 : 4 }),
+  });
+
+  await controller.reload();
+  await controller.select(id(1));
+  assert.equal(hasPendingIngestion(controller.getSnapshot()), true);
+
+  await controller.refresh();
+  assert.equal(controller.getSnapshot().items[0].status, "PROCESSING");
+  assert.equal(controller.getSnapshot().selectedId, id(1));
+  assert.equal(hasPendingIngestion(controller.getSnapshot()), true);
+
+  await controller.refresh();
+  assert.equal(controller.getSnapshot().items[0].status, "INDEXED");
+  assert.equal(controller.getSnapshot().detail.status, "INDEXED");
+  assert.equal(hasPendingIngestion(controller.getSnapshot()), false);
 });
