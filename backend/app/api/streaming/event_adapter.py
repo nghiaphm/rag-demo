@@ -31,6 +31,8 @@ from app.api.streaming.sse_schema import (
     SSEMetadataEvent,
     SSEStartData,
     SSEStartEvent,
+    SSEStatusData,
+    SSEStatusEvent,
     encode_sse_event,
 )
 from app.chat.citation_mapping import map_verified_citations
@@ -62,6 +64,15 @@ def start_frame(*, sequence: int, request_id: str, turn: StreamingTurn | None) -
                 ),
                 mode=_mode(turn is not None),
             )
+        )
+    )
+
+
+def status_frame(*, sequence: int, step: str, message: str) -> str:
+    """Emit an additive status frame without altering existing delta/metadata framing."""
+    return encode_sse_event(
+        SSEStatusEvent(
+            data=SSEStatusData(sequence=sequence, step=step, message=message)
         )
     )
 

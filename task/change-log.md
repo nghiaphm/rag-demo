@@ -74,17 +74,40 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Phase 2 – Self-corrective Retrieval
-> **Trạng thái**: Chưa bắt đầu  
+> **Trạng thái**: Hoàn thành  
 > **Phạm vi**: `Retrieval Grader` · `Fallback` · `Query Correction` · `Evidence Evaluation`
 
 ### Thay đổi đã thực hiện
-- *(Chưa có cập nhật)*
+- **Self-corrective Retrieval (`backend/app/chat/corrective.py`)**:
+  - `RetrievalGrader`: Đánh giá độ liên quan (`RELEVANT` / `AMBIGUOUS` / `IRRELEVANT`) của chunks sau rerank (hỗ trợ cả LLM JSON grader có timeout fallback lẫn deterministic lexical grader offline).
+  - `QueryCorrector`: Viết lại câu truy vấn khi kết quả retrieval không đạt, đảm bảo không lặp lại các query đã thử trong `tried_queries`.
+  - `CorrectiveRagRunner`: Điều phối vòng lặp grade $\rightarrow$ correct $\rightarrow$ re-retrieve trong giới hạn `corrective_max_retries` và `deadline`, phát Langfuse spans (`retrieval_grade`, `query_correction`, `retrieval_grade_retry`, `web_search_fallback`) và `on_status` callback.
+  - `EvidenceEvaluator`: Kiểm tra post-generation groundedness giữa câu trả lời và chunks.
+- **Fallback Strategy & Web Search Port**:
+  - Định nghĩa port `WebSearchProvider` + `NoOpWebSearchProvider` tại `backend/app/rag/web_search.py` và adapter `TavilyWebSearchProvider` tại `backend/app/infrastructure/web_search.py` (bật qua `WEB_SEARCH_FALLBACK_ENABLED`).
+  - Khi hết retry và không bật web fallback, trả về strict grounded empty context để tránh hallucination.
+- **Pipeline & SSE Status Extension**:
+  - Tích hợp `CorrectiveRagRunner` vào `prepare_rag_request_from_components` trong `backend/app/chat/pipeline.py` (bật qua `CORRECTIVE_RAG_ENABLED`).
+  - Thêm `ChatStatusEvent` (`chat/events.py`), `SSEStatusEvent` (`api/streaming/sse_schema.py`), và `status_frame` (`api/streaming/event_adapter.py`) hoàn toàn tương thích ngược.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có cập nhật)*
+- **Thêm mới**:
+  - `backend/app/chat/corrective.py`
+  - `backend/app/rag/web_search.py`
+  - `backend/app/infrastructure/web_search.py`
+  - `backend/tests/unit/test_corrective_rag.py`
+- **Chỉnh sửa**:
+  - `backend/app/shared/config.py`
+  - `.env.example`
+  - `backend/app/chat/pipeline.py`
+  - `backend/app/chat/events.py`
+  - `backend/app/api/streaming/sse_schema.py`
+  - `backend/app/api/streaming/event_adapter.py`
 
 ### Kết quả kiểm thử
-- *(Chưa có cập nhật)*
+- **Architecture AST tests**: `9/9 PASS` (`tests/architecture`).
+- **Backend Unit tests**: `269/269 PASS` (`tests/unit`, gồm 11 tests mới trong `test_corrective_rag.py`).
+- **Backend Integration tests**: `153/153 PASS` (`tests/integration`).
 
 ---
 
