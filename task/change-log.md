@@ -167,7 +167,7 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Phase 5 – Production Workflow
-> **Trạng thái**: Đang thực hiện (Hoàn thành 5.1 Async Ingestion Worker)  
+> **Trạng thái**: Đang thực hiện (Hoàn thành 5.1 Async Ingestion Worker & 5.2 Document Scope Selector)  
 > **Phạm vi**: `ARQ Worker` · `Redis` · `Document Scope Selector` · `PDF Viewer` · `Deployment`
 
 ### Thay đổi đã thực hiện
@@ -177,14 +177,20 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
   - Triển khai `ArqIngestionQueue`, `NoOpIngestionQueue`, `get_ingestion_queue` (`backend/app/infrastructure/ingestion_queue.py`) và ARQ worker `process_ingestion_job` / `WorkerSettings` (`backend/app/workers/ingestion_worker.py`) tự động `invalidate_all()` semantic cache sau khi index xong.
   - Cập nhật `POST /documents/upload` và `PUT /documents/{document_id}` trả HTTP `202 Accepted` kèm `job_id` khi `async_ingestion_enabled=True` (`backend/app/api/routes/documents.py`, wiring queue trong `backend/app/main.py`).
   - Cập nhật Frontend `/documents` chấp nhận HTTP `202` (`frontend/lib/api/documents.ts`), hiển thị thông báo job hàng đợi (`frontend/components/documents/document-upload.tsx`), và thêm silent background polling `DocumentsController.refresh()` + `hasPendingIngestion` (`frontend/lib/documents/controller.ts`, `frontend/hooks/use-documents.ts`, `frontend/components/documents/documents-preview.tsx`).
+- **5.2 Document Scope Selector (Backend API + Frontend UI)**:
+  - Thêm `UpdateSessionScopeRequest` (`backend/app/api/schemas/conversations.py`), `MongoConversationRepository.update_scope` (`backend/app/conversations/repository.py` — atomic check `deleted_at=None` & `active_generation_id=None`), `ConversationService.update_scope` (`backend/app/conversations/service.py`), và endpoint `PATCH /sessions/{session_id}/scope` với kiểm tra RBAC/IDOR trên cả session lẫn tài liệu được chọn (`backend/app/api/routes/sessions.py`).
+  - Thêm DTO `UpdateSessionScopeRequest` (`frontend/types/sessions.ts`), validator `validateSessionScope` và client `updateSessionScope` (`frontend/lib/api/sessions.ts`), cùng `ChatController.setPendingScope` / `services.updateScope` (`frontend/lib/chat/controller.ts`, `frontend/lib/chat/services.ts`) để áp dụng scope ngay khi tạo session mới trước turn đầu tiên.
+  - Xây dựng UI `DocumentScopeSelector` (`frontend/components/chat/document-scope-selector.tsx`) cho phép tìm kiếm, tick chọn các tài liệu `INDEXED`, đặt lại `ALL_ACTIVE`, và đồng bộ hai chiều với `ChatPreview` / `SessionChat` (`frontend/components/chat/chat-preview.tsx`, `frontend/components/chat/session-chat.tsx`) + QA mock route (`frontend/scripts/qa-mock-api.mjs`).
 
 ### Files thêm mới / chỉnh sửa
 - **Thêm mới (5.1)**: `backend/app/infrastructure/ingestion_queue.py`, `backend/app/workers/__init__.py`, `backend/app/workers/ingestion_worker.py`, `backend/tests/unit/test_async_ingestion.py`.
 - **Chỉnh sửa (5.1)**: `backend/requirements.txt`, `backend/app/shared/config.py`, `.env.example`, `backend/app/documents/ports.py`, `backend/app/documents/repository.py`, `backend/app/documents/ingestion.py`, `backend/app/documents/service.py`, `backend/app/main.py`, `backend/app/api/routes/documents.py`, `frontend/lib/api/documents.ts`, `frontend/lib/documents/controller.ts`, `frontend/hooks/use-documents.ts`, `frontend/components/documents/document-upload.tsx`, `frontend/components/documents/documents-preview.tsx`, `frontend/tests/document-upload.test.mjs`, `frontend/tests/documents.test.mjs`.
+- **Thêm mới (5.2)**: `frontend/components/chat/document-scope-selector.tsx`.
+- **Chỉnh sửa (5.2)**: `backend/app/api/schemas/conversations.py`, `backend/app/conversations/repository.py`, `backend/app/conversations/service.py`, `backend/app/api/routes/sessions.py`, `backend/tests/unit/test_session_actions.py`, `backend/tests/integration/test_sessions_api.py`, `frontend/types/sessions.ts`, `frontend/lib/api/sessions.ts`, `frontend/lib/chat/controller.ts`, `frontend/lib/chat/services.ts`, `frontend/components/chat/chat-preview.tsx`, `frontend/components/chat/session-chat.tsx`, `frontend/scripts/qa-mock-api.mjs`, `frontend/tests/session-actions.test.mjs`.
 
 ### Kết quả kiểm thử
-- Backend: `tests/architecture` **9/9 PASS**, `tests/unit` **286/286 PASS**, `tests/integration` **153/153 PASS**
-- Frontend: `test:contract` **PASS**, `typecheck` **PASS**, `lint` **PASS**, `npm.cmd test` **212/212 PASS**
+- Backend: `tests/architecture` **9/9 PASS**, `tests/unit` **287/287 PASS**, `tests/integration` **154/154 PASS**
+- Frontend: `test:contract` **PASS**, `typecheck` **PASS**, `lint` **PASS**, `npm.cmd test` **214/214 PASS**
 
 ---
 
