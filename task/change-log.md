@@ -167,17 +167,24 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Phase 5 – Production Workflow
-> **Trạng thái**: Chưa bắt đầu  
+> **Trạng thái**: Đang thực hiện (Hoàn thành 5.1 Async Ingestion Worker)  
 > **Phạm vi**: `ARQ Worker` · `Redis` · `Document Scope Selector` · `PDF Viewer` · `Deployment`
 
 ### Thay đổi đã thực hiện
-- *(Chưa có cập nhật)*
+- **5.1 Async Ingestion Worker (Redis + ARQ)**:
+  - Thêm `redis>=5.0.0,<6.0.0` và `arq>=0.26.0` vào `backend/requirements.txt`; bổ sung cờ `ASYNC_INGESTION_ENABLED=false` vào `backend/app/shared/config.py` và `.env.example`.
+  - Định nghĩa port `IngestionQueue` / `IngestionQueueError` (`backend/app/documents/ports.py`), thêm `get_job` (`backend/app/documents/repository.py`), tách `_prepare_upload` + bổ sung `prepare_ingest` / `process_version` (`backend/app/documents/ingestion.py`) và `prepare_update` / `mark_enqueue_failed` (`backend/app/documents/service.py`).
+  - Triển khai `ArqIngestionQueue`, `NoOpIngestionQueue`, `get_ingestion_queue` (`backend/app/infrastructure/ingestion_queue.py`) và ARQ worker `process_ingestion_job` / `WorkerSettings` (`backend/app/workers/ingestion_worker.py`) tự động `invalidate_all()` semantic cache sau khi index xong.
+  - Cập nhật `POST /documents/upload` và `PUT /documents/{document_id}` trả HTTP `202 Accepted` kèm `job_id` khi `async_ingestion_enabled=True` (`backend/app/api/routes/documents.py`, wiring queue trong `backend/app/main.py`).
+  - Cập nhật Frontend `/documents` chấp nhận HTTP `202` (`frontend/lib/api/documents.ts`), hiển thị thông báo job hàng đợi (`frontend/components/documents/document-upload.tsx`), và thêm silent background polling `DocumentsController.refresh()` + `hasPendingIngestion` (`frontend/lib/documents/controller.ts`, `frontend/hooks/use-documents.ts`, `frontend/components/documents/documents-preview.tsx`).
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có cập nhật)*
+- **Thêm mới (5.1)**: `backend/app/infrastructure/ingestion_queue.py`, `backend/app/workers/__init__.py`, `backend/app/workers/ingestion_worker.py`, `backend/tests/unit/test_async_ingestion.py`.
+- **Chỉnh sửa (5.1)**: `backend/requirements.txt`, `backend/app/shared/config.py`, `.env.example`, `backend/app/documents/ports.py`, `backend/app/documents/repository.py`, `backend/app/documents/ingestion.py`, `backend/app/documents/service.py`, `backend/app/main.py`, `backend/app/api/routes/documents.py`, `frontend/lib/api/documents.ts`, `frontend/lib/documents/controller.ts`, `frontend/hooks/use-documents.ts`, `frontend/components/documents/document-upload.tsx`, `frontend/components/documents/documents-preview.tsx`, `frontend/tests/document-upload.test.mjs`, `frontend/tests/documents.test.mjs`.
 
 ### Kết quả kiểm thử
-- *(Chưa có cập nhật)*
+- Backend: `tests/architecture` **9/9 PASS**, `tests/unit` **286/286 PASS**, `tests/integration` **153/153 PASS**
+- Frontend: `test:contract` **PASS**, `typecheck` **PASS**, `lint` **PASS**, `npm.cmd test` **212/212 PASS**
 
 ---
 
