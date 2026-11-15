@@ -131,6 +131,15 @@ class MongoDocumentRepository:
             raise RepositoryNotFoundError("Document version không tồn tại")
         return DocumentVersionRecord.model_validate(value)
 
+    def get_job(self, job_id: str) -> IngestionJobRecord:
+        try:
+            value = self.jobs.find_one({"_id": job_id})
+        except PyMongoError as exc:
+            raise RepositoryError("Không thể đọc ingestion job") from exc
+        if value is None:
+            raise RepositoryNotFoundError("Ingestion job không tồn tại")
+        return IngestionJobRecord.model_validate(value)
+
     def list_documents(
         self,
         *,
