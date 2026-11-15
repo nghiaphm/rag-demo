@@ -9,7 +9,7 @@ import type {
   Source,
   SSEEvent,
 } from "@/types/chat";
-import type { MessageStatus } from "@/types/sessions";
+import type { MessageStatus, SessionResponse, SessionScopeResponse, UpdateSessionScopeRequest } from "@/types/sessions";
 
 export interface ChatViewMessage {
   attachments?: readonly MessageAttachment[];
@@ -39,6 +39,7 @@ export interface ChatState {
 
 export interface ChatControllerServices {
   createSession: (signal: AbortSignal) => Promise<{ session_id: string }>;
+  updateScope?: (sessionId: string, scope: UpdateSessionScopeRequest, signal: AbortSignal) => Promise<SessionResponse>;
   stream: (payload: ChatRequest, options?: ChatStreamRequestOptions) => Promise<ChatStreamResult>;
   loadHistory?: (sessionId: string, signal: AbortSignal) => Promise<readonly ChatViewMessage[]>;
 }
@@ -91,6 +92,7 @@ export class ChatController {
   private readonly listeners = new Set<Listener>();
   private turnNumber = 0;
   private activeTurn: ActiveTurn | null = null;
+  private pendingScope: SessionScopeResponse | null = null;
 
   constructor(
     private readonly services: ChatControllerServices,
@@ -203,6 +205,11 @@ export class ChatController {
     }
   }
 
+  /** Save desired scope for the next session creation before the first submit. */
+  setPendingScope(scope: SessionScopeResponse) {
+    this.pendingScope = { mode: scope.mode, document_ids: [...scope.document_ids] };
+  }
+
   /** Abort the active request once. The submitted turn is never retried automatically. */
   stop(): boolean {
     const turn = this.activeTurn;
@@ -284,6 +291,19 @@ export class ChatController {
         const session = await waitForSignal(this.services.createSession(turn.abortController.signal), turn.abortController.signal);
         sessionId = session.session_id;
         if (turn.abortController.signal.aborted) throw new Error("Lượt chat đã bị hủy.");
+        if (
+          this.pendingScope
+          && this.pendingScope.mode === "SELECTED_DOCUMENTS"
+          && this.pendingScope.document_ids.length > 0
+          && this.services.updateScope
+        ) {
+          const updated = await waitForSignal(
+            this.services.updateScope(sessionId, this.pendingScope, turn.abortController.signal),
+            turn.abortController.signal
+          );
+          if (turn.abortController.signal.aborted) throw new Error("Lượt chat đã bị hủy.");
+          this.pendingScope = updated.scope;
+        }
         turn.sessionId = sessionId;
         this.publish({ ...this.state, sessionId });
       }

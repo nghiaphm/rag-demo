@@ -2,9 +2,10 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.conversations.models import MessageRole, MessageStatus, SessionScopeMode
+from app.documents.models import _canonical_uuid
 from app.documents.attachment_models import MessageAttachment
 
 
@@ -37,6 +38,27 @@ class UpdateSessionTitleRequest(BaseModel):
 class SessionScopeResponse(BaseModel):
     mode: SessionScopeMode
     document_ids: list[str]
+
+
+class UpdateSessionScopeRequest(BaseModel):
+    mode: SessionScopeMode
+    document_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("document_ids")
+    @classmethod
+    def _validate_document_ids(cls, values: list[str]) -> list[str]:
+        normalized = [_canonical_uuid(value) for value in values]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("document_ids không được trùng")
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_mode(self) -> "UpdateSessionScopeRequest":
+        if self.mode is SessionScopeMode.ALL_ACTIVE and self.document_ids:
+            raise ValueError("ALL_ACTIVE không nhận document_ids")
+        if self.mode is SessionScopeMode.SELECTED_DOCUMENTS and not self.document_ids:
+            raise ValueError("SELECTED_DOCUMENTS cần ít nhất một document_id")
+        return self
 
 
 class SessionResponse(BaseModel):

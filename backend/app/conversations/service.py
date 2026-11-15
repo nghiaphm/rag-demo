@@ -12,6 +12,8 @@ from app.conversations.models import (
     MessageStatus,
     MessageUsage,
     SessionRecord,
+    SessionScope,
+    SessionScopeMode,
     new_uuid,
     utc_now,
 )
@@ -87,6 +89,17 @@ class ConversationService:
 
     def update_title(self, session_id: str, *, title: str) -> SessionRecord:
         return self.repository.update_title(session_id, title)
+
+    def update_scope(
+        self,
+        session_id: str,
+        *,
+        mode: SessionScopeMode,
+        document_ids: list[str] | None = None,
+    ) -> SessionRecord:
+        """Cập nhật retrieval scope (ALL_ACTIVE hoặc SELECTED_DOCUMENTS) cho session."""
+        scope = SessionScope(mode=mode, document_ids=document_ids or [])
+        return self.repository.update_scope(session_id, scope)
 
     def list_messages(
         self, session_id: str, *, offset: int = 0, limit: int = 100

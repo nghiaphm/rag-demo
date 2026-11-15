@@ -7,6 +7,7 @@ import { AlertCircle, Bot } from "lucide-react"
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatMessage } from "@/components/chat/chat-message"
 import { ChatRecovery } from "@/components/chat/chat-recovery"
+import { DocumentScopeSelector } from "@/components/chat/document-scope-selector"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChatScrollController } from "@/lib/chat/scroll"
@@ -14,6 +15,9 @@ import { createChatServices } from "@/lib/chat/services"
 import { canonicalChatPath, isHistoricalNonterminal } from "@/lib/chat/recovery"
 import { ChatController, type ChatViewMessage } from "@/lib/chat/controller"
 import type { MessageAttachment } from "@/types/chat"
+import type { SessionScopeResponse } from "@/types/sessions"
+
+const DEFAULT_SCOPE: SessionScopeResponse = { mode: "ALL_ACTIVE", document_ids: [] }
 
 function EmptyChat() {
   return (
@@ -32,15 +36,18 @@ function ChatWorkspace({
   apiBaseUrl,
   initialSessionId,
   initialMessages,
+  initialScope = DEFAULT_SCOPE,
 }: {
   apiBaseUrl: string
   initialSessionId: string | null
   initialMessages: readonly ChatViewMessage[]
+  initialScope?: SessionScopeResponse
 }) {
   const router = useRouter()
   const composerId = useId()
   const mounted = useRef(false)
   const [question, setQuestion] = useState("")
+  const [scope, setScope] = useState<SessionScopeResponse>(() => initialScope)
   const draft = useRef({ value: question, revision: 0 })
   const submission = useRef<symbol | null>(null)
   const viewport = useRef<HTMLDivElement>(null)
@@ -118,6 +125,18 @@ function ChatWorkspace({
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
           Câu trả lời được cập nhật trực tiếp khi backend phát các SSE delta.
         </p>
+        <div className="mt-3">
+          <DocumentScopeSelector
+            apiBaseUrl={apiBaseUrl}
+            sessionId={state.sessionId}
+            scope={scope}
+            disabled={state.isGenerating}
+            onScopeChange={(nextScope) => {
+              controller.setPendingScope(nextScope)
+              setScope(nextScope)
+            }}
+          />
+        </div>
       </div>
 
       <ChatRecovery state={state} initialSessionId={initialSessionId} />
@@ -184,10 +203,12 @@ export function ChatPreview({
   apiBaseUrl,
   initialSessionId = null,
   initialMessages = [],
+  initialScope = DEFAULT_SCOPE,
 }: {
   apiBaseUrl: string | null
   initialSessionId?: string | null
   initialMessages?: readonly ChatViewMessage[]
+  initialScope?: SessionScopeResponse
 }) {
   if (!apiBaseUrl) {
     return (
@@ -209,6 +230,7 @@ export function ChatPreview({
       apiBaseUrl={apiBaseUrl}
       initialSessionId={initialSessionId}
       initialMessages={initialMessages}
+      initialScope={initialScope}
     />
   )
 }

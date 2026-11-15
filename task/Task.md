@@ -128,8 +128,8 @@ Mọi thay đổi trong 6 Phase bắt buộc tuân thủ các ràng buộc sau c
 - [x] Frontend `/documents` tự động polling hoặc cập nhật trạng thái real-time (`PENDING` $\rightarrow$ `PROCESSING` $\rightarrow$ `INDEXED`).
 
 ### 5.2 Document Scope Selector (Backend API + Frontend UI)
-- [ ] Mở API `PATCH /sessions/{session_id}/scope` hỗ trợ chuyển đổi giữa `ALL_ACTIVE` và `SELECTED_DOCUMENTS` (danh sách `document_ids` đã có sẵn ở `conversations/models.py`).
-- [ ] Xây dựng UI Scope Selector trên `frontend/components/chat/` cho phép người dùng tick chọn tài liệu cụ thể cho phiên chat hiện tại.
+- [x] Mở API `PATCH /sessions/{session_id}/scope` hỗ trợ chuyển đổi giữa `ALL_ACTIVE` và `SELECTED_DOCUMENTS` (danh sách `document_ids` đã có sẵn ở `conversations/models.py`).
+- [x] Xây dựng UI Scope Selector trên `frontend/components/chat/` cho phép người dùng tick chọn tài liệu cụ thể cho phiên chat hiện tại.
 
 ### 5.3 Inline PDF Viewer & Citation Highlighting
 - [ ] Thêm Backend endpoint `GET /documents/{document_id}/versions/{version_id}/file` stream file PDF gốc an toàn (kiểm tra quyền RBAC từ Phase 4).

@@ -19,10 +19,15 @@ export interface UpdateSessionTitleRequest {
   title: string;
 }
 
-/** Read-only DTO: public APIs cannot set/change scope. */
+/** Retrieval scope của session (ALL_ACTIVE hoặc SELECTED_DOCUMENTS). */
 export interface SessionScopeResponse {
   mode: SessionScopeMode;
   document_ids: string[];
+}
+
+export interface UpdateSessionScopeRequest {
+  mode: SessionScopeMode;
+  document_ids?: string[];
 }
 
 export interface SessionResponse {

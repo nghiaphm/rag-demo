@@ -9,7 +9,7 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from app.conversations.indexes import MESSAGES_COLLECTION, SESSIONS_COLLECTION
-from app.conversations.models import MessageRecord, SessionRecord, utc_now
+from app.conversations.models import MessageRecord, SessionRecord, SessionScope, utc_now
 
 
 class ConversationRepositoryError(Exception):
@@ -95,6 +95,25 @@ class MongoConversationRepository:
         if value is None:
             self.get_session(session_id)
             raise SessionConflictError("Session không thể cập nhật")
+        return SessionRecord.model_validate(value)
+
+    def update_scope(self, session_id: str, scope: SessionScope) -> SessionRecord:
+        """Cập nhật retrieval scope cho session khi không có generation đang chạy."""
+        try:
+            value = self.sessions.find_one_and_update(
+                {"_id": session_id, "deleted_at": None, "active_generation_id": None},
+                {"$set": {"scope": scope.to_mongo(), "updated_at": utc_now()}},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise ConversationRepositoryError("Không thể cập nhật phạm vi tài liệu") from exc
+        if value is None:
+            current = self.get_session(session_id)
+            if current.active_generation_id is not None:
+                raise SessionGenerationConflictError(
+                    "Không thể đổi phạm vi tài liệu khi generation đang hoạt động"
+                )
+            raise SessionConflictError("Session không thể cập nhật phạm vi tài liệu")
         return SessionRecord.model_validate(value)
 
     def list_messages(

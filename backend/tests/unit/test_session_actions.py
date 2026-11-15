@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.api.routes.sessions import router
 
-from app.conversations.models import SessionRecord, utc_now
+from app.conversations.models import SessionRecord, SessionScope, SessionScopeMode, utc_now
 from app.conversations.repository import MongoConversationRepository, SessionGenerationConflictError
 
 
@@ -93,6 +93,30 @@ class SessionActionsRepositoryTests(unittest.TestCase):
             response = client.delete(f"/sessions/{uuid4()}")
             client.close()
         self.assertEqual(response.status_code, 409)
+
+    def test_update_scope_persists_and_blocks_during_active_generation(self):
+        record, sessions, _, repository = self.fixture()
+        doc_id = str(uuid4())
+        selected = repository.update_scope(
+            record.session_id,
+            SessionScope(mode=SessionScopeMode.SELECTED_DOCUMENTS, document_ids=[doc_id]),
+        )
+        self.assertEqual(selected.scope.mode, SessionScopeMode.SELECTED_DOCUMENTS)
+        self.assertEqual(selected.scope.document_ids, [doc_id])
+
+        all_active = repository.update_scope(
+            record.session_id,
+            SessionScope(mode=SessionScopeMode.ALL_ACTIVE, document_ids=[]),
+        )
+        self.assertEqual(all_active.scope.mode, SessionScopeMode.ALL_ACTIVE)
+        self.assertEqual(all_active.scope.document_ids, [])
+
+        active_record, _, _, active_repo = self.fixture(active=True)
+        with self.assertRaises(SessionGenerationConflictError):
+            active_repo.update_scope(
+                active_record.session_id,
+                SessionScope(mode=SessionScopeMode.ALL_ACTIVE),
+            )
 
 
 if __name__ == "__main__":

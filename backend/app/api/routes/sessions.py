@@ -8,13 +8,14 @@ from fastapi.concurrency import run_in_threadpool
 from app.api.dependencies.auth import get_current_user
 from app.shared.auth import UserContext, can_access_resource
 
-from app.conversations.models import MessageRecord, SessionRecord
+from app.conversations.models import MessageRecord, SessionRecord, SessionScopeMode
 from app.conversations.repository import (
     ConversationRepositoryError,
     SessionConflictError,
     SessionDeletedError,
     SessionNotFoundError,
 )
+from app.documents.repository import MongoDocumentRepository, RepositoryNotFoundError
 from app.api.schemas.conversations import (
     CitationResponse,
     CreateSessionRequest,
@@ -24,6 +25,7 @@ from app.api.schemas.conversations import (
     SessionPageResponse,
     SessionResponse,
     SessionScopeResponse,
+    UpdateSessionScopeRequest,
     UpdateSessionTitleRequest,
     UsageResponse,
 )
@@ -157,6 +159,56 @@ async def update_session_title(
                 raise HTTPException(status_code=403, detail="Không có quyền cập nhật session này.")
         session = await run_in_threadpool(
             service.update_title, str(session_id), title=payload.title
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _handle_error(exc)
+    return _session_response(session)
+
+
+@router.patch("/{session_id}/scope", response_model=SessionResponse)
+async def update_session_scope(
+    payload: UpdateSessionScopeRequest,
+    request: Request,
+    session_id: UUID,
+    current_user: UserContext | None = Depends(get_current_user),
+) -> SessionResponse:
+    """Chuyển đổi phạm vi tài liệu truy vấn của session (ALL_ACTIVE / SELECTED_DOCUMENTS)."""
+    service = await _service(request)
+    try:
+        if current_user is not None:
+            existing = await run_in_threadpool(service.get_session, str(session_id))
+            if not can_access_resource(
+                user=current_user,
+                owner_id=existing.user_id,
+                allowed_roles=existing.allowed_roles,
+            ):
+                raise HTTPException(status_code=403, detail="Không có quyền cập nhật phạm vi session này.")
+            database = request.app.state.cloud_connections.mongodb.database
+            if (
+                payload.mode is SessionScopeMode.SELECTED_DOCUMENTS
+                and hasattr(database, "__getitem__")
+            ):
+                doc_repo = MongoDocumentRepository(database)
+                for doc_id in payload.document_ids:
+                    try:
+                        doc = await run_in_threadpool(doc_repo.get_document, doc_id)
+                    except RepositoryNotFoundError as exc:
+                        raise HTTPException(status_code=404, detail="Tài liệu được chọn không tồn tại.") from exc
+                    if doc.deleted_at is not None:
+                        raise HTTPException(status_code=404, detail="Tài liệu được chọn đã bị xóa.")
+                    if not can_access_resource(
+                        user=current_user,
+                        owner_id=doc.owner_id,
+                        allowed_roles=doc.allowed_roles,
+                    ):
+                        raise HTTPException(status_code=403, detail="Không có quyền chọn tài liệu ngoài phân quyền.")
+        session = await run_in_threadpool(
+            service.update_scope,
+            str(session_id),
+            mode=payload.mode,
+            document_ids=payload.document_ids,
         )
     except HTTPException:
         raise

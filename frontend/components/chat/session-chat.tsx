@@ -53,7 +53,13 @@ function ConfiguredSessionChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; 
   const { status, session, error, reload } = useSession(apiBaseUrl, sessionId)
 
   if (status === "ready" && session) {
-    return <SessionHistoryChat apiBaseUrl={apiBaseUrl} sessionId={session.session_id} />
+    return (
+      <SessionHistoryChat
+        apiBaseUrl={apiBaseUrl}
+        sessionId={session.session_id}
+        initialScope={session.scope}
+      />
+    )
   }
   if (status === "missing") {
     return (
@@ -81,7 +87,15 @@ function ConfiguredSessionChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; 
   )
 }
 
-function SessionHistoryChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; sessionId: string }) {
+function SessionHistoryChat({
+  apiBaseUrl,
+  sessionId,
+  initialScope,
+}: {
+  apiBaseUrl: string
+  sessionId: string
+  initialScope: import("@/types/sessions").SessionScopeResponse
+}) {
   const { status, messages, error, reload } = useSessionHistory(apiBaseUrl, sessionId)
 
   if (status === "ready") {
@@ -90,6 +104,7 @@ function SessionHistoryChat({ apiBaseUrl, sessionId }: { apiBaseUrl: string; ses
         apiBaseUrl={apiBaseUrl}
         initialSessionId={sessionId}
         initialMessages={messages.map(historyMessageToViewMessage)}
+        initialScope={initialScope}
       />
     )
   }
