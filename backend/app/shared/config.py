@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     qdrant_collection: str = "rag_documents"
     qdrant_timeout_seconds: float = 5.0
 
+    # ----- Observability (Langfuse) -----
+    langfuse_enabled: bool = False
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:

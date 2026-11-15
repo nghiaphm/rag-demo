@@ -12,6 +12,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompt_values import PromptValue
 
 from app.shared.config import settings
+from app.shared.observability import NoOpTracer, TraceContext, Tracer
 from app.chat.context_budget import (
     BudgetedContext,
     ContextBudgetBuilder,
@@ -85,6 +86,8 @@ async def prepare_rag_request(
     session_id: str | None = None,
     reranker: Any | None = None,
     multi_query_expander: Any | None = None,
+    tracer: Tracer | None = None,
+    trace: TraceContext | None = None,
 ) -> PreparedRagStream:
     """Load history/scope, rewrite retrieval query, retrieve and budget one prompt."""
     document_repository = MongoDocumentRepository(database)
@@ -115,6 +118,8 @@ async def prepare_rag_request(
         retriever=retriever,
         reranker=reranker,
         multi_query_expander=multi_query_expander,
+        tracer=tracer,
+        trace=trace,
     )
 
 
@@ -128,8 +133,14 @@ async def prepare_rag_request_from_components(
     budget_builder: ContextBudgetBuilder | None = None,
     reranker: Any | None = None,
     multi_query_expander: Any | None = None,
+    tracer: Tracer | None = None,
+    trace: TraceContext | None = None,
 ) -> PreparedRagStream:
     """Pure integration seam shared by production and isolated evaluation."""
+    active_trace = trace or (tracer or NoOpTracer()).trace(
+        "rag_prepare",
+        input={"question": question, "active_version_count": len(active_version_ids)},
+    )
     resolved_budget_builder = budget_builder or ContextBudgetBuilder(
         ContextBudgetConfig.from_settings(settings)
     )
@@ -139,27 +150,42 @@ async def prepare_rag_request_from_components(
         chunks=(),
         query=question,
     )
-    rewriter = query_rewriter or create_query_rewriter(settings)
-    rewrite = await rewriter.rewrite(
-        question, history_budget.history_turns
-    )
-    expander = multi_query_expander or create_multi_query_expander(settings)
-    queries = await expander.expand(rewrite.retrieval_query)
-    raw_documents = await _retrieve_for_queries(retriever, queries)
-    resolved_reranker = reranker if reranker is not None else get_reranker()
-    documents = await asyncio.to_thread(
-        resolved_reranker.rerank,
-        rewrite.retrieval_query,
-        raw_documents,
-        top_k=settings.top_k,
-        relevance_threshold=settings.reranker_relevance_threshold,
-    )
-    budget = resolved_budget_builder.build(
-        system=SYSTEM_INSTRUCTION,
-        history_turns=history_turns,
-        chunks=format_context_blocks(documents),
-        query=question,
-    )
+    with active_trace.span("query_rewrite", input={"question": question}) as span:
+        rewriter = query_rewriter or create_query_rewriter(settings)
+        rewrite = await rewriter.rewrite(
+            question, history_budget.history_turns
+        )
+        span.set_output({"retrieval_query": rewrite.retrieval_query})
+        span.set_attribute("mode", getattr(rewrite.metrics, "mode", "unknown"))
+
+    with active_trace.span("multi_query", input={"query": rewrite.retrieval_query}) as span:
+        expander = multi_query_expander or create_multi_query_expander(settings)
+        queries = await expander.expand(rewrite.retrieval_query)
+        span.set_output({"query_count": len(queries)})
+
+    with active_trace.span("retrieval", input={"queries": list(queries)}) as span:
+        raw_documents = await _retrieve_for_queries(retriever, queries)
+        span.set_output({"raw_count": len(raw_documents)})
+
+    with active_trace.span("rerank", input={"raw_count": len(raw_documents)}) as span:
+        resolved_reranker = reranker if reranker is not None else get_reranker()
+        documents = await asyncio.to_thread(
+            resolved_reranker.rerank,
+            rewrite.retrieval_query,
+            raw_documents,
+            top_k=settings.top_k,
+            relevance_threshold=settings.reranker_relevance_threshold,
+        )
+        span.set_output({"selected_count": len(documents)})
+
+    with active_trace.span("context_budget", input={"candidate_count": len(documents)}) as span:
+        budget = resolved_budget_builder.build(
+            system=SYSTEM_INSTRUCTION,
+            history_turns=history_turns,
+            chunks=format_context_blocks(documents),
+            query=question,
+        )
+        span.set_output({"budgeted_chunks": len(budget.chunks)})
     selected_documents = documents[: len(budget.chunks)]
     context = (
         "\n\n".join(budget.chunks)

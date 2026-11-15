@@ -270,10 +270,15 @@ async def _answer_with_tools(
     database: Any,
     qdrant_client: Any,
     session_id: str | None = None,
+    tracer: Any = None,
 ) -> dict:
     """Compose JSON-only dependencies from managed handles, without new clients."""
     queries = DocumentQueries(MongoDocumentRepository(database))
-    orchestrator = ChatOrchestrator(queries=queries, tools_enabled=True)
+    orchestrator = ChatOrchestrator(
+        queries=queries,
+        tools_enabled=True,
+        **({"tracer": tracer} if tracer is not None else {}),
+    )
     plan = await orchestrator.prepare_plan(
         question, database=database, qdrant_client=qdrant_client, session_id=session_id,
     )
@@ -320,6 +325,7 @@ async def chat(payload: ChatRequest, request: Request) -> ChatResponse | JSONRes
                         return from_thread.run(
                             _answer_with_tools, payload.question, cloud.mongodb.database,
                             cloud.qdrant.client, str(payload.session_id),
+                            getattr(request.app.state, "tracer", None),
                         )
                     except FutureCancelledError:
                         # AnyIO translates async cancellation at the worker bridge.
@@ -413,8 +419,13 @@ async def chat_stream(
         if cloud.mongodb.database is None or (not tools_enabled and cloud.qdrant.client is None):
             raise HTTPException(status_code=503, detail="Cloud dependencies chưa sẵn sàng.")
         if tools_enabled:
+            tracer = getattr(request.app.state, "tracer", None)
             queries = DocumentQueries(MongoDocumentRepository(cloud.mongodb.database))
-            orchestrator = ChatOrchestrator(queries=queries, tools_enabled=True)
+            orchestrator = ChatOrchestrator(
+                queries=queries,
+                tools_enabled=True,
+                **({"tracer": tracer} if tracer is not None else {}),
+            )
             # C05 pre-guard preparation is intentionally retained. No tools run here.
             prepared = await orchestrator.prepare_plan(
                 payload.question,

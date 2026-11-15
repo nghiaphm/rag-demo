@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import chat, documents, sessions
 from app.infrastructure.connections import CloudConnections
+from app.infrastructure.observability import get_tracer
 from app.shared.config import settings
 from app.conversations.indexes import initialize_conversation_indexes
 from app.documents.indexes import initialize_document_indexes
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     """Khởi tạo/đóng MongoDB Atlas và Qdrant Cloud clients dùng chung."""
     cloud_connections = CloudConnections(settings)
     app.state.cloud_connections = cloud_connections
+    app.state.tracer = get_tracer(settings)
     statuses = await run_in_threadpool(cloud_connections.connect_all)
     if statuses["mongodb"].ok:
         await run_in_threadpool(
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        app.state.tracer.flush()
         await run_in_threadpool(cloud_connections.close)
 
 
