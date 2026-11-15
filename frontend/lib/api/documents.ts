@@ -81,7 +81,7 @@ function assertDocumentId(id: string) {
 }
 
 function indexResult(value: unknown, status: number): DocumentIndexInfo {
-  if (status !== 201 || !record(value) || !text(value.document_id) || !text(value.version_id)
+  if ((status !== 201 && status !== 202) || !record(value) || !text(value.document_id) || !text(value.version_id)
     || !text(value.job_id) || typeof value.file_name !== "string" || !count(value.num_chunks)
     || typeof value.activated !== "boolean" || (value.status !== undefined && !statuses.includes(String(value.status)))) {
     throw new TypeError("Phản hồi ingestion không khớp API contract.");

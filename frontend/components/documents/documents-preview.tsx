@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { LoadingSkeleton } from "@/components/layout/loading-skeleton"
 import { useDocuments } from "@/hooks/use-documents"
-import type { DocumentsController, DocumentsState } from "@/lib/documents/controller"
+import { hasPendingIngestion, type DocumentsController, type DocumentsState } from "@/lib/documents/controller"
 import { cn } from "@/lib/utils"
 import type { DocumentDetail, DocumentInfo, DocumentVersionInfo } from "@/types/document"
 
@@ -236,7 +236,13 @@ export function DocumentsDataView({ state, controller, apiBaseUrl = null }: {
             Danh sách tài liệu, phiên bản hoạt động và trạng thái từ backend.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {hasPendingIngestion(state) && (
+            <Badge variant="outline" className="gap-1.5 text-xs text-muted-foreground">
+              <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
+              Đang cập nhật tiến độ
+            </Badge>
+          )}
           <Button type="button" variant="outline" onClick={() => void controller.reload()} disabled={state.status === "loading"}>
             <RefreshCw aria-hidden="true" />Làm mới
           </Button>
