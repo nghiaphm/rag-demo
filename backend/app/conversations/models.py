@@ -63,6 +63,7 @@ class SessionRecord(MongoRecord):
     title: str = Field(default="Cuộc trò chuyện mới", min_length=1, max_length=200)
     scope: SessionScope = Field(default_factory=SessionScope)
     user_id: str | None = Field(default=None, min_length=1, max_length=255)
+    allowed_roles: list[str] = Field(default_factory=list)
     next_message_sequence: int = Field(default=1, ge=1)
     active_generation_id: str | None = None
     active_generation_started_at: datetime | None = None

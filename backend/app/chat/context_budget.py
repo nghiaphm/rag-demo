@@ -30,6 +30,7 @@ class ContextBudgetConfig:
     query_max_tokens: int
     output_reserve_tokens: int
     chars_per_token: float = 3.0
+    max_tokens_per_turn: int | None = None
 
     def __post_init__(self) -> None:
         integer_values = (
@@ -44,8 +45,12 @@ class ContextBudgetConfig:
             raise ValueError("Các giới hạn token phải lớn hơn 0")
         if self.chars_per_token <= 0:
             raise ValueError("chars_per_token phải lớn hơn 0")
+        if self.max_tokens_per_turn is not None and self.max_tokens_per_turn <= 0:
+            raise ValueError("max_tokens_per_turn phải lớn hơn 0")
         if self.allocated_tokens > self.context_window_tokens:
             raise ValueError("Tổng allocation vượt context window")
+        if self.max_tokens_per_turn is not None and self.allocated_tokens > self.max_tokens_per_turn:
+            raise ValueError("Tổng allocation vượt max_tokens_per_turn")
 
     @property
     def allocated_tokens(self) -> int:
@@ -59,14 +64,19 @@ class ContextBudgetConfig:
 
     @classmethod
     def from_settings(cls, settings: object) -> "ContextBudgetConfig":
+        max_turn = getattr(settings, "max_tokens_per_turn", None)
+        window = settings.rag_context_window_tokens
+        if max_turn is not None:
+            window = min(window, max_turn)
         return cls(
-            context_window_tokens=settings.rag_context_window_tokens,
+            context_window_tokens=window,
             system_max_tokens=settings.rag_system_max_tokens,
             history_max_tokens=settings.rag_history_max_tokens,
             chunks_max_tokens=settings.rag_chunks_max_tokens,
             query_max_tokens=settings.rag_query_max_tokens,
             output_reserve_tokens=settings.rag_output_reserve_tokens,
             chars_per_token=settings.rag_token_chars_per_token,
+            max_tokens_per_turn=max_turn,
         )
 
 

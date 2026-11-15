@@ -3,8 +3,11 @@
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
+
+from app.api.dependencies.auth import get_current_user
+from app.shared.auth import UserContext, can_access_resource
 
 from app.documents.repository import (
     RepositoryConflictError,
@@ -27,6 +30,15 @@ from app.api.schemas.chat_documents import (
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+async def _invalidate_cache(request: Request) -> None:
+    cache = getattr(request.app.state, "semantic_cache", None)
+    if cache is not None:
+        try:
+            await cache.invalidate_all()
+        except Exception:
+            pass
 
 
 def _validated_file_name(file: UploadFile) -> str:
@@ -151,7 +163,11 @@ async def document_preview(document_id: UUID, version_id: UUID, request: Request
 
 
 @router.post("/upload", response_model=DocumentIndexInfo, status_code=201)
-async def upload_document(request: Request, file: UploadFile = File(...)) -> DocumentIndexInfo:
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: UserContext | None = Depends(get_current_user),
+) -> DocumentIndexInfo:
     """Tạo document identity mới và index version đầu tiên."""
     file_name, content = await _read_upload(file)
     service = await _service(request)
@@ -161,6 +177,7 @@ async def upload_document(request: Request, file: UploadFile = File(...)) -> Doc
         )
     except Exception as exc:
         _handle_error(exc)
+    await _invalidate_cache(request)
     return _index_response(result)
 
 
@@ -185,12 +202,22 @@ async def get_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentDetail)
-async def get_document(request: Request, document_id: UUID) -> DocumentDetail:
+async def get_document(
+    request: Request,
+    document_id: UUID,
+    current_user: UserContext | None = Depends(get_current_user),
+) -> DocumentDetail:
     service = await _service(request)
     try:
         detail = await run_in_threadpool(service.get_document, str(document_id))
     except Exception as exc:
         _handle_error(exc)
+    if not can_access_resource(
+        user=current_user,
+        owner_id=detail.document.owner_id,
+        allowed_roles=detail.document.allowed_roles,
+    ):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập tài liệu này.")
     summary = DocumentSummary(
         document=detail.document,
         active_version=next(
@@ -221,6 +248,7 @@ async def update_document(
         )
     except Exception as exc:
         _handle_error(exc)
+    await _invalidate_cache(request)
     return _index_response(result)
 
 
@@ -232,19 +260,34 @@ async def reindex_document(request: Request, document_id: UUID) -> DocumentIndex
         result = await run_in_threadpool(service.reindex, str(document_id))
     except Exception as exc:
         _handle_error(exc)
+    await _invalidate_cache(request)
     return _index_response(result)
 
 
 @router.delete("/{document_id}", response_model=DeleteDocumentResponse)
 async def remove_document(
-    request: Request, document_id: UUID, response: Response
+    request: Request,
+    document_id: UUID,
+    response: Response,
+    current_user: UserContext | None = Depends(get_current_user),
 ) -> DeleteDocumentResponse:
     """Soft-delete/unpublish, xóa Qdrant points, giữ raw files và audit history."""
     service = await _service(request)
     try:
+        if current_user is not None:
+            detail = await run_in_threadpool(service.get_document, str(document_id))
+            if not can_access_resource(
+                user=current_user,
+                owner_id=detail.document.owner_id,
+                allowed_roles=detail.document.allowed_roles,
+            ):
+                raise HTTPException(status_code=403, detail="Không có quyền xóa tài liệu này.")
         result = await run_in_threadpool(service.delete, str(document_id))
+    except HTTPException:
+        raise
     except Exception as exc:
         _handle_error(exc)
+    await _invalidate_cache(request)
     if result.cleanup_pending:
         response.status_code = 202
     return DeleteDocumentResponse(

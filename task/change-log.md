@@ -146,17 +146,23 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Phase 4 – Performance & Security
-> **Trạng thái**: Chưa bắt đầu  
+> **Trạng thái**: Hoàn thành  
 > **Phạm vi**: `Semantic Cache` · `Auth/RBAC` · `Access-aware Retrieval` · `Bounded Execution`
 
 ### Thay đổi đã thực hiện
-- *(Chưa có cập nhật)*
+- **Authentication & RBAC (`auth_enabled` flag)**: Triển khai `UserRole`, `UserContext`, `UserRecord`, pure-stdlib PBKDF2 password hashing, HS256 JWT access/refresh token, endpoint `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/me`, và FastAPI dependencies `get_current_user`, `require_roles`. Gắn `owner_id` và `allowed_roles` vào `DocumentRecord`, `SessionRecord`, `VectorRecord`.
+- **Access-aware Retrieval & IDOR Protection**: Mở rộng `VectorFilter` và `QdrantVectorIndex._to_qdrant_filter` để lọc theo `owner_id` / `allowed_roles` ở mức Qdrant query; bảo vệ `/documents`, `/sessions`, `/chat` khỏi truy cập chéo (IDOR).
+- **RBAC-aware Semantic Cache**: Định nghĩa port `SemanticCache` và adapter `RedisSemanticCache` (hỗ trợ in-memory fallback), phân vùng theo `permission_scope` và `active_version_snapshot` để chống rò rỉ dữ liệu khác quyền; tự động `invalidate_all()` khi upload, update, re-index hoặc xóa tài liệu.
+- **Bounded Execution Hardening**: Bổ sung `max_tokens_per_turn` vào `ContextBudgetConfig` và `RateLimiter` (`RedisRateLimiter`) cho `/chat` và `/chat/stream` (gated bởi `rate_limit_enabled`).
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có cập nhật)*
+- Thêm mới: `backend/app/shared/auth.py`, `backend/app/shared/cache.py`, `backend/app/infrastructure/semantic_cache.py`, `backend/app/api/dependencies/auth.py`, `backend/app/api/routes/auth.py`, `backend/tests/unit/test_rbac_and_cache.py`.
+- Chỉnh sửa: `backend/app/shared/config.py`, `.env.example`, `backend/app/documents/models.py`, `backend/app/conversations/models.py`, `backend/app/rag/vector_index.py`, `backend/app/infrastructure/qdrant_vector_index.py`, `backend/app/chat/context_budget.py`, `backend/app/api/routes/documents.py`, `backend/app/api/routes/sessions.py`, `backend/app/api/routes/chat.py`, `backend/app/main.py`.
 
 ### Kết quả kiểm thử
-- *(Chưa có cập nhật)*
+- `tests/architecture`: **9/9 PASS**
+- `tests/unit`: **283/283 PASS** (bao gồm `test_rbac_and_cache.py`)
+- `tests/integration`: **153/153 PASS**
 
 ---
 

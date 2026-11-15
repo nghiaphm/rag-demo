@@ -60,6 +60,20 @@ class QdrantVectorIndex(VectorIndex):
                     match=MatchAny(any=list(filters.version_ids)),
                 )
             )
+        access_should: list[FieldCondition] = []
+        if filters.owner_id is not None:
+            access_should.append(
+                FieldCondition(key="owner_id", match=MatchValue(value=filters.owner_id))
+            )
+        if filters.allowed_roles is not None:
+            access_should.append(
+                FieldCondition(
+                    key="allowed_roles",
+                    match=MatchAny(any=list(filters.allowed_roles)),
+                )
+            )
+        if access_should:
+            must.append(Filter(should=access_should))
         return Filter(must=must)
 
     @staticmethod

@@ -63,3 +63,30 @@ export type ApiErrorResponse =
   | HTTPErrorResponse
   | HTTPValidationError
   | ChatResponse;
+
+/** Authentication and RBAC DTOs sourced from backend/app/api/routes/auth.py. */
+export type UserRole = "admin" | "editor" | "viewer";
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  roles?: UserRole[];
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface RefreshRequest {
+  refresh_token: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type?: string;
+  user_id: string;
+  username: string;
+  roles: string[];
+}
