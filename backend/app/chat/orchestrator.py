@@ -37,6 +37,12 @@ from app.documents.tool_handlers import create_document_tool_registry, document_
 from app.tool_use.executor import MAX_CALL_ID_BYTES, MAX_TOOL_CALLS, ToolExecutor
 
 from app.chat.prompts import FINAL_INSTRUCTION, SELECTOR_INSTRUCTION
+from app.chat.agent import AGENT_SYSTEM_INSTRUCTION, AgenticRunner
+from app.chat.agent_tools import (
+    agent_tool_schemas,
+    create_agent_tool_registry,
+    create_rag_search_handler,
+)
 
 PROVIDER_CAPABILITY_STATUS: str = settings.provider_capability_status
 MAX_SELECTOR_SECONDS: float = settings.tool_selector_timeout_seconds
@@ -105,7 +111,7 @@ class UsageLedger:
 
 @dataclass
 class PreparedChatAnswer:
-    route: Literal["RAG", "DOCUMENT_TOOLS"]
+    route: Literal["RAG", "DOCUMENT_TOOLS", "AGENTIC"]
     original_question: str
     sources: list[dict]
     deadline: float | None
@@ -117,6 +123,9 @@ class PreparedChatAnswer:
     calls: tuple[ToolCall, ...] = ()
     executor: ToolExecutor | None = field(default=None, repr=False)
     model: Any = field(default=None, repr=False)
+    agent_messages: list[BaseMessage] = field(default_factory=list, repr=False)
+    qdrant_client: Any = field(default=None, repr=False)
+    active_version_ids: tuple[str, ...] = ()
     _owner: object = field(default=None, repr=False)
     _started: bool = field(default=False, repr=False)
 
@@ -278,6 +287,9 @@ class ChatOrchestrator:
         tools_enabled: bool = False,
         rag_prepare: Callable[..., Awaitable[PreparedRagStream]] | None = None,
         tracer: Tracer | None = None,
+        agentic_mode: bool | None = None,
+        max_agent_steps: int | None = None,
+        rag_search_fn: Callable[[str, int], list[Any]] | None = None,
     ) -> None:
         if type(tools_enabled) is not bool:
             raise ValueError("tools_enabled phải là boolean")
@@ -288,6 +300,9 @@ class ChatOrchestrator:
         self.tools_enabled = tools_enabled
         self.rag_prepare = rag_prepare or prepare_rag_request
         self.tracer: Tracer = tracer or NoOpTracer()
+        self.agentic_mode = settings.agentic_mode_enabled if agentic_mode is None else agentic_mode
+        self.max_agent_steps = settings.max_agent_steps if max_agent_steps is None else max_agent_steps
+        self.rag_search_fn = rag_search_fn
 
     def _schemas(self) -> list[dict]:
         return [{"type": "function", "function": {
@@ -380,6 +395,30 @@ class ChatOrchestrator:
             turns: tuple[HistoryTurn, ...] = ()
             model = self.model if self.model is not None else get_llm()
             response, calls = None, ()
+            if self.tools_enabled and self.agentic_mode:
+                if session_id is not None:
+                    loader = self.history_loader or ConversationHistoryLoader(MongoConversationRepository(database))
+                    loaded = await _wait(lambda: asyncio.to_thread(loader.load, session_id), deadline)
+                    turns = loaded.turns
+                agent_messages, turns = self._fit(
+                    question,
+                    turns,
+                    AGENT_SYSTEM_INSTRUCTION,
+                    tools=agent_tool_schemas(),
+                )
+                return PreparedChatAnswer(
+                    "AGENTIC",
+                    question,
+                    [],
+                    deadline,
+                    ledger,
+                    True,
+                    history_turns=turns,
+                    model=model,
+                    agent_messages=agent_messages,
+                    qdrant_client=qdrant_client,
+                    _owner=self,
+                )
             if self.tools_enabled:
                 if session_id is not None:
                     loader = self.history_loader or ConversationHistoryLoader(MongoConversationRepository(database))
@@ -494,7 +533,39 @@ class ChatOrchestrator:
         trace = self.tracer.trace("llm_generation_turn", input={"route": plan.route})
         try:
             with trace.span("llm_generation", input={"route": plan.route}) as span:
-                if plan.route == "DOCUMENT_TOOLS":
+                if plan.route == "AGENTIC":
+                    collected_sources: list[dict] = []
+                    rag_handler = create_rag_search_handler(
+                        retrieve_fn=self.rag_search_fn,
+                        qdrant_client=plan.qdrant_client,
+                        active_version_ids=plan.active_version_ids,
+                        collected_sources=collected_sources,
+                    )
+                    registry = create_agent_tool_registry(
+                        self.queries,
+                        rag_search_handler=rag_handler,
+                    )
+                    runner = AgenticRunner(
+                        model=plan.model,
+                        schemas=agent_tool_schemas(),
+                        registry=registry,
+                        parse_calls=self._calls,
+                        extract_text=_text,
+                        extract_usage=_message_usage,
+                        wait_fn=_wait,
+                        output_reserve_tokens=self.config.output_reserve_tokens,
+                        max_steps=self.max_agent_steps,
+                    )
+                    answer, final_sources, _state = await runner.run(
+                        initial_messages=plan.agent_messages,
+                        collected_sources=collected_sources,
+                        ledger=plan.ledger,
+                        error_cls=ChatOrchestrationError,
+                        deadline=plan.deadline,
+                        trace=trace,
+                    )
+                    result = {"answer": answer, "sources": final_sources, "usage": plan.usage}
+                elif plan.route == "DOCUMENT_TOOLS":
                     messages, notice = await self._tool_context(plan)
                     entry = plan.ledger.begin("final")
                     response = await _wait(lambda: adapter.ainvoke(messages), plan.deadline)
