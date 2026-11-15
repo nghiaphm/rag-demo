@@ -8,6 +8,7 @@ import type {
   MessageResponse,
   SessionPageResponse,
   SessionResponse,
+  UpdateSessionScopeRequest,
 } from "@/types/sessions";
 
 type ApiClient = ReturnType<typeof createApiClient>;
@@ -32,6 +33,54 @@ export async function updateSessionTitle(api: ApiClient, id: string, title: stri
   const response = await api.request<unknown>(`/sessions/${id}`, { method: "PATCH", json: { title: normalized }, signal });
   if (response.status !== 200 || !isSessionResponse(response.data) || response.data.session_id !== id || response.data.title !== normalized) {
     throw new TypeError("Phản hồi đổi tên không khớp session contract.");
+  }
+  return response.data;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function validateSessionScope(scope: UpdateSessionScopeRequest): string | null {
+  const docIds = scope.document_ids ?? [];
+  if (scope.mode === "ALL_ACTIVE") {
+    if (docIds.length > 0) return "Chế độ ALL_ACTIVE không nhận danh sách tài liệu.";
+    return null;
+  }
+  if (scope.mode === "SELECTED_DOCUMENTS") {
+    if (docIds.length === 0) return "Cần chọn ít nhất một tài liệu khi dùng SELECTED_DOCUMENTS.";
+    const normalized = docIds.map(id => id.trim().toLowerCase());
+    if (normalized.some(id => !UUID_PATTERN.test(id))) return "Document ID không hợp lệ.";
+    if (new Set(normalized).size !== normalized.length) return "Danh sách tài liệu không được trùng lặp.";
+    return null;
+  }
+  return "Chế độ phạm vi tài liệu không hợp lệ.";
+}
+
+export async function updateSessionScope(
+  api: ApiClient,
+  id: string,
+  scope: UpdateSessionScopeRequest,
+  signal?: AbortSignal
+): Promise<SessionResponse> {
+  if (!isSessionId(id)) throw new TypeError("Session ID không hợp lệ.");
+  const error = validateSessionScope(scope);
+  if (error) throw new TypeError(error);
+  const normalizedIds = scope.mode === "ALL_ACTIVE"
+    ? []
+    : (scope.document_ids ?? []).map(docId => docId.trim().toLowerCase());
+  const response = await api.request<unknown>(`/sessions/${id}/scope`, {
+    method: "PATCH",
+    json: { mode: scope.mode, document_ids: normalizedIds },
+    signal,
+  });
+  if (
+    response.status !== 200
+    || !isSessionResponse(response.data)
+    || response.data.session_id !== id
+    || response.data.scope.mode !== scope.mode
+    || response.data.scope.document_ids.length !== normalizedIds.length
+    || response.data.scope.document_ids.some((docId, idx) => docId.toLowerCase() !== normalizedIds[idx])
+  ) {
+    throw new TypeError("Phản hồi cập nhật phạm vi không khớp session contract.");
   }
   return response.data;
 }

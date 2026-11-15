@@ -1,6 +1,6 @@
 import { createChatStreamClient } from "@/lib/api/chat";
 import { createApiClient } from "@/lib/api/client";
-import { createSession, listSessionMessages } from "@/lib/api/sessions";
+import { createSession, listSessionMessages, updateSessionScope } from "@/lib/api/sessions";
 import type { ChatControllerServices } from "@/lib/chat/controller";
 import { historyMessageToViewMessage, loadMessageHistory } from "@/lib/sessions/history";
 import { invalidateSessionList } from "@/lib/sessions/invalidation";
@@ -12,6 +12,11 @@ export function createChatServices(baseUrl: string): ChatControllerServices {
   return {
     createSession: async (signal) => {
       const session = await createSession(api, {}, signal);
+      if (!signal.aborted) invalidateSessionList(baseUrl);
+      return session;
+    },
+    updateScope: async (sessionId, scope, signal) => {
+      const session = await updateSessionScope(api, sessionId, scope, signal);
       if (!signal.aborted) invalidateSessionList(baseUrl);
       return session;
     },
