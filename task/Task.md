@@ -75,7 +75,7 @@ Mọi thay đổi trong 6 Phase bắt buộc tuân thủ các ràng buộc sau c
 
 ### 3.1 Mở rộng Tool Registry cho Agent
 - [x] Bổ sung **`rag_search`** thành một Tool chính thức (`tool_use/contracts.py` + `chat/agent_tools.py`) để Agent có thể chủ động gọi tìm kiếm tài liệu nhiều lần với các từ khóa khác nhau trong cùng 1 lượt chat.
-- [ ] (Tùy chọn mở rộng) Bổ sung **`query_excel_table`** cho phép Agent lọc/tổng hợp dữ liệu có cấu trúc trên file `.xlsx` đã upload thay vì chỉ tìm text thuần.
+- [x] Bổ sung **`query_excel_table`** cho phép Agent lọc/tổng hợp dữ liệu có cấu trúc (`rows`, `count`, `sum`, `avg`, `min`, `max`) trên file `.xlsx` đã upload thay vì chỉ tìm text thuần.
 
 ### 3.2 Stateful Iterative Agent Loop
 - [x] Nâng cấp `backend/app/chat/orchestrator.py` (hỗ trợ cờ `AGENTIC_MODE_ENABLED` & `MAX_AGENT_STEPS = 4`):
