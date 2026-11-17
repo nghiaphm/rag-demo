@@ -10,64 +10,75 @@ import { HrKpiCards } from "@/components/hr/dashboard/hr-kpi-cards"
 import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { HR_ANALYTICS_FIXTURE } from "@/fixtures/hr-analytics"
 import { useDocuments } from "@/hooks/use-documents"
 import { summarizeKnowledgeBaseDocuments } from "@/lib/hr/analytics"
 
-function LiveKnowledgeBaseCard({ apiBaseUrl }: { apiBaseUrl: string }) {
+function LiveKnowledgeBaseStrip({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state } = useDocuments(apiBaseUrl)
   const summary = summarizeKnowledgeBaseDocuments(state.items)
+  const loading = state.status === "loading" && state.items.length === 0
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+    <section
+      aria-labelledby="live-kb-title"
+      className="rounded-xl border bg-card p-6"
+    >
+      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Database className="size-4 text-primary" aria-hidden="true" />
-            <CardTitle>Kho tri thức RAG (Dữ liệu thực từ API)</CardTitle>
+            <h2 id="live-kb-title" className="text-base font-semibold tracking-tight">
+              Kho tri thức RAG (Dữ liệu thực từ API)
+            </h2>
+            <Badge variant="secondary" className="bg-accent text-accent-foreground">
+              Live API
+            </Badge>
           </div>
-          <CardDescription>
-            Thống kê trực tiếp từ GET /documents đang phục vụ HR Chatbot &amp; RAG Workspace.
-          </CardDescription>
-        </div>
-        <Badge variant="secondary">Live API</Badge>
-      </CardHeader>
-      <CardContent>
-        {state.status === "error" ? (
-          <p role="alert" className="text-sm text-destructive">
-            {state.error ?? "Chưa thể kết nối Backend để đọc thống kê tài liệu."}
+          <p className="text-xs leading-5 text-muted-foreground">
+            Số liệu đọc trực tiếp từ GET /documents phục vụ Trợ lý HR và RAG Workspace.
           </p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-4">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Tổng tài liệu</p>
-              <p className="mt-1 text-xl font-semibold">
-                {state.status === "loading" && state.items.length === 0 ? "…" : summary.totalDocuments}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Sẵn sàng (INDEXED)</p>
-              <p className="mt-1 text-xl font-semibold text-primary">
-                {state.status === "loading" && state.items.length === 0 ? "…" : summary.indexedDocuments}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Đang xử lý</p>
-              <p className="mt-1 text-xl font-semibold">
-                {state.status === "loading" && state.items.length === 0 ? "…" : summary.processingDocuments}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Tổng Vector Chunks</p>
-              <p className="mt-1 text-xl font-semibold">
-                {state.status === "loading" && state.items.length === 0 ? "…" : summary.totalChunks}
-              </p>
-            </div>
+        </div>
+
+        <Button nativeButton={false} variant="outline" size="sm" render={<Link href="/hr/documents" />}>
+          <Files className="size-3.5" aria-hidden="true" />
+          <span>Mở kho tài liệu</span>
+        </Button>
+      </div>
+
+      {state.status === "error" ? (
+        <p role="alert" className="pt-4 text-sm text-destructive">
+          {state.error ?? "Chưa thể kết nối Backend để đọc thống kê tài liệu."}
+        </p>
+      ) : (
+        <dl className="grid divide-y divide-border pt-4 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+          <div className="py-2 sm:px-4 first:sm:pl-0">
+            <dt className="text-xs text-muted-foreground">Tổng tài liệu</dt>
+            <dd className="mt-1 text-2xl font-semibold tabular-nums">
+              {loading ? "…" : summary.totalDocuments}
+            </dd>
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div className="py-2 sm:px-4">
+            <dt className="text-xs text-muted-foreground">Sẵn sàng (INDEXED)</dt>
+            <dd className="mt-1 text-2xl font-semibold tabular-nums text-primary">
+              {loading ? "…" : summary.indexedDocuments}
+            </dd>
+          </div>
+          <div className="py-2 sm:px-4">
+            <dt className="text-xs text-muted-foreground">Đang xử lý</dt>
+            <dd className="mt-1 text-2xl font-semibold tabular-nums">
+              {loading ? "…" : summary.processingDocuments}
+            </dd>
+          </div>
+          <div className="py-2 sm:px-4 last:sm:pr-0">
+            <dt className="text-xs text-muted-foreground">Tổng Vector Chunks</dt>
+            <dd className="mt-1 text-2xl font-semibold tabular-nums">
+              {loading ? "…" : summary.totalChunks}
+            </dd>
+          </div>
+        </dl>
+      )}
+    </section>
   )
 }
 
@@ -82,22 +93,24 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
   }, [setPageContext])
 
   return (
-    <section aria-labelledby="hr-dashboard-title" className="mx-auto w-full max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">Cổng nhân sự nội bộ</p>
-          <h1 id="hr-dashboard-title" className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+    <section aria-labelledby="hr-dashboard-title" className="mx-auto w-full max-w-6xl space-y-8">
+      <div className="flex flex-col gap-5 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl space-y-2">
+          <h1
+            id="hr-dashboard-title"
+            className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
+          >
             Dashboard &amp; Analytics nhân sự
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Theo dõi nhanh chỉ số nhân sự (dữ liệu mô phỏng demo) và tình trạng kho tài liệu chính sách đang kết nối với Trợ lý RAG.
+          <p className="text-sm leading-6 text-muted-foreground">
+            Theo dõi nhanh chỉ số nhân sự mô phỏng và tình trạng kho tài liệu chính sách đang kết nối với Trợ lý RAG.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            className="gap-1.5"
+            className="gap-1.5 shadow-2xs transition-transform active:scale-[0.99]"
             onClick={() =>
               openWidget({
                 pageContext: { route: "/hr", title: "Tổng quan nhân sự" },
@@ -124,22 +137,24 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
         asOfLabel={HR_ANALYTICS_FIXTURE.asOfLabel}
       />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <DepartmentChart departments={HR_ANALYTICS_FIXTURE.departments} />
-        <EmployeeStatusChart statuses={HR_ANALYTICS_FIXTURE.contractStatuses} />
+      <div className="grid gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-7">
+          <DepartmentChart departments={HR_ANALYTICS_FIXTURE.departments} />
+        </div>
+        <div className="lg:col-span-5">
+          <EmployeeStatusChart statuses={HR_ANALYTICS_FIXTURE.contractStatuses} />
+        </div>
       </div>
 
       {apiBaseUrl ? (
-        <LiveKnowledgeBaseCard apiBaseUrl={apiBaseUrl} />
+        <LiveKnowledgeBaseStrip apiBaseUrl={apiBaseUrl} />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Kho tri thức RAG</CardTitle>
-            <CardDescription>
-              Chưa cấu hình NEXT_PUBLIC_API_BASE_URL nên chỉ hiển thị dữ liệu nhân sự mô phỏng.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <section className="rounded-xl border bg-card p-6">
+          <h2 className="text-base font-semibold tracking-tight">Kho tri thức RAG</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Chưa cấu hình NEXT_PUBLIC_API_BASE_URL nên hiện chỉ hiển thị dữ liệu nhân sự mô phỏng.
+          </p>
+        </section>
       )}
     </section>
   )
