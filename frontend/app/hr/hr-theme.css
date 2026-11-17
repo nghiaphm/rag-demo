@@ -1,0 +1,42 @@
+/* Scoped design tokens for /hr/* portal (does not alter primary RAG Workspace). */
+.hr-theme {
+  --font-sans: var(--font-hr-body), "Be Vietnam Pro", system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-hr-display), "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --background: #f6f8f7;
+  --foreground: #10201c;
+  --card: #ffffff;
+  --card-foreground: #10201c;
+  --popover: #ffffff;
+  --popover-foreground: #10201c;
+  --primary: #0f5c4d;
+  --primary-foreground: #f7faf9;
+  --secondary: #ebf0ed;
+  --secondary-foreground: #162c26;
+  --muted: #eef2ef;
+  --muted-foreground: #4f615b;
+  --accent: #e3ece7;
+  --accent-foreground: #0f3f35;
+  --destructive: #c43b33;
+  --border: #dce3df;
+  --input: #d2dbd6;
+  --ring: #1f7a68;
+  --chart-1: #0f5c4d;
+  --chart-2: #2b7a94;
+  --chart-3: #c78626;
+  --chart-4: #70877f;
+  --chart-5: #1c3a32;
+  --sidebar: #eef2ef;
+  --sidebar-foreground: #132520;
+  --sidebar-primary: #0f5c4d;
+  --sidebar-primary-foreground: #f7faf9;
+  --sidebar-accent: #e1eae5;
+  --sidebar-accent-foreground: #0f3f35;
+  --sidebar-border: #d7dfda;
+  --sidebar-ring: #1f7a68;
+}
+
+.hr-theme h1,
+.hr-theme h2,
+.hr-theme h3 {
+  font-family: var(--font-heading);
+}

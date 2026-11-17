@@ -118,7 +118,7 @@ function HrSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-3">
+      <SidebarHeader className="p-3.5">
         <Link
           href="/hr"
           className="flex min-h-10 items-center gap-3 rounded-lg px-2 outline-none ring-sidebar-ring transition-colors hover:bg-sidebar-accent focus-visible:ring-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
@@ -126,25 +126,25 @@ function HrSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
             if (isMobile) setOpenMobile(false)
           }}
         >
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground shadow-2xs">
             <Building2 className="size-4" aria-hidden="true" />
           </span>
           <span className="min-w-0 leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="block truncate text-sm font-semibold">HR Portal</span>
-            <span className="block truncate text-xs text-sidebar-foreground/65">
-              Demo tích hợp RAG
+            <span className="block truncate text-sm font-semibold tracking-tight">HR Portal</span>
+            <span className="block truncate text-xs text-sidebar-foreground/70">
+              Nhân sự và tri thức
             </span>
           </span>
         </Link>
       </SidebarHeader>
       <SidebarSeparator />
-      <SidebarContent>
+      <SidebarContent className="px-1 py-2">
         <Suspense fallback={<HrNavigationLinks />}>
           <HrNavigation />
         </Suspense>
-        <SidebarSeparator />
+        <SidebarSeparator className="my-2" />
         <SidebarGroup>
-          <SidebarGroupLabel>Công cụ & Hệ thống</SidebarGroupLabel>
+          <SidebarGroupLabel>Công cụ liên kết</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -180,12 +180,12 @@ function HrSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="space-y-2 p-3">
+      <SidebarFooter className="space-y-2.5 p-3.5">
         <div className="group-data-[collapsible=icon]:hidden">
           <ServiceHealth apiBaseUrl={apiBaseUrl} />
         </div>
-        <p className="px-2 text-xs leading-5 text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
-          RAG Workspace vẫn là giao diện chính tại /chat.
+        <p className="px-2 text-[11px] leading-5 text-sidebar-foreground/65 group-data-[collapsible=icon]:hidden">
+          Không gian hỏi đáp chính nằm tại /chat.
         </p>
       </SidebarFooter>
       <SidebarRail />

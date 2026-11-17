@@ -110,3 +110,24 @@ Tài liệu này lưu lại toàn bộ lịch sử thay đổi, quyết định 
 - Frontend `npm.cmd test`: **225/225 PASS**
 - Frontend `npx.cmd next build --webpack`: **PASS** (10/10 static/PPR routes: `/`, `/_not-found`, `/chat`, `/chat/[sessionId]`, `/documents`, `/hr`, `/hr/documents`, `/hr/guide`)
 - Backend `tests/architecture`: **9/9 PASS**, `tests/unit`: **287/287 PASS**, `tests/integration`: **154/154 PASS**
+
+---
+
+## Phase H6 – HR UI Visual & Typography Polish (`frontend-design` + `taste-skill`)
+> **Trạng thái**: Hoàn thành  
+> **Phạm vi**: `HR Theme Tokens` · `Typography Pairing` · `Layout Rhythm` · `Chart Palette`
+
+### Thay đổi đã thực hiện
+- Tạo `frontend/app/hr/hr-theme.css` định nghĩa hệ màu riêng cho `/hr/*` (mineral paper `#F6F8F7`, deep spruce primary `#0F5C4D`, palette chart đa sắc `#0F5C4D` / `#2B7A94` / `#C78626` / `#70877F` — không dùng violet/lavender và không ảnh hưởng tới RAG Workspace).
+- Tích hợp font Google có hỗ trợ đầy đủ tiếng Việt (`Plus_Jakarta_Sans` cho heading + `Be_Vietnam_Pro` cho body) vào `frontend/app/hr/layout.tsx` và gán `.hr-theme` lên cả `HrLayout` lẫn Portal `<SheetContent>` của `HrChatbotWidget`.
+- Tái cấu trúc bố cục theo từng màn hình thay cho card lồng lặp lại:
+  - `/hr` Dashboard: dải metric 4 cột chia đường kẻ (`divide-x`) kèm `tabular-nums`, lưới 12 cột bất đối xứng (`7/5`) cho biểu đồ phòng ban và SVG Donut hợp đồng, dải trạng thái kho tri thức RAG thực.
+  - `/hr/documents`: reader workbench 2 cột với indicator viền trái cho tài liệu đang chọn và khoảng đọc thoải mái.
+  - `/hr/guide`: tinh gọn tiêu đề danh từ tự nhiên (`hr-guide.ts`), bố cục 2 cột dễ đọc và prompt cards có micro-interaction hover tinh tế.
+
+### Files thêm mới / chỉnh sửa
+- **Thêm mới**: `frontend/app/hr/hr-theme.css`.
+- **Chỉnh sửa**: `frontend/app/hr/layout.tsx`, `frontend/fixtures/hr-guide.ts`, `frontend/components/hr/layout/hr-header-user.tsx`, `frontend/components/hr/layout/hr-shell.tsx`, `frontend/components/hr/dashboard/hr-kpi-cards.tsx`, `frontend/components/hr/dashboard/department-chart.tsx`, `frontend/components/hr/dashboard/employee-status-chart.tsx`, `frontend/components/hr/dashboard/hr-dashboard-view.tsx`, `frontend/components/hr/documents/hr-documents-view.tsx`, `frontend/components/hr/guide/hr-guide-view.tsx`, `frontend/components/hr/chatbot/hr-chatbot-widget.tsx`.
+
+### Kết quả kiểm thử
+- Frontend: `test:contract` **PASS**, `typecheck` **PASS**, `lint` **PASS**, `npm.cmd test` **225/225 PASS**, `npx.cmd next build --webpack` **PASS** (`10/10` routes).

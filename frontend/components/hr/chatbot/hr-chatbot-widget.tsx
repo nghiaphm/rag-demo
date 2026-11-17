@@ -220,7 +220,7 @@ export function HrChatbotWidget({ apiBaseUrl }: { apiBaseUrl: string | null }) {
         <Button
           type="button"
           size="lg"
-          className="rounded-full shadow-lg"
+          className="rounded-full shadow-lg transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.98]"
           aria-expanded={isOpen}
           aria-label="Mở Trợ lý HR"
           onClick={() => (isOpen ? closeWidget() : openWidget())}
@@ -233,7 +233,7 @@ export function HrChatbotWidget({ apiBaseUrl }: { apiBaseUrl: string | null }) {
       <Sheet open={isOpen} onOpenChange={(nextOpen) => (nextOpen ? openWidget() : closeWidget())}>
         <SheetContent
           side="right"
-          className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
+          className="hr-theme flex w-full flex-col gap-0 p-0 font-sans sm:max-w-lg"
         >
           <SheetHeader className="border-b pr-12">
             <SheetTitle className="flex items-center gap-2 text-base">
