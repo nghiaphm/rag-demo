@@ -3,7 +3,7 @@ import { ServiceHealth } from "@/components/layout/service-health"
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Files, MessageSquareText, Sparkles } from "lucide-react"
+import { Building2, Files, MessageSquareText, Sparkles } from "lucide-react"
 import { Suspense } from "react"
 
 import { SessionNavigation } from "@/components/layout/session-navigation"
@@ -122,7 +122,25 @@ function AppSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
         <SidebarSeparator />
         <SessionNavigation apiBaseUrl={apiBaseUrl} />
       </SidebarContent>
-      <SidebarFooter className="p-3">
+      <SidebarFooter className="space-y-2 p-3">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip="HR Portal Demo"
+              render={
+                <Link
+                  href="/hr"
+                  onClick={() => {
+                    if (isMobile) setOpenMobile(false)
+                  }}
+                />
+              }
+            >
+              <Building2 aria-hidden="true" />
+              <span>HR Demo Portal</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <p className="px-2 text-xs leading-5 text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
           Nhấn Ctrl/Cmd+B để thu gọn thanh bên.
         </p>

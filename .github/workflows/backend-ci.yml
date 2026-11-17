@@ -1,3 +1,4 @@
+
 name: Backend CI
 
 on:
@@ -8,22 +9,47 @@ on:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
       - ".env.example"
+
   pull_request:
     branches:
       - master
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
-      - ".env.example"
+
+permissions:
+  contents: read
+  pull-requests: read
 
 concurrency:
   group: backend-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Backend Changes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+
+    steps:
+      - name: Detect changed files
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/backend-ci.yml'
+              - '.env.example'
+
   backend-ci:
     name: Backend CI (Architecture, Unit & Offline Tests)
     runs-on: ubuntu-latest
+    needs: changes
+    if: >-
+      always() &&
+      (github.event_name == 'push' ||
+       needs.changes.outputs.backend == 'true')
 
     env:
       PYTHONPATH: backend

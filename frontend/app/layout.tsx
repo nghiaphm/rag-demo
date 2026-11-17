@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
-import { AppShell } from "@/components/layout/app-shell";
-
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,7 +26,6 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || null;
   return (
     <html
       lang="vi"
@@ -41,7 +38,7 @@ export default function RootLayout({
         >
           Chuyển đến nội dung chính
         </a>
-        <AppShell apiBaseUrl={apiBaseUrl}>{children}</AppShell>
+        {children}
       </body>
     </html>
   );
