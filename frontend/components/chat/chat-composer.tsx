@@ -16,6 +16,7 @@ interface ChatComposerProps {
   value: string
   disabled?: boolean
   isGenerating?: boolean
+  showAttachments?: boolean
   onChange: (value: string) => void
   onSubmit: (attachments?: readonly MessageAttachment[]) => void | Promise<boolean>
   onSuccessfulReset?: () => void
@@ -28,6 +29,7 @@ export function ChatComposer({
   value,
   disabled = false,
   isGenerating = false,
+  showAttachments = true,
   onChange,
   onSubmit,
   onSuccessfulReset,
@@ -81,13 +83,13 @@ export function ChatComposer({
       onSubmit={submit}
     >
       <div className="rounded-xl border bg-background p-2 shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
-        {attachments.length > 0 && <div className="space-y-2 px-2 pb-2">
+        {showAttachments && attachments.length > 0 && <div className="space-y-2 px-2 pb-2">
           <ul aria-label="Tệp đính kèm" className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
             {attachments.map(attachment => <AttachmentChip key={attachment.id} apiBaseUrl={apiBaseUrl} attachment={attachment} onRemove={() => remove(attachment.id)} />)}
           </ul>
           <p className="text-xs text-muted-foreground">Tệp được tải vào thư viện tài liệu; chưa giới hạn chat theo tệp đính kèm. <a href="/documents" target="_blank" rel="noreferrer" className="underline">Kiểm tra tài liệu (tab mới)</a> trước khi thử tải lại nếu chưa rõ kết quả.</p>
         </div>}
-        {attachments.length > 0 && (!allReady || attachments.length > 20) && <p role="status" className="px-2 pb-2 text-xs text-muted-foreground">Chờ tất cả tệp Ready trước khi gửi; thử lại hoặc gỡ tệp Failed. Mỗi tin nhắn tối đa 20 tệp.</p>}
+        {showAttachments && attachments.length > 0 && (!allReady || attachments.length > 20) && <p role="status" className="px-2 pb-2 text-xs text-muted-foreground">Chờ tất cả tệp Ready trước khi gửi; thử lại hoặc gỡ tệp Failed. Mỗi tin nhắn tối đa 20 tệp.</p>}
         <label htmlFor={inputId} className="sr-only">
           Câu hỏi
         </label>
@@ -103,11 +105,15 @@ export function ChatComposer({
           aria-readonly={disabled}
         />
         <div className="flex items-end justify-between gap-3 px-1 pt-2">
-          <input ref={picker} type="file" multiple accept={DOCUMENT_UPLOAD_ACCEPT} className="hidden" tabIndex={-1}
-            aria-label="Chọn tệp đính kèm" disabled={!apiBaseUrl}
-            onChange={event => { choose(Array.from(event.target.files ?? [])); event.target.value = "" }} />
-          <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" disabled={!apiBaseUrl}
-            aria-label="Thêm tệp đính kèm" onClick={() => picker.current?.click()}><Plus aria-hidden="true" /></Button>
+          {showAttachments && (
+            <>
+              <input ref={picker} type="file" multiple accept={DOCUMENT_UPLOAD_ACCEPT} className="hidden" tabIndex={-1}
+                aria-label="Chọn tệp đính kèm" disabled={!apiBaseUrl}
+                onChange={event => { choose(Array.from(event.target.files ?? [])); event.target.value = "" }} />
+              <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0" disabled={!apiBaseUrl}
+                aria-label="Thêm tệp đính kèm" onClick={() => picker.current?.click()}><Plus aria-hidden="true" /></Button>
+            </>
+          )}
           <p id={`${inputId}-help`} className="text-xs leading-5 text-muted-foreground">
             {isGenerating ? "Đang tạo câu trả lời…" : "Enter để gửi, Shift+Enter để xuống dòng."}
           </p>

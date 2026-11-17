@@ -10,13 +10,12 @@ import {
   Files,
   LayoutDashboard,
   MessageSquareText,
-  X,
 } from "lucide-react"
 
 import { ServiceHealth } from "@/components/layout/service-health"
+import { HrChatbotWidget } from "@/components/hr/chatbot/hr-chatbot-widget"
 import { HrHeaderUser } from "@/components/hr/layout/hr-header-user"
 import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
-import { Button } from "@/components/ui/button"
 import {
   Sidebar,
   SidebarContent,
@@ -194,73 +193,6 @@ function HrSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
   )
 }
 
-function DefaultChatbotLauncher() {
-  const { isOpen, pageContext, draftPrompt, openWidget, closeWidget } = useHrChatbot()
-
-  return (
-    <>
-      <div className="fixed right-5 bottom-5 z-30">
-        <Button
-          type="button"
-          size="lg"
-          className="rounded-full shadow-lg"
-          aria-expanded={isOpen}
-          aria-label="Mở Trợ lý HR"
-          onClick={() => (isOpen ? closeWidget() : openWidget())}
-        >
-          <MessageSquareText className="size-4" aria-hidden="true" />
-          <span>Trợ lý HR</span>
-        </Button>
-      </div>
-
-      {isOpen && (
-        <aside
-          aria-label="Khung Trợ lý HR"
-          className="fixed right-5 bottom-20 z-40 w-[calc(100vw-2.5rem)] max-w-md rounded-xl border bg-background p-4 shadow-xl"
-        >
-          <div className="flex items-start justify-between gap-2 border-b pb-3">
-            <div>
-              <p className="text-sm font-semibold">Trợ lý chính sách HR</p>
-              <p className="text-xs text-muted-foreground">
-                {pageContext?.title
-                  ? `Ngữ cảnh hiện tại: ${pageContext.title}`
-                  : "Sẵn sàng kết nối RAG Chatbot ở Phase H4"}
-              </p>
-            </div>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Đóng Trợ lý HR"
-              onClick={closeWidget}
-            >
-              <X className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-          <div className="mt-3 space-y-3 text-xs leading-5 text-muted-foreground">
-            {draftPrompt && (
-              <p className="rounded-lg border bg-muted/40 p-2 text-foreground">
-                Câu hỏi gợi ý: {draftPrompt}
-              </p>
-            )}
-            <p>
-              Khung Chatbot nổi sẽ được nối trực tiếp với RAG Backend (ChatController + SSE) tại Phase H4.
-            </p>
-            <Button
-              nativeButton={false}
-              size="sm"
-              className="w-full"
-              render={<Link href="/chat" />}
-            >
-              Mở Chat đầy đủ tại RAG Workspace
-            </Button>
-          </div>
-        </aside>
-      )}
-    </>
-  )
-}
-
 export function HrShell({
   children,
   apiBaseUrl,
@@ -280,7 +212,7 @@ export function HrShell({
         <div className="flex min-h-0 flex-1 flex-col bg-muted/30 p-4 sm:p-6 lg:p-8">
           {children}
         </div>
-        {chatbotSlot ?? <DefaultChatbotLauncher />}
+        {chatbotSlot ?? <HrChatbotWidget apiBaseUrl={apiBaseUrl} />}
       </SidebarInset>
     </SidebarProvider>
   )
