@@ -23,15 +23,19 @@ Presentation components (React) are decoupled from business controllers and API 
 ```text
 frontend/
 ├── app/                         # Next.js App Router
-│   ├── layout.tsx               # Root layout, Geist fonts & AppShell
+│   ├── layout.tsx               # Root layout, Geist fonts & skip link
 │   ├── page.tsx                 # Server redirect "/" -> "/chat"
-│   ├── chat/
-│   │   ├── page.tsx             # New Chat workspace
-│   │   └── [sessionId]/page.tsx # Restores an existing persistent session
-│   └── documents/page.tsx       # Document library management workspace
+│   ├── (workspace)/             # Primary RAG Workspace routes (preserves URLs)
+│   │   ├── layout.tsx           # AppShell wrapper for Workspace
+│   │   ├── chat/
+│   │   │   ├── page.tsx         # New Chat workspace
+│   │   │   └── [sessionId]/page.tsx # Restores an existing persistent session
+│   │   └── documents/page.tsx   # Document library management workspace
+│   └── hr/                      # Additive HR Demo Portal (/hr, /hr/documents, /hr/guide)
 ├── components/
 │   ├── chat/                    # ChatPreview, SessionChat, ChatComposer, CitationContent, DocumentPreview
 │   ├── documents/               # DocumentsPreview, DocumentUpload, DocumentActions, DocumentStatusBadge
+│   ├── hr/                      # HrShell, HrDashboardView, HrDocumentsView, HrChatbotWidget, HrGuideView
 │   ├── layout/                  # AppShell (session sidebar, navigation)
 │   └── ui/                      # UI primitives (Button, Dialog, Sheet, Badge...)
 ├── hooks/                       # React lifecycle hooks (useChatAttachments, useSessions, useDocuments...)
@@ -39,9 +43,11 @@ frontend/
 │   ├── api/                     # HTTP clients (chat.ts, documents.ts, sessions.ts, health.ts, client.ts)
 │   ├── chat/                    # ChatController, composer-service, source-mapper, citation-panel
 │   ├── documents/               # UploadController, validation, actions-controller, text-preview
-│   ├── sessions/               # HistoryController, session actions-controller
+│   ├── hr/                      # HR analytics fixtures helpers & client-side document categorization
+│   ├── sessions/                # HistoryController, session actions-controller
 │   └── sse/                     # Incremental UTF-8 SSE stream parser
-├── types/                       # TypeScript DTOs matching Backend Pydantic schemas
+├── fixtures/                    # Offline mock datasets (chat, documents, hr-analytics, hr-guide)
+├── types/                       # TypeScript DTOs matching Backend Pydantic schemas (+ separate hr.ts)
 ├── scripts/                     # Mock API server (qa-mock-api.mjs) & Playwright smoke scripts
 ├── tests/                       # Node unit tests & API contract parity checks
 └── e2e/                         # Playwright E2E specs (*.spec.mts)
@@ -78,6 +84,10 @@ frontend/
 | **Remote TXT / MD** | Fetches immutable version (`kind=text`); capped at 256 KiB, supports UTF-8 / UTF-16 BOM |
 | **Remote XLSX** | Waits for indexing; `kind=excel` renders bounded sheets/columns/rows with literal formulas |
 | **PDF** | Ingestion and attachment supported; inline PDF content viewer not implemented |
+
+### 3.4 HR Demo Portal (`/hr/*`)
+- An additive HR Portal showcase runs alongside the primary RAG Workspace under `/hr` (HR Dashboard & Analytics using offline mock workforce fixtures plus live `GET /documents` summary), `/hr/documents` (client-side filename classification into Policies, Regulations, and Procedures + document preview + shared RAG Knowledge Base upload), and `/hr/guide` (interactive User Guide with clickable sample prompts).
+- All `/hr/*` pages mount an embedded `HrChatbotWidget` drawer backed by `ChatController` and `createChatServices`, persisting multi-turn conversations across `/hr/*` client navigation while keeping RAG Workspace (`/chat`, `/documents`) intact.
 
 ---
 
