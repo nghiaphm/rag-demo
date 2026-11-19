@@ -37,6 +37,11 @@ from app.documents.tool_handlers import create_document_tool_registry, document_
 from app.tool_use.executor import MAX_CALL_ID_BYTES, MAX_TOOL_CALLS, ToolExecutor
 
 from app.chat.prompts import FINAL_INSTRUCTION, SELECTOR_INSTRUCTION
+from app.chat.ui_context import (
+    UiPageContext,
+    build_selector_ui_note,
+    fit_ui_system_instruction,
+)
 from app.chat.agent import AGENT_SYSTEM_INSTRUCTION, AgenticRunner
 from app.chat.agent_tools import (
     agent_tool_schemas,
@@ -380,6 +385,7 @@ class ChatOrchestrator:
     async def prepare_plan(
         self, question: str, *, database: Any = None, qdrant_client: Any = None,
         session_id: str | None = None, deadline: float | None = None,
+        ui_context: UiPageContext | None = None,
     ) -> PreparedChatAnswer:
         ledger = UsageLedger()
         trace = self.tracer.trace(
@@ -398,15 +404,22 @@ class ChatOrchestrator:
             turns: tuple[HistoryTurn, ...] = ()
             model = self.model if self.model is not None else get_llm()
             response, calls = None, ()
+            counter = ApproximateTokenCounter(chars_per_token=self.config.chars_per_token)
             if self.tools_enabled and self.agentic_mode:
                 if session_id is not None:
                     loader = self.history_loader or ConversationHistoryLoader(MongoConversationRepository(database))
                     loaded = await _wait(lambda: asyncio.to_thread(loader.load, session_id), deadline)
                     turns = loaded.turns
+                agent_instruction = fit_ui_system_instruction(
+                    AGENT_SYSTEM_INSTRUCTION,
+                    ui_context,
+                    counter.system,
+                    self.config.system_max_tokens,
+                )
                 agent_messages, turns = self._fit(
                     question,
                     turns,
-                    AGENT_SYSTEM_INSTRUCTION,
+                    agent_instruction,
                     tools=agent_tool_schemas(),
                 )
                 return PreparedChatAnswer(
@@ -428,7 +441,12 @@ class ChatOrchestrator:
                     loaded = await _wait(lambda: asyncio.to_thread(loader.load, session_id), deadline)
                     turns = loaded.turns
                 schemas = self._schemas()
-                messages, turns = self._fit(question, turns, SELECTOR_INSTRUCTION, tools=schemas)
+                selector_instruction = SELECTOR_INSTRUCTION
+                if ui_context is not None:
+                    candidate_selector = SELECTOR_INSTRUCTION + build_selector_ui_note(ui_context)
+                    if counter.system(candidate_selector) <= self.config.system_max_tokens:
+                        selector_instruction = candidate_selector
+                messages, turns = self._fit(question, turns, selector_instruction, tools=schemas)
                 entry = ledger.begin("selector")
                 try:
                     selector = model.bind_tools(schemas, tool_choice="auto")
@@ -455,7 +473,12 @@ class ChatOrchestrator:
             if self.rag_prepare is prepare_rag_request:
                 rag = await _wait(lambda: self.rag_prepare(
                     question, database=database, qdrant_client=qdrant_client, session_id=session_id,
-                    trace=trace,
+                    trace=trace, **({"ui_context": ui_context} if ui_context is not None else {}),
+                ), deadline)
+            elif ui_context is not None:
+                rag = await _wait(lambda: self.rag_prepare(
+                    question, database=database, qdrant_client=qdrant_client, session_id=session_id,
+                    ui_context=ui_context,
                 ), deadline)
             else:
                 rag = await _wait(lambda: self.rag_prepare(

@@ -38,9 +38,11 @@ from app.chat.pipeline import (
     astream_rag_answer,
     prepare_rag_stream,
 )
+from app.chat.ui_context import UiPageContext, UiRelatedPage
 from app.api.schemas.chat_documents import (
     ChatRequest,
     ChatResponse,
+    ChatUiContext,
     Source,
 )
 from app.api.streaming.event_adapter import (
@@ -280,12 +282,35 @@ async def _attachments(payload, database):
         raise HTTPException(status_code=503, detail="Document metadata unavailable") from exc
 
 
+def _to_domain_ui_context(ui_context: ChatUiContext | None) -> UiPageContext | None:
+    if ui_context is None:
+        return None
+    return UiPageContext(
+        portal=ui_context.portal,
+        route=ui_context.route,
+        page_title=ui_context.page_title,
+        page_purpose=ui_context.page_purpose,
+        available_features=tuple(ui_context.available_features),
+        related_pages=tuple(
+            UiRelatedPage(
+                route=page.route,
+                title=page.title,
+                description=page.description,
+            )
+            for page in ui_context.related_pages
+        ),
+        selected_document_name=ui_context.selected_document_name,
+        selected_category=ui_context.selected_category,
+    )
+
+
 async def _answer_with_tools(
     question: str,
     database: Any,
     qdrant_client: Any,
     session_id: str | None = None,
     tracer: Any = None,
+    ui_context: UiPageContext | None = None,
 ) -> dict:
     """Compose JSON-only dependencies from managed handles, without new clients."""
     queries = DocumentQueries(MongoDocumentRepository(database))
@@ -295,7 +320,11 @@ async def _answer_with_tools(
         **({"tracer": tracer} if tracer is not None else {}),
     )
     plan = await orchestrator.prepare_plan(
-        question, database=database, qdrant_client=qdrant_client, session_id=session_id,
+        question,
+        database=database,
+        qdrant_client=qdrant_client,
+        session_id=session_id,
+        **({"ui_context": ui_context} if ui_context is not None else {}),
     )
     return await orchestrator.generate_json(plan)
 
@@ -315,6 +344,7 @@ async def chat(
     persistent = payload.session_id is not None
     request_id = new_uuid()
     tools_enabled = settings.tool_use_enabled
+    domain_ui_context = _to_domain_ui_context(payload.ui_context)
     try:
         cloud = request.app.state.cloud_connections
         attachments = await _attachments(payload, cloud.mongodb.database)
@@ -323,7 +353,10 @@ async def chat(
         if not persistent:
             if tools_enabled:
                 result = await _answer_with_tools(
-                    payload.question, cloud.mongodb.database, cloud.qdrant.client,
+                    payload.question,
+                    cloud.mongodb.database,
+                    cloud.qdrant.client,
+                    **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
                 )
             else:
                 result = await run_in_threadpool(
@@ -331,6 +364,7 @@ async def chat(
                     payload.question,
                     database=cloud.mongodb.database,
                     qdrant_client=cloud.qdrant.client,
+                    **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
                 )
         else:
             service = await run_in_threadpool(
@@ -346,6 +380,7 @@ async def chat(
                             _answer_with_tools, payload.question, cloud.mongodb.database,
                             cloud.qdrant.client, str(payload.session_id),
                             getattr(request.app.state, "tracer", None),
+                            domain_ui_context,
                         )
                     except FutureCancelledError:
                         # AnyIO translates async cancellation at the worker bridge.
@@ -356,6 +391,7 @@ async def chat(
                     database=cloud.mongodb.database,
                     qdrant_client=cloud.qdrant.client,
                     session_id=str(payload.session_id),
+                    **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
                 )
 
             result = await run_in_threadpool(
@@ -436,6 +472,7 @@ async def chat_stream(
     turn = None
     tools_enabled = settings.tool_use_enabled
     orchestrator = None
+    domain_ui_context = _to_domain_ui_context(payload.ui_context)
     try:
         cloud = request.app.state.cloud_connections
         attachments = await _attachments(payload, cloud.mongodb.database)
@@ -455,6 +492,7 @@ async def chat_stream(
                 database=cloud.mongodb.database,
                 qdrant_client=cloud.qdrant.client,
                 session_id=(None if payload.session_id is None else str(payload.session_id)),
+                **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
             )
         else:
             prepared = await run_in_threadpool(
@@ -463,6 +501,7 @@ async def chat_stream(
                 database=cloud.mongodb.database,
                 qdrant_client=cloud.qdrant.client,
                 session_id=(None if payload.session_id is None else str(payload.session_id)),
+                **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
             )
         if persistent:
             service = await run_in_threadpool(

@@ -95,6 +95,75 @@ class ChatError(BaseModel):
     retryable: bool = False
 
 
+def _validate_app_route(value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("route không được để trống")
+    if not cleaned.startswith("/") or ".." in cleaned or "\\" in cleaned or any(ch.isspace() for ch in cleaned):
+        raise ValueError("route phải là đường dẫn nội bộ hợp lệ bắt đầu bằng '/'")
+    return cleaned
+
+
+class ChatUiRelatedPage(BaseModel):
+    """Trang liên quan hợp lệ có thể gợi ý cho người dùng chủ động chuyển hướng."""
+
+    route: str = Field(..., min_length=1, max_length=120)
+    title: str = Field(..., min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=240)
+
+    @field_validator("route")
+    @classmethod
+    def _check_route(cls, value: str) -> str:
+        return _validate_app_route(value)
+
+    @field_validator("title")
+    @classmethod
+    def _check_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("title không được để trống")
+        return cleaned
+
+
+class ChatUiContext(BaseModel):
+    """Ngữ cảnh giao diện HR tùy chọn truyền từ Frontend."""
+
+    portal: Literal["hr"] = "hr"
+    route: str = Field(..., min_length=1, max_length=120)
+    page_title: str = Field(..., min_length=1, max_length=120)
+    page_purpose: str = Field(..., min_length=1, max_length=400)
+    available_features: list[str] = Field(default_factory=list, max_length=12)
+    related_pages: list[ChatUiRelatedPage] = Field(default_factory=list, max_length=6)
+    selected_document_name: str | None = Field(default=None, max_length=255)
+    selected_category: str | None = Field(default=None, max_length=64)
+
+    @field_validator("route")
+    @classmethod
+    def _check_route(cls, value: str) -> str:
+        return _validate_app_route(value)
+
+    @field_validator("page_title", "page_purpose")
+    @classmethod
+    def _check_non_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Trường ngữ cảnh trang không được rỗng")
+        return cleaned
+
+    @field_validator("available_features")
+    @classmethod
+    def _check_features(cls, items: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in items:
+            cleaned = item.strip()
+            if not cleaned:
+                raise ValueError("Mục chức năng không được rỗng")
+            if len(cleaned) > 200:
+                raise ValueError("Mục chức năng vượt quá 200 ký tự")
+            normalized.append(cleaned)
+        return normalized
+
+
 class ChatRequest(BaseModel):
     """Request cho POST /chat."""
 
@@ -103,6 +172,10 @@ class ChatRequest(BaseModel):
     session_id: UUID | None = Field(
         default=None,
         description="Có giá trị thì persist turn; bỏ trống giữ hành vi stateless cũ",
+    )
+    ui_context: ChatUiContext | None = Field(
+        default=None,
+        description="Ngữ cảnh trang HR Portal hiện tại; bỏ trống giữ hành vi RAG Workspace chuẩn",
     )
 
     @model_validator(mode="after")
