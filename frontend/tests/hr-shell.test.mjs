@@ -41,6 +41,7 @@ function load(relative) {
 }
 
 const { HrChatbotProvider, useHrChatbot } = load("components/hr/layout/hr-chatbot-provider");
+const { HrTourProvider, useHrTour } = load("components/hr/tour/hr-tour-provider");
 const { HrShell, matchesHrRoute } = load("components/hr/layout/hr-shell");
 const { getHrRouteTitle } = load("components/hr/layout/hr-header-user");
 const { AppShell } = load("components/layout/app-shell");
@@ -56,16 +57,20 @@ test("matchesHrRoute and getHrRouteTitle highlight active HR routes cleanly", ()
   assert.equal(getHrRouteTitle("/hr/guide"), "Hướng dẫn sử dụng");
 });
 
-test("HrShell renders HR navigation, header demo user, active route marker, and Workspace link", () => {
+test("HrShell renders HR navigation including /hr/guide, Product Tour trigger, header demo user, and Workspace link", () => {
   currentPathname = "/hr/documents";
   const html = renderToStaticMarkup(
     React.createElement(
       HrChatbotProvider,
       null,
       React.createElement(
-        HrShell,
-        { apiBaseUrl: null },
-        React.createElement("div", null, "HR Documents Content")
+        HrTourProvider,
+        null,
+        React.createElement(
+          HrShell,
+          { apiBaseUrl: null },
+          React.createElement("div", null, "HR Documents Content")
+        )
       )
     )
   );
@@ -73,6 +78,7 @@ test("HrShell renders HR navigation, header demo user, active route marker, and 
   assert.match(html, /href="\/hr"/);
   assert.match(html, /href="\/hr\/documents"[^>]*aria-current="page"/);
   assert.match(html, /href="\/hr\/guide"/);
+  assert.match(html, /Product Tour/);
   assert.doesNotMatch(html, /href="\/hr"[^>]*aria-current="page"/);
   assert.match(html, /Minh Anh/);
   assert.match(html, /Phòng Nhân sự/);
@@ -94,13 +100,21 @@ test("AppShell keeps RAG Workspace primary routes and adds HR Demo Portal link",
   assert.match(html, /Workspace Main/);
 });
 
-test("useHrChatbot throws outside HrChatbotProvider", () => {
-  function Orphan() {
+test("useHrChatbot and useHrTour throw outside their providers", () => {
+  function OrphanChatbot() {
     useHrChatbot();
     return null;
   }
+  function OrphanTour() {
+    useHrTour();
+    return null;
+  }
   assert.throws(
-    () => renderToStaticMarkup(React.createElement(Orphan)),
+    () => renderToStaticMarkup(React.createElement(OrphanChatbot)),
     /HrChatbotProvider/
+  );
+  assert.throws(
+    () => renderToStaticMarkup(React.createElement(OrphanTour)),
+    /HrTourProvider/
   );
 });

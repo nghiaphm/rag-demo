@@ -20,6 +20,13 @@ class SessionScopeMode(str, Enum):
     SELECTED_DOCUMENTS = "SELECTED_DOCUMENTS"
 
 
+class SessionSurface(str, Enum):
+    """Phân tách danh sách hội thoại theo bề mặt sử dụng, dùng chung collection."""
+
+    WORKSPACE = "workspace"
+    HR = "hr"
+
+
 class MessageRole(str, Enum):
     USER = "USER"
     ASSISTANT = "ASSISTANT"
@@ -61,6 +68,7 @@ class SessionRecord(MongoRecord):
 
     session_id: str = Field(default_factory=new_uuid, alias="_id")
     title: str = Field(default="Cuộc trò chuyện mới", min_length=1, max_length=200)
+    surface: SessionSurface = Field(default=SessionSurface.WORKSPACE)
     scope: SessionScope = Field(default_factory=SessionScope)
     user_id: str | None = Field(default=None, min_length=1, max_length=255)
     allowed_roles: list[str] = Field(default_factory=list)
@@ -75,6 +83,11 @@ class SessionRecord(MongoRecord):
     _validate_active_generation_id = field_validator("active_generation_id")(
         lambda value: None if value is None else _canonical_uuid(value)
     )
+
+    @field_validator("surface", mode="before")
+    @classmethod
+    def _default_legacy_surface(cls, value: object) -> object:
+        return SessionSurface.WORKSPACE if value is None else value
 
     @field_validator("title", "user_id")
     @classmethod

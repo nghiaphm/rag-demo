@@ -22,6 +22,10 @@ SESSION_INDEXES: tuple[IndexModel, ...] = (
         [("scope.mode", ASCENDING), ("updated_at", DESCENDING)],
         name="idx_sessions_scope_updated",
     ),
+    IndexModel(
+        [("surface", ASCENDING), ("updated_at", DESCENDING), ("_id", DESCENDING)],
+        name="idx_sessions_surface_updated_id",
+    ),
 )
 
 MESSAGE_INDEXES: tuple[IndexModel, ...] = (

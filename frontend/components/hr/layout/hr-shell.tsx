@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   BookOpen,
   Building2,
+  Compass,
   Files,
   LayoutDashboard,
   MessageSquareText,
@@ -16,6 +17,8 @@ import { ServiceHealth } from "@/components/layout/service-health"
 import { HrChatbotWidget } from "@/components/hr/chatbot/hr-chatbot-widget"
 import { HrHeaderUser } from "@/components/hr/layout/hr-header-user"
 import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
+import { HrTourOverlay } from "@/components/hr/tour/hr-tour-overlay"
+import { useOptionalHrTour } from "@/components/hr/tour/hr-tour-provider"
 import {
   Sidebar,
   SidebarContent,
@@ -33,36 +36,37 @@ import {
   SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar"
+import {
+  ALLOWED_HR_ROUTES,
+  HR_ROUTE_MANIFEST,
+  matchesHrRoute,
+} from "@/lib/hr/page-context"
 import type { HrPageRoute, HrUserProfile } from "@/types/hr"
+
+export { matchesHrRoute }
+
+const HR_ROUTE_ICONS: Record<HrPageRoute, typeof LayoutDashboard> = {
+  "/hr": LayoutDashboard,
+  "/hr/documents": Files,
+  "/hr/guide": BookOpen,
+}
 
 export const hrNavigationItems: readonly {
   href: HrPageRoute
   label: string
   icon: typeof LayoutDashboard
   exact?: boolean
-}[] = [
-  {
-    href: "/hr",
-    label: "Tổng quan HR",
-    icon: LayoutDashboard,
-    exact: true,
-  },
-  {
-    href: "/hr/documents",
-    label: "Tài liệu nhân sự",
-    icon: Files,
-  },
-  {
-    href: "/hr/guide",
-    label: "Hướng dẫn sử dụng",
-    icon: BookOpen,
-  },
-] as const
-
-export function matchesHrRoute(pathname: string, href: HrPageRoute, exact = false): boolean {
-  if (exact) return pathname === href
-  return pathname === href || pathname.startsWith(`${href}/`)
-}
+}[] = Object.freeze(
+  ALLOWED_HR_ROUTES.map((route) => {
+    const meta = HR_ROUTE_MANIFEST[route]
+    return {
+      href: meta.route,
+      label: meta.navLabel,
+      icon: HR_ROUTE_ICONS[route],
+      ...(meta.exact ? { exact: true } : {}),
+    }
+  }),
+)
 
 function HrNavigationLinks({ pathname }: { pathname?: string }) {
   const { isMobile, setOpenMobile } = useSidebar()
@@ -115,6 +119,7 @@ function HrNavigation() {
 function HrSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
   const { isMobile, setOpenMobile } = useSidebar()
   const { openWidget } = useHrChatbot()
+  const tour = useOptionalHrTour()
 
   return (
     <Sidebar collapsible="icon">
@@ -158,6 +163,19 @@ function HrSidebar({ apiBaseUrl }: { apiBaseUrl: string | null }) {
                 >
                   <MessageSquareText aria-hidden="true" />
                   <span>Trợ lý chính sách HR</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  tooltip="Bắt đầu Product Tour"
+                  onClick={() => {
+                    if (isMobile) setOpenMobile(false)
+                    tour?.startTour(0, "all")
+                  }}
+                >
+                  <Compass aria-hidden="true" />
+                  <span>Product Tour</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -213,6 +231,9 @@ export function HrShell({
           {children}
         </div>
         {chatbotSlot ?? <HrChatbotWidget apiBaseUrl={apiBaseUrl} />}
+        <Suspense fallback={null}>
+          <HrTourOverlay />
+        </Suspense>
       </SidebarInset>
     </SidebarProvider>
   )

@@ -32,11 +32,11 @@ def get_rag_prompt() -> ChatPromptTemplate:
     )
 
 
-def get_history_aware_rag_prompt() -> ChatPromptTemplate:
+def get_history_aware_rag_prompt(system_instruction: str = SYSTEM_INSTRUCTION) -> ChatPromptTemplate:
     """Prompt runtime P5: history resolves references, documents ground the answer."""
     return ChatPromptTemplate.from_messages(
         [
-            ("system", SYSTEM_INSTRUCTION),
+            ("system", system_instruction),
             ("human", HISTORY_AWARE_USER_TEMPLATE),
         ]
     )

@@ -1,6 +1,7 @@
 import type { DateTimeString, PaginatedResponse, PaginationQuery } from "./api";
 
 export type SessionScopeMode = "ALL_ACTIVE" | "SELECTED_DOCUMENTS";
+export type SessionSurface = "workspace" | "hr";
 export type MessageRole = "USER" | "ASSISTANT";
 export type MessageStatus =
   | "PENDING"
@@ -12,6 +13,7 @@ export type MessageStatus =
 /** POST /sessions requires a JSON body ({} is valid), not scope/history fields. */
 export interface CreateSessionRequest {
   title?: string | null;
+  surface?: SessionSurface | null;
 }
 
 export interface UpdateSessionTitleRequest {
@@ -33,14 +35,17 @@ export interface UpdateSessionScopeRequest {
 export interface SessionResponse {
   session_id: string;
   title: string;
+  surface?: SessionSurface;
   scope: SessionScopeResponse;
   user_id: string | null;
   created_at: DateTimeString;
   updated_at: DateTimeString;
 }
 
-/** offset=0, limit=50 by default; limit 1..200, offset >=0. */
-export type ListSessionsQuery = PaginationQuery;
+/** offset=0, limit=50 by default; limit 1..200, offset >=0, optional surface filter. */
+export interface ListSessionsQuery extends PaginationQuery {
+  surface?: SessionSurface | null;
+}
 export type SessionPageResponse = PaginatedResponse<SessionResponse>;
 
 /** History citation schema uses plain strings (no UUID format in OpenAPI). */

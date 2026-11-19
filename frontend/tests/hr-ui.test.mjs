@@ -73,26 +73,69 @@ function load(relative) {
         }),
       };
     }
+    if (specifier === "@/hooks/use-sessions") {
+      return {
+        useSessions: (_apiBaseUrl, surface = "workspace") => ({
+          status: "ready",
+          sessions: [
+            {
+              session_id: "55555555-5555-4555-8555-555555555555",
+              title: `Hội thoại (${surface}): Nghỉ phép năm`,
+              surface,
+              scope: { mode: "ALL_ACTIVE", document_ids: [] },
+              user_id: null,
+              created_at: "2026-11-18T00:00:00Z",
+              updated_at: "2026-11-18T00:00:00Z",
+            },
+          ],
+          total: 1,
+          isCreating: false,
+          error: null,
+          isMutating: false,
+          mutationError: null,
+          reload() {},
+          loadMore() {},
+          createNew() {},
+          rename() {},
+          remove() {},
+        }),
+      };
+    }
     return specifier.startsWith("@/") ? load(specifier.slice(2)) : require(specifier);
   });
   return exports;
 }
 
 const { HrChatbotProvider } = load("components/hr/layout/hr-chatbot-provider");
+const { HrTourProvider } = load("components/hr/tour/hr-tour-provider");
+const { HrTourOverlay } = load("components/hr/tour/hr-tour-overlay");
 const { HrDashboardView } = load("components/hr/dashboard/hr-dashboard-view");
 const { HrDocumentsView } = load("components/hr/documents/hr-documents-view");
 const { HrGuideView } = load("components/hr/guide/hr-guide-view");
+const { HrChatbotHistory } = load("components/hr/chatbot/hr-chatbot-history");
 const { HrChatbotWidget } = load("components/hr/chatbot/hr-chatbot-widget");
+const { ChatComposer } = load("components/chat/chat-composer");
+const { ChatMessage } = load("components/chat/chat-message");
+const { getHrRouteDisplayTitle, isSafeHrRoute, rehypeHrRouteLinks } = load("lib/hr/page-context");
 
-test("HrDashboardView renders KPIs, department chart, contract chart, and live RAG summary", () => {
+test("HrDashboardView renders KPIs, charts, live RAG summary, User Guide link, and Product Tour anchors", () => {
   const html = renderToStaticMarkup(
     React.createElement(
       HrChatbotProvider,
       null,
-      React.createElement(HrDashboardView, { apiBaseUrl: "http://127.0.0.1:8000" })
+      React.createElement(
+        HrTourProvider,
+        null,
+        React.createElement(HrDashboardView, { apiBaseUrl: "http://127.0.0.1:8000" })
+      )
     )
   );
   assert.match(html, /Dashboard &amp; Analytics nhân sự/);
+  assert.match(html, /href="\/hr\/guide"/);
+  assert.match(html, /Product Tour/);
+  assert.match(html, /data-tour="hr-kpi-strip"/);
+  assert.match(html, /data-tour="hr-analytics-charts"/);
+  assert.match(html, /data-tour="hr-live-kb"/);
   assert.match(html, /Tổng nhân sự/);
   assert.match(html, /184/);
   assert.match(html, /Kỹ thuật &amp; Sản phẩm/);
@@ -101,15 +144,21 @@ test("HrDashboardView renders KPIs, department chart, contract chart, and live R
   assert.match(html, /16/); // 10 + 6 totalChunks
 });
 
-test("HrDocumentsView renders category tabs, shared-KB disclosure, and HR documents list", () => {
+test("HrDocumentsView renders category tabs, shared-KB disclosure, HR documents list, and tour anchors", () => {
   const html = renderToStaticMarkup(
     React.createElement(
       HrChatbotProvider,
       null,
-      React.createElement(HrDocumentsView, { apiBaseUrl: "http://127.0.0.1:8000" })
+      React.createElement(
+        HrTourProvider,
+        null,
+        React.createElement(HrDocumentsView, { apiBaseUrl: "http://127.0.0.1:8000" })
+      )
     )
   );
   assert.match(html, /HR Documents/);
+  assert.match(html, /data-tour="hr-docs-filters"/);
+  assert.match(html, /data-tour="hr-docs-workbench"/);
   assert.match(html, /Tất cả \(2\)/);
   assert.match(html, /Chính sách \(1\)/);
   assert.match(html, /Quy trình \(1\)/);
@@ -118,17 +167,39 @@ test("HrDocumentsView renders category tabs, shared-KB disclosure, and HR docume
   assert.match(html, /dùng chung với/);
 });
 
-test("HrGuideView renders 4 guide sections and clickable prompt templates", () => {
+test("HrGuideView renders 4 guide sections, prompt templates, and scoped Product Tour launchers", () => {
   const html = renderToStaticMarkup(
     React.createElement(
       HrChatbotProvider,
       null,
-      React.createElement(HrGuideView)
+      React.createElement(
+        HrTourProvider,
+        null,
+        React.createElement(HrGuideView)
+      )
     )
   );
   assert.match(html, /Hướng dẫn sử dụng HR Portal/);
   assert.match(html, /Chính sách nghỉ phép năm/);
   assert.match(html, /Thử câu hỏi này/);
+  assert.match(html, /Tour Dashboard/);
+  assert.match(html, /Tour Tài liệu/);
+  assert.match(html, /Tour Trợ lý HR/);
+});
+
+test("HrTourOverlay stays empty during SSR without hydration mismatch", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      HrChatbotProvider,
+      null,
+      React.createElement(
+        HrTourProvider,
+        null,
+        React.createElement(HrTourOverlay)
+      )
+    )
+  );
+  assert.equal(html, "");
 });
 
 test("HrChatbotWidget renders accessible floating launcher in both configured and unconfigured states", () => {
@@ -143,4 +214,103 @@ test("HrChatbotWidget renders accessible floating launcher in both configured an
     assert.match(html, /aria-label="Mở Trợ lý HR"/);
     assert.match(html, /Trợ lý HR/);
   }
+});
+
+test("ChatMessage supports optional renderAssistantActions for HR navigation buttons without altering default Workspace rendering", () => {
+  const sampleMessage = {
+    key: "a1",
+    messageId: "m1",
+    requestId: "r1",
+    role: "assistant",
+    content: "Bạn có thể chuyển sang `/hr/documents` để tải tài liệu.",
+    status: "COMPLETED",
+    model: "openai/gpt-oss-120b",
+    sources: [],
+    citations: [],
+    usage: null,
+    error: null,
+  };
+
+  const defaultHtml = renderToStaticMarkup(React.createElement(ChatMessage, { message: sampleMessage }));
+  assert.doesNotMatch(defaultHtml, /Đi tới trang liên quan/);
+
+  const hrHtml = renderToStaticMarkup(
+    React.createElement(ChatMessage, {
+      message: sampleMessage,
+      renderAssistantActions: () => React.createElement("a", { href: "/hr/documents" }, "Đi tới trang liên quan"),
+    })
+  );
+  assert.match(hrHtml, /href="\/hr\/documents"/);
+  assert.match(hrHtml, /Đi tới trang liên quan/);
+});
+
+test("HrChatbotHistory renders HR-filtered session history, active state, and New Chat action", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(HrChatbotHistory, {
+      apiBaseUrl: "http://127.0.0.1:8000",
+      activeSessionId: "55555555-5555-4555-8555-555555555555",
+      onNewChat() {},
+      onSelectSession() {},
+      onActiveSessionDeleted() {},
+    })
+  );
+  assert.match(html, /Lịch sử hội thoại HR/);
+  assert.match(html, /Cuộc trò chuyện mới/);
+  assert.match(html, /Hội thoại \(hr\): Nghỉ phép năm/);
+  assert.match(html, /Đang mở/);
+  assert.match(html, /Thao tác với phiên/);
+});
+
+test("ChatComposer supports HR attachment upload button without altering default /documents link", () => {
+  const hrHtml = renderToStaticMarkup(
+    React.createElement(ChatComposer, {
+      apiBaseUrl: "http://127.0.0.1:8000",
+      value: "",
+      showAttachments: true,
+      documentsHref: "/hr/documents",
+      onChange() {},
+      onSubmit() {},
+      onStop() {},
+    })
+  );
+  assert.match(hrHtml, /aria-label="Thêm tệp đính kèm"/);
+  assert.match(hrHtml, /aria-label="Chọn tệp đính kèm"/);
+});
+
+test("ChatMessage renders inline whitelisted HR routes as in-tab Next links without target=_blank", () => {
+  const sampleMessage = {
+    key: "a-inline",
+    messageId: "m-inline",
+    requestId: "r-inline",
+    role: "assistant",
+    content: "Truy cập URL: /hr/documents hoặc xem [Tổng quan nhân sự](/hr) và [External](https://example.test).",
+    status: "COMPLETED",
+    model: "openai/gpt-oss-120b",
+    sources: [],
+    citations: [],
+    usage: null,
+    error: null,
+  };
+
+  const html = renderToStaticMarkup(
+    React.createElement(ChatMessage, {
+      message: sampleMessage,
+      extraRehypePlugins: [rehypeHrRouteLinks],
+      renderInternalLink: (href, children) =>
+        isSafeHrRoute(href)
+          ? React.createElement(
+              "a",
+              { href, "data-hr-inline-link": "true" },
+              typeof children === "string" && isSafeHrRoute(children.trim())
+                ? getHrRouteDisplayTitle(href)
+                : children
+            )
+          : null,
+    })
+  );
+
+  assert.match(html, /href="\/hr\/documents" data-hr-inline-link="true">Tài liệu nhân sự<\/a>/);
+  assert.match(html, /href="\/hr" data-hr-inline-link="true">Tổng quan nhân sự<\/a>/);
+  assert.match(html, /href="https:\/\/example\.test"[^>]*target="_blank"/);
+  assert.doesNotMatch(html, /href="\/hr\/documents"[^>]*target="_blank"/);
 });

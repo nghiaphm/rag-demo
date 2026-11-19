@@ -42,6 +42,7 @@ from app.rag.retriever import get_retriever
 from app.rag.reranker import get_reranker
 from app.chat.multi_query import create_multi_query_expander
 from app.chat.corrective import CorrectiveOutcome, CorrectiveRagRunner
+from app.chat.ui_context import UiPageContext, fit_ui_system_instruction
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ async def prepare_rag_request(
     tracer: Tracer | None = None,
     trace: TraceContext | None = None,
     corrective_runner: CorrectiveRagRunner | None = None,
+    ui_context: UiPageContext | None = None,
 ) -> PreparedRagStream:
     """Load history/scope, rewrite retrieval query, retrieve and budget one prompt."""
     document_repository = MongoDocumentRepository(database)
@@ -124,6 +126,7 @@ async def prepare_rag_request(
         tracer=tracer,
         trace=trace,
         corrective_runner=corrective_runner,
+        **({"ui_context": ui_context} if ui_context is not None else {}),
     )
 
 
@@ -140,6 +143,7 @@ async def prepare_rag_request_from_components(
     tracer: Tracer | None = None,
     trace: TraceContext | None = None,
     corrective_runner: CorrectiveRagRunner | None = None,
+    ui_context: UiPageContext | None = None,
 ) -> PreparedRagStream:
     """Pure integration seam shared by production and isolated evaluation."""
     active_trace = trace or (tracer or NoOpTracer()).trace(
@@ -149,8 +153,14 @@ async def prepare_rag_request_from_components(
     resolved_budget_builder = budget_builder or ContextBudgetBuilder(
         ContextBudgetConfig.from_settings(settings)
     )
+    effective_system_instruction = fit_ui_system_instruction(
+        SYSTEM_INSTRUCTION,
+        ui_context,
+        resolved_budget_builder.counter.system,
+        resolved_budget_builder.config.system_max_tokens,
+    )
     history_budget = resolved_budget_builder.build(
-        system=SYSTEM_INSTRUCTION,
+        system=effective_system_instruction,
         history_turns=history_turns,
         chunks=(),
         query=question,
@@ -211,7 +221,7 @@ async def prepare_rag_request_from_components(
 
     with active_trace.span("context_budget", input={"candidate_count": len(documents)}) as span:
         budget = resolved_budget_builder.build(
-            system=SYSTEM_INSTRUCTION,
+            system=effective_system_instruction,
             history_turns=history_turns,
             chunks=format_context_blocks(documents),
             query=question,
@@ -223,7 +233,9 @@ async def prepare_rag_request_from_components(
         if budget.chunks
         else "(không có tài liệu liên quan)"
     )
-    prompt_value = get_history_aware_rag_prompt().invoke(
+    prompt_value = get_history_aware_rag_prompt(
+        system_instruction=effective_system_instruction,
+    ).invoke(
         {
             "history": format_history(budget.history_turns),
             "context": context,
@@ -251,6 +263,7 @@ async def answer_question_async(
     database: Any,
     qdrant_client: Any,
     session_id: str | None = None,
+    ui_context: UiPageContext | None = None,
 ) -> dict:
     """Prepare through the shared builder and generate one non-stream response."""
     prepared = await prepare_rag_request(
@@ -258,6 +271,7 @@ async def answer_question_async(
         database=database,
         qdrant_client=qdrant_client,
         session_id=session_id,
+        **({"ui_context": ui_context} if ui_context is not None else {}),
     )
     return await generate_prepared_answer(prepared)
 
@@ -285,6 +299,7 @@ def answer_question(
     database: Any,
     qdrant_client: Any,
     session_id: str | None = None,
+    ui_context: UiPageContext | None = None,
 ) -> dict:
     """Compatibility wrapper for scripts that still execute the stateless path sync."""
     return asyncio.run(
@@ -293,6 +308,7 @@ def answer_question(
             database=database,
             qdrant_client=qdrant_client,
             session_id=session_id,
+            **({"ui_context": ui_context} if ui_context is not None else {}),
         )
     )
 
@@ -303,6 +319,7 @@ def prepare_rag_stream(
     database: Any,
     qdrant_client: Any,
     session_id: str | None = None,
+    ui_context: UiPageContext | None = None,
 ) -> PreparedRagStream:
     """Compatibility wrapper for non-async callers and older smoke tests."""
     return asyncio.run(
@@ -311,6 +328,7 @@ def prepare_rag_stream(
             database=database,
             qdrant_client=qdrant_client,
             session_id=session_id,
+            **({"ui_context": ui_context} if ui_context is not None else {}),
         )
     )
 

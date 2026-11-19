@@ -2,6 +2,7 @@ import { Be_Vietnam_Pro, Plus_Jakarta_Sans } from "next/font/google";
 
 import { HrChatbotProvider } from "@/components/hr/layout/hr-chatbot-provider";
 import { HrShell } from "@/components/hr/layout/hr-shell";
+import { HrTourProvider } from "@/components/hr/tour/hr-tour-provider";
 
 import "./hr-theme.css";
 
@@ -28,7 +29,9 @@ export default function HrLayout({
       className={`${plusJakarta.variable} ${beVietnam.variable} hr-theme min-h-svh bg-background font-sans text-foreground antialiased`}
     >
       <HrChatbotProvider>
-        <HrShell apiBaseUrl={apiBaseUrl}>{children}</HrShell>
+        <HrTourProvider>
+          <HrShell apiBaseUrl={apiBaseUrl}>{children}</HrShell>
+        </HrTourProvider>
       </HrChatbotProvider>
     </div>
   );

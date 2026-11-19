@@ -9,7 +9,13 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from app.conversations.indexes import MESSAGES_COLLECTION, SESSIONS_COLLECTION
-from app.conversations.models import MessageRecord, SessionRecord, SessionScope, utc_now
+from app.conversations.models import (
+    MessageRecord,
+    SessionRecord,
+    SessionScope,
+    SessionSurface,
+    utc_now,
+)
 
 
 class ConversationRepositoryError(Exception):
@@ -56,9 +62,22 @@ class MongoConversationRepository:
         return session
 
     def list_sessions(
-        self, *, offset: int = 0, limit: int = 50
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        surface: SessionSurface | None = None,
     ) -> tuple[list[SessionRecord], int]:
-        query = {"deleted_at": None}
+        query: dict[str, Any] = {"deleted_at": None}
+        if surface is SessionSurface.HR:
+            query["surface"] = SessionSurface.HR.value
+        elif surface is SessionSurface.WORKSPACE:
+            # Bảo toàn session cũ chưa có field surface -> mặc định thuộc Workspace.
+            query["$or"] = [
+                {"surface": SessionSurface.WORKSPACE.value},
+                {"surface": {"$exists": False}},
+                {"surface": None},
+            ]
         try:
             total = self.sessions.count_documents(query)
             values = (

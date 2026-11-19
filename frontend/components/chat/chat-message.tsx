@@ -1,3 +1,4 @@
+import type { ComponentProps, ReactNode } from "react"
 import { Bot, LoaderCircle, UserRound } from "lucide-react"
 import { CitationContent } from "@/components/chat/citation-content"
 import { CopyButton } from "@/components/chat/copy-button"
@@ -17,7 +18,19 @@ const statusLabels = {
   FAILED: "Thất bại",
 } as const
 
-export function ChatMessage({ message, apiBaseUrl = null }: { message: ChatViewMessage; apiBaseUrl?: string | null }) {
+export function ChatMessage({
+  message,
+  apiBaseUrl = null,
+  renderAssistantActions,
+  extraRehypePlugins,
+  renderInternalLink,
+}: {
+  message: ChatViewMessage
+  apiBaseUrl?: string | null
+  renderAssistantActions?: (message: ChatViewMessage) => ReactNode
+  extraRehypePlugins?: ComponentProps<typeof CitationContent>["extraRehypePlugins"]
+  renderInternalLink?: ComponentProps<typeof CitationContent>["renderInternalLink"]
+}) {
   const isUser = message.role === "user"
   const historicalNonterminal = isHistoricalNonterminal(message)
 
@@ -57,7 +70,12 @@ export function ChatMessage({ message, apiBaseUrl = null }: { message: ChatViewM
         {isUser ? (
           <p className="whitespace-pre-wrap">{message.content}</p>
         ) : message.content ? (
-          <CitationContent key={message.key} message={message} />
+          <CitationContent
+            key={message.key}
+            message={message}
+            extraRehypePlugins={extraRehypePlugins}
+            renderInternalLink={renderInternalLink}
+          />
         ) : (
           <p className="text-muted-foreground">
             {historicalNonterminal ? "Chưa có nội dung được lưu." : message.status === "PENDING" || message.status === "STREAMING" ? "Đang chuẩn bị câu trả lời…" : "Không có nội dung trả lời."}
@@ -75,6 +93,7 @@ export function ChatMessage({ message, apiBaseUrl = null }: { message: ChatViewM
         {isUser && !!message.attachments?.length && <div aria-label="Tệp đính kèm tin nhắn" className="mt-3 flex flex-wrap gap-2">
           {message.attachments.map(attachment => <MessageAttachmentChip key={`${attachment.document_id}:${attachment.version_id}`} attachment={attachment} apiBaseUrl={apiBaseUrl} />)}
         </div>}
+        {!isUser && renderAssistantActions?.(message)}
         {message.content && <div className="mt-2"><CopyButton text={message.content}
           label={isUser ? "Sao chép câu hỏi" : "Sao chép câu trả lời"}
           disabled={message.status === "PENDING" || message.status === "STREAMING"} /></div>}

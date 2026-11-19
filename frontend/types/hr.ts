@@ -21,10 +21,13 @@ export interface HrUserProfile {
 
 export interface HrPageContext {
   route: HrPageRoute;
-  title: string;
+  title?: string;
+  purpose?: string;
   selectedDocumentId?: string;
   selectedDocumentName?: string;
   selectedCategory?: HrDocumentCategory;
+  searchQuery?: string;
+  liveFeatures?: readonly string[];
 }
 
 export interface HrKpiCard {
@@ -70,4 +73,32 @@ export interface HrGuideSection {
   title: string;
   summary: string;
   steps: readonly string[];
+}
+
+export type HrTourTargetId =
+  | "hr-kpi-strip"
+  | "hr-analytics-charts"
+  | "hr-live-kb"
+  | "hr-docs-filters"
+  | "hr-docs-workbench"
+  | "hr-chatbot-drawer";
+
+export type HrTourPlacement = "top" | "bottom" | "left" | "right" | "center";
+
+export type HrTourCompletionState = "completed" | "dismissed";
+
+export type HrTourScope = "all" | "dashboard" | "documents" | "copilot";
+
+export interface HrTourStep {
+  id: string;
+  scope: Exclude<HrTourScope, "all">;
+  route?: HrPageRoute;
+  targetId: HrTourTargetId;
+  placement: HrTourPlacement;
+  eyebrow: string;
+  title: string;
+  description: string;
+  actionHint?: string;
+  opensChatbot?: boolean;
+  suggestedPrompt?: string;
 }

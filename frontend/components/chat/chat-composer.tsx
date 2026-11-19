@@ -17,6 +17,7 @@ interface ChatComposerProps {
   disabled?: boolean
   isGenerating?: boolean
   showAttachments?: boolean
+  documentsHref?: string
   onChange: (value: string) => void
   onSubmit: (attachments?: readonly MessageAttachment[]) => void | Promise<boolean>
   onSuccessfulReset?: () => void
@@ -30,6 +31,7 @@ export function ChatComposer({
   disabled = false,
   isGenerating = false,
   showAttachments = true,
+  documentsHref = "/documents",
   onChange,
   onSubmit,
   onSuccessfulReset,
@@ -87,7 +89,7 @@ export function ChatComposer({
           <ul aria-label="Tệp đính kèm" className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
             {attachments.map(attachment => <AttachmentChip key={attachment.id} apiBaseUrl={apiBaseUrl} attachment={attachment} onRemove={() => remove(attachment.id)} />)}
           </ul>
-          <p className="text-xs text-muted-foreground">Tệp được tải vào thư viện tài liệu; chưa giới hạn chat theo tệp đính kèm. <a href="/documents" target="_blank" rel="noreferrer" className="underline">Kiểm tra tài liệu (tab mới)</a> trước khi thử tải lại nếu chưa rõ kết quả.</p>
+          <p className="text-xs text-muted-foreground">Tệp được tải vào thư viện tài liệu; chưa giới hạn chat theo tệp đính kèm. <a href={documentsHref} target="_blank" rel="noreferrer" className="underline">Kiểm tra tài liệu (tab mới)</a> trước khi thử tải lại nếu chưa rõ kết quả.</p>
         </div>}
         {showAttachments && attachments.length > 0 && (!allReady || attachments.length > 20) && <p role="status" className="px-2 pb-2 text-xs text-muted-foreground">Chờ tất cả tệp Ready trước khi gửi; thử lại hoặc gỡ tệp Failed. Mỗi tin nhắn tối đa 20 tệp.</p>}
         <label htmlFor={inputId} className="sr-only">

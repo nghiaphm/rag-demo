@@ -8,7 +8,12 @@ from fastapi.concurrency import run_in_threadpool
 from app.api.dependencies.auth import get_current_user
 from app.shared.auth import UserContext, can_access_resource
 
-from app.conversations.models import MessageRecord, SessionRecord, SessionScopeMode
+from app.conversations.models import (
+    MessageRecord,
+    SessionRecord,
+    SessionScopeMode,
+    SessionSurface,
+)
 from app.conversations.repository import (
     ConversationRepositoryError,
     SessionConflictError,
@@ -57,6 +62,7 @@ def _session_response(session: SessionRecord) -> SessionResponse:
     return SessionResponse(
         session_id=session.session_id,
         title=session.title,
+        surface=session.surface,
         scope=SessionScopeResponse(
             mode=session.scope.mode,
             document_ids=session.scope.document_ids,
@@ -93,7 +99,11 @@ async def create_session(
 ) -> SessionResponse:
     service = await _service(request)
     try:
-        session = await run_in_threadpool(service.create_session, title=payload.title)
+        session = await run_in_threadpool(
+            service.create_session,
+            title=payload.title,
+            **({"surface": payload.surface} if payload.surface is not None else {}),
+        )
     except Exception as exc:
         _handle_error(exc)
     return _session_response(session)
@@ -104,11 +114,15 @@ async def list_sessions(
     request: Request,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    surface: SessionSurface | None = Query(default=None),
 ) -> SessionPageResponse:
     service = await _service(request)
     try:
         page = await run_in_threadpool(
-            service.list_sessions, offset=offset, limit=limit
+            service.list_sessions,
+            offset=offset,
+            limit=limit,
+            **({"surface": surface} if surface is not None else {}),
         )
     except Exception as exc:
         _handle_error(exc)

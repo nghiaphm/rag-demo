@@ -529,7 +529,7 @@ class JsonToolIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "request_id", "session_id", "user_message_id", "assistant_message_id", "answer", "sources",
             "citations", "metadata", "usage", "status", "error",
         })
-        self.assertEqual(set(ChatRequest.model_fields), {"question", "session_id", "attachments"})
+        self.assertEqual(set(ChatRequest.model_fields), {"question", "session_id", "attachments", "ui_context"})
         ChatResponse.model_validate(body)
         self.assertEqual((await self.post(session_id="invalid")).status_code, 422)
 

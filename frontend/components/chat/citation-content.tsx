@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useMemo, useRef, useState, type ComponentProps, type ReactNode } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -73,7 +73,15 @@ export function SourceGroups({ groups, selectedKey }: { groups: SourceGroup[]; s
   )
 }
 
-export function CitationContent({ message }: { message: ChatViewMessage }) {
+export function CitationContent({
+  message,
+  extraRehypePlugins,
+  renderInternalLink,
+}: {
+  message: ChatViewMessage
+  extraRehypePlugins?: ComponentProps<typeof ReactMarkdown>["rehypePlugins"]
+  renderInternalLink?: (href: string, children: ReactNode) => ReactNode
+}) {
   const [selected, setSelected] = useState<CitationSource | null>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const panel = buildCitationPanel(message)
@@ -84,7 +92,7 @@ export function CitationContent({ message }: { message: ChatViewMessage }) {
   const markdown = useMemo(() => (
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeCitationMarkers]}
+        rehypePlugins={[rehypeCitationMarkers, ...(extraRehypePlugins ?? [])]}
         components={{
           button: ({ node, children }) => <CitationMarker message={message}
             ordinal={Number(node?.properties.dataCitationOrdinal)} marker={String(children)} onSelect={setSelected} />,
@@ -100,10 +108,16 @@ export function CitationContent({ message }: { message: ChatViewMessage }) {
           h1: ({ children }) => <h3 className="my-3 text-lg font-semibold">{children}</h3>,
           h2: ({ children }) => <h3 className="my-3 text-base font-semibold">{children}</h3>,
           h3: ({ children }) => <h4 className="my-2 font-semibold">{children}</h4>,
-          a: ({ children, href }) => <a href={href} className="break-all font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" target="_blank" rel="noreferrer">{children}<span className="sr-only"> (mở tab mới)</span></a>,
+          a: ({ children, href }) => {
+            if (href && renderInternalLink) {
+              const rendered = renderInternalLink(href, children)
+              if (rendered) return <>{rendered}</>
+            }
+            return <a href={href} className="break-all font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" target="_blank" rel="noreferrer">{children}<span className="sr-only"> (mở tab mới)</span></a>
+          },
         }}
       >{message.content}</ReactMarkdown>
-  ), [message])
+  ), [message, extraRehypePlugins, renderInternalLink])
   return (
     <Sheet>
       {markdown}

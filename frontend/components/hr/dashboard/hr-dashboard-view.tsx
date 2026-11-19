@@ -1,13 +1,16 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect } from "react"
-import { BookOpen, Database, Files, MessageSquareText } from "lucide-react"
+import { BookOpen, Compass, Database, Files, MessageSquareText } from "lucide-react"
 
 import { DepartmentChart } from "@/components/hr/dashboard/department-chart"
 import { EmployeeStatusChart } from "@/components/hr/dashboard/employee-status-chart"
 import { HrKpiCards } from "@/components/hr/dashboard/hr-kpi-cards"
-import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
+import {
+  useHrChatbot,
+  useHrPageContext,
+} from "@/components/hr/layout/hr-chatbot-provider"
+import { useOptionalHrTour } from "@/components/hr/tour/hr-tour-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { HR_ANALYTICS_FIXTURE } from "@/fixtures/hr-analytics"
@@ -19,9 +22,21 @@ function LiveKnowledgeBaseStrip({ apiBaseUrl }: { apiBaseUrl: string }) {
   const summary = summarizeKnowledgeBaseDocuments(state.items)
   const loading = state.status === "loading" && state.items.length === 0
 
+  useHrPageContext({
+    route: "/hr",
+    liveFeatures:
+      state.status === "ready"
+        ? [
+            `Trạng thái Kho tri thức RAG thực tế đang hiển thị: ${summary.totalDocuments} tài liệu (${summary.indexedDocuments} INDEXED, ${summary.processingDocuments} đang xử lý, ${summary.totalChunks} vector chunks).`,
+          ]
+        : [],
+  })
+
   return (
     <section
       aria-labelledby="live-kb-title"
+      data-tour="hr-live-kb"
+      data-hr-feature="Xem thống kê Kho tri thức RAG theo thời gian thực từ API và mở nhanh Kho tài liệu nhân sự."
       className="rounded-xl border bg-card p-6"
     >
       <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -83,14 +98,19 @@ function LiveKnowledgeBaseStrip({ apiBaseUrl }: { apiBaseUrl: string }) {
 }
 
 export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
-  const { openWidget, setPageContext } = useHrChatbot()
+  const { openWidget } = useHrChatbot()
+  const tour = useOptionalHrTour()
 
-  useEffect(() => {
-    setPageContext({
-      route: "/hr",
-      title: "Tổng quan nhân sự",
-    })
-  }, [setPageContext])
+  useHrPageContext(
+    apiBaseUrl
+      ? null
+      : {
+          route: "/hr",
+          liveFeatures: [
+            "Chưa cấu hình NEXT_PUBLIC_API_BASE_URL nên hiện chỉ hiển thị số liệu nhân sự mô phỏng, chưa tải thống kê Kho tri thức RAG thực.",
+          ],
+        },
+  )
 
   return (
     <section aria-labelledby="hr-dashboard-title" className="mx-auto w-full max-w-6xl space-y-8">
@@ -113,7 +133,6 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
             className="gap-1.5 shadow-2xs transition-transform active:scale-[0.99]"
             onClick={() =>
               openWidget({
-                pageContext: { route: "/hr", title: "Tổng quan nhân sự" },
                 prompt: "Tóm tắt các chính sách phúc lợi và nghỉ phép nổi bật hiện nay.",
               })
             }
@@ -129,15 +148,28 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
             <BookOpen className="size-4" aria-hidden="true" />
             <span>Hướng dẫn</span>
           </Button>
+          <Button type="button" variant="ghost" onClick={() => tour?.startTour(0, "all")}>
+            <Compass className="size-4" aria-hidden="true" />
+            <span>Product Tour</span>
+          </Button>
         </div>
       </div>
 
-      <HrKpiCards
-        kpis={HR_ANALYTICS_FIXTURE.kpis}
-        asOfLabel={HR_ANALYTICS_FIXTURE.asOfLabel}
-      />
+      <div
+        data-tour="hr-kpi-strip"
+        data-hr-feature="Dải thẻ KPI nhân sự tổng hợp quy mô nhân sự, tuyển mới, tỉ lệ nghỉ việc và thâm niên trung bình."
+      >
+        <HrKpiCards
+          kpis={HR_ANALYTICS_FIXTURE.kpis}
+          asOfLabel={HR_ANALYTICS_FIXTURE.asOfLabel}
+        />
+      </div>
 
-      <div className="grid gap-6 lg:grid-cols-12">
+      <div
+        data-tour="hr-analytics-charts"
+        data-hr-feature="Cặp biểu đồ phân bổ nhân sự theo phòng ban và tỉ trọng loại hợp đồng lao động."
+        className="grid gap-6 lg:grid-cols-12"
+      >
         <div className="lg:col-span-7">
           <DepartmentChart departments={HR_ANALYTICS_FIXTURE.departments} />
         </div>
@@ -149,7 +181,7 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
       {apiBaseUrl ? (
         <LiveKnowledgeBaseStrip apiBaseUrl={apiBaseUrl} />
       ) : (
-        <section className="rounded-xl border bg-card p-6">
+        <section data-tour="hr-live-kb" className="rounded-xl border bg-card p-6">
           <h2 className="text-base font-semibold tracking-tight">Kho tri thức RAG</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Chưa cấu hình NEXT_PUBLIC_API_BASE_URL nên hiện chỉ hiển thị dữ liệu nhân sự mô phỏng.

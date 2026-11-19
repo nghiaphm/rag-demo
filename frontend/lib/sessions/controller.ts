@@ -15,7 +15,7 @@ export interface SessionsState {
 }
 
 export interface SessionsServices {
-  list: (signal: AbortSignal, query?: Required<ListSessionsQuery>) => Promise<SessionPageResponse>;
+  list: (signal: AbortSignal, query?: ListSessionsQuery) => Promise<SessionPageResponse>;
   create: (signal: AbortSignal) => Promise<SessionResponse>;
   rename?: (id: string, title: string, signal: AbortSignal) => Promise<SessionResponse>;
   remove?: (id: string, signal: AbortSignal) => Promise<DeleteSessionResponse>;

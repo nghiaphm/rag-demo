@@ -15,17 +15,18 @@ import {
 import { HistoryController } from "@/lib/sessions/history"
 import { SessionLookupController, SessionsController } from "@/lib/sessions/controller"
 import { subscribeSessionList } from "@/lib/sessions/invalidation"
+import type { SessionSurface } from "@/types/sessions"
 
-export function useSessions(apiBaseUrl: string) {
+export function useSessions(apiBaseUrl: string, surface: SessionSurface = "workspace") {
   const controller = useMemo(() => {
     const api = createApiClient({ baseUrl: apiBaseUrl })
     return new SessionsController({
-      list: (signal, query) => listSessions(api, query ?? { offset: 0, limit: 50 }, signal),
-      create: (signal) => createSession(api, {}, signal),
+      list: (signal, query) => listSessions(api, { ...(query ?? { offset: 0, limit: 50 }), surface }, signal),
+      create: (signal) => createSession(api, surface === "hr" ? { surface } : {}, signal),
       rename: (id, title, signal) => updateSessionTitle(api, id, title, signal),
       remove: (id, signal) => deleteSession(api, id, signal),
     })
-  }, [apiBaseUrl])
+  }, [apiBaseUrl, surface])
   const state = useSyncExternalStore(
     controller.subscribe,
     controller.getSnapshot,
