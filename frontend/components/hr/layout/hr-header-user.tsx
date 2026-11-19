@@ -3,14 +3,18 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Suspense } from "react"
-import { ArrowUpRight, MessageSquareText } from "lucide-react"
+import { ArrowUpRight, Compass, MessageSquareText } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
+import { useOptionalHrTour } from "@/components/hr/tour/hr-tour-provider"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { getHrRouteTitle } from "@/lib/hr/page-context"
 import type { HrUserProfile } from "@/types/hr"
+
+export { getHrRouteTitle }
 
 export const DEFAULT_HR_DEMO_USER: HrUserProfile = {
   name: "Minh Anh",
@@ -19,16 +23,6 @@ export const DEFAULT_HR_DEMO_USER: HrUserProfile = {
   email: "hr.demo@company.example",
   avatarInitials: "MA",
   isDemoProfile: true,
-}
-
-export function getHrRouteTitle(pathname: string): string {
-  if (pathname === "/hr/documents" || pathname.startsWith("/hr/documents/")) {
-    return "Tài liệu nhân sự"
-  }
-  if (pathname === "/hr/guide" || pathname.startsWith("/hr/guide/")) {
-    return "Hướng dẫn sử dụng"
-  }
-  return "Tổng quan nhân sự"
 }
 
 function HrRouteLabel() {
@@ -42,6 +36,7 @@ export function HrHeaderUser({
   user?: HrUserProfile
 }) {
   const { openWidget } = useHrChatbot()
+  const tour = useOptionalHrTour()
 
   return (
     <header className="sticky top-0 z-20 flex h-15 shrink-0 items-center justify-between gap-4 border-b bg-card/90 px-4 backdrop-blur-md sm:px-6 lg:px-8">
@@ -64,6 +59,18 @@ export function HrHeaderUser({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-2.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 gap-1.5"
+          aria-label="Bắt đầu Product Tour"
+          onClick={() => tour?.startTour(0, "all")}
+        >
+          <Compass className="size-3.5 text-primary" aria-hidden="true" />
+          <span className="hidden md:inline">Product Tour</span>
+        </Button>
+
         <Button
           type="button"
           size="sm"

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   AlertCircle,
   FileText,
@@ -14,7 +14,10 @@ import {
 import { DocumentPreview } from "@/components/chat/document-preview"
 import { DocumentStatusBadge } from "@/components/documents/document-status-badge"
 import { HrUploadDialog } from "@/components/hr/documents/hr-upload-dialog"
-import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
+import {
+  useHrChatbot,
+  useHrPageContext,
+} from "@/components/hr/layout/hr-chatbot-provider"
 import { LoadingSkeleton } from "@/components/layout/loading-skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -44,7 +47,7 @@ function formatDate(value: string | null | undefined): string {
 
 function ConfiguredHrDocuments({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state, controller } = useDocuments(apiBaseUrl)
-  const { openWidget, setPageContext } = useHrChatbot()
+  const { openWidget } = useHrChatbot()
   const [selectedCategory, setSelectedCategory] = useState<HrDocumentCategory | "ALL">("ALL")
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -55,15 +58,16 @@ function ConfiguredHrDocuments({ apiBaseUrl }: { apiBaseUrl: string }) {
   })
   const pendingIngestion = hasPendingIngestion(state)
 
-  useEffect(() => {
-    setPageContext({
-      route: "/hr/documents",
-      title: "Tài liệu nhân sự",
-      selectedDocumentId: state.detail?.document_id,
-      selectedDocumentName: state.detail?.file_name,
-      selectedCategory: selectedCategory === "ALL" ? undefined : selectedCategory,
-    })
-  }, [setPageContext, state.detail?.document_id, state.detail?.file_name, selectedCategory])
+  useHrPageContext({
+    route: "/hr/documents",
+    selectedDocumentId: state.detail?.document_id,
+    selectedDocumentName: state.detail?.file_name,
+    selectedCategory: selectedCategory === "ALL" ? undefined : selectedCategory,
+    searchQuery: searchQuery.trim() || undefined,
+    liveFeatures: [
+      `Danh sách hiện đang hiển thị ${filteredDocuments.length} / ${state.items.length} tài liệu trong kho RAG.`,
+    ],
+  })
 
   function handleSelectDocument(doc: DocumentInfo) {
     void controller.select(doc.document_id)
@@ -101,7 +105,10 @@ function ConfiguredHrDocuments({ apiBaseUrl }: { apiBaseUrl: string }) {
         </p>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 lg:flex-row lg:items-center lg:justify-between">
+      <div
+        data-tour="hr-docs-filters"
+        className="flex flex-col gap-3 rounded-xl border bg-card p-3 lg:flex-row lg:items-center lg:justify-between"
+      >
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Phân loại tài liệu nhân sự">
           <Button
             type="button"
@@ -178,7 +185,10 @@ function ConfiguredHrDocuments({ apiBaseUrl }: { apiBaseUrl: string }) {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+        <div
+          data-tour="hr-docs-workbench"
+          className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]"
+        >
           <div className="overflow-hidden rounded-xl border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3.5">
               <h2 className="text-sm font-semibold">Danh sách tài liệu</h2>
@@ -330,6 +340,17 @@ function ConfiguredHrDocuments({ apiBaseUrl }: { apiBaseUrl: string }) {
 }
 
 export function HrDocumentsView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
+  useHrPageContext(
+    apiBaseUrl
+      ? null
+      : {
+          route: "/hr/documents",
+          liveFeatures: [
+            "Chưa cấu hình NEXT_PUBLIC_API_BASE_URL nên chưa thể liệt kê, xem trước hoặc tải lên tài liệu vào RAG Knowledge Base.",
+          ],
+        },
+  )
+
   return (
     <section aria-labelledby="hr-documents-title" className="mx-auto w-full max-w-6xl">
       {!apiBaseUrl ? (

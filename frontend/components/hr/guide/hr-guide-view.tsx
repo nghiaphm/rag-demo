@@ -1,24 +1,23 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect } from "react"
-import { BookOpen, CheckCircle2, MessageSquareText, Sparkles } from "lucide-react"
+import { BookOpen, CheckCircle2, Compass, MessageSquareText, Sparkles } from "lucide-react"
 
-import { useHrChatbot } from "@/components/hr/layout/hr-chatbot-provider"
+import {
+  useHrChatbot,
+  useHrPageContext,
+} from "@/components/hr/layout/hr-chatbot-provider"
+import { useOptionalHrTour } from "@/components/hr/tour/hr-tour-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { HR_GUIDE_SECTIONS, HR_PROMPT_TEMPLATES } from "@/fixtures/hr-guide"
 import { getHrCategoryLabel } from "@/lib/hr/document-categories"
 
 export function HrGuideView() {
-  const { openWidget, setPageContext } = useHrChatbot()
+  const { openWidget } = useHrChatbot()
+  const tour = useOptionalHrTour()
 
-  useEffect(() => {
-    setPageContext({
-      route: "/hr/guide",
-      title: "Hướng dẫn sử dụng",
-    })
-  }, [setPageContext])
+  useHrPageContext({ route: "/hr/guide" })
 
   return (
     <section aria-labelledby="hr-guide-title" className="mx-auto w-full max-w-6xl space-y-8">
@@ -39,7 +38,7 @@ export function HrGuideView() {
           <Button
             type="button"
             className="gap-1.5 transition-transform active:scale-[0.99]"
-            onClick={() => openWidget({ pageContext: { route: "/hr/guide", title: "Hướng dẫn sử dụng" } })}
+            onClick={() => openWidget()}
           >
             <MessageSquareText className="size-4" aria-hidden="true" />
             <span>Mở Trợ lý HR</span>
@@ -48,8 +47,37 @@ export function HrGuideView() {
             <BookOpen className="size-4" aria-hidden="true" />
             <span>Đi tới Kho tài liệu</span>
           </Button>
+          <Button type="button" variant="outline" onClick={() => tour?.startTour(0, "all")}>
+            <Compass className="size-4 text-primary" aria-hidden="true" />
+            <span>Bắt đầu Product Tour</span>
+          </Button>
         </div>
       </div>
+
+      <section
+        aria-label="Khởi chạy nhanh Product Tour theo phân hệ"
+        className="flex flex-col gap-3 rounded-xl border border-primary/20 bg-accent/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="space-y-0.5">
+          <p className="text-sm font-semibold text-foreground">
+            Interactive Product Tour theo từng phân hệ
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Chạy hướng dẫn trực tiếp trên giao diện (Overlay &amp; Spotlight) mà không cần gọi RAG Backend.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => tour?.startTour(0, "dashboard")}>
+            Tour Dashboard
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => tour?.startTour(0, "documents")}>
+            Tour Tài liệu
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => tour?.startTour(0, "copilot")}>
+            Tour Trợ lý HR
+          </Button>
+        </div>
+      </section>
 
       <div className="grid gap-5 md:grid-cols-2">
         {HR_GUIDE_SECTIONS.map((section) => (
