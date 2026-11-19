@@ -4,13 +4,22 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.conversations.models import MessageRole, MessageStatus, SessionScopeMode
+from app.conversations.models import (
+    MessageRole,
+    MessageStatus,
+    SessionScopeMode,
+    SessionSurface,
+)
 from app.documents.models import _canonical_uuid
 from app.documents.attachment_models import MessageAttachment
 
 
 class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    surface: SessionSurface | None = Field(
+        default=None,
+        description="Bề mặt tạo phiên (workspace hoặc hr); mặc định workspace",
+    )
 
     @field_validator("title")
     @classmethod
@@ -64,6 +73,7 @@ class UpdateSessionScopeRequest(BaseModel):
 class SessionResponse(BaseModel):
     session_id: str
     title: str
+    surface: SessionSurface = SessionSurface.WORKSPACE
     scope: SessionScopeResponse
     user_id: str | None
     created_at: datetime

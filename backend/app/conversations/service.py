@@ -14,6 +14,7 @@ from app.conversations.models import (
     SessionRecord,
     SessionScope,
     SessionScopeMode,
+    SessionSurface,
     new_uuid,
     utc_now,
 )
@@ -76,12 +77,27 @@ class ConversationService:
     def __init__(self, repository: MongoConversationRepository):
         self.repository = repository
 
-    def create_session(self, *, title: str | None = None) -> SessionRecord:
-        values = {} if title is None else {"title": title}
+    def create_session(
+        self,
+        *,
+        title: str | None = None,
+        surface: SessionSurface = SessionSurface.WORKSPACE,
+    ) -> SessionRecord:
+        values: dict[str, Any] = {"surface": surface}
+        if title is not None:
+            values["title"] = title
         return self.repository.create_session(SessionRecord(**values))
 
-    def list_sessions(self, *, offset: int = 0, limit: int = 50) -> SessionPage:
-        items, total = self.repository.list_sessions(offset=offset, limit=limit)
+    def list_sessions(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        surface: SessionSurface | None = None,
+    ) -> SessionPage:
+        items, total = self.repository.list_sessions(
+            offset=offset, limit=limit, surface=surface
+        )
         return SessionPage(items, offset, limit, total)
 
     def get_session(self, session_id: str) -> SessionRecord:
