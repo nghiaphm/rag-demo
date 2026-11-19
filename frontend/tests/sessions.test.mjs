@@ -94,6 +94,34 @@ test("session REST client lists, creates and gets exact backend routes", async (
   assert.deepEqual(calls[1][1].json, {});
 });
 
+test("session REST client supports surface filtering and creation for hr and workspace", async () => {
+  const calls = [];
+  const hrSession = { ...first, surface: "hr" };
+  const api = {
+    async request(path, options) {
+      calls.push([path, options]);
+      if (path.startsWith("/sessions?")) {
+        return { status: 200, data: { items: [hrSession], offset: 0, limit: 50, total: 1 }, headers: new Headers() };
+      }
+      if (path === "/sessions") {
+        return { status: 201, data: hrSession, headers: new Headers() };
+      }
+      assert.fail(`unexpected path ${path}`);
+    },
+  };
+
+  const page = await sessionApi.listSessions(api, { offset: 0, limit: 50, surface: "hr" });
+  const created = await sessionApi.createSession(api, { surface: "hr" });
+  assert.equal(page.items[0].surface, "hr");
+  assert.equal(created.surface, "hr");
+  assert.equal(calls[0][0], "/sessions?offset=0&limit=50&surface=hr");
+  assert.deepEqual(calls[1][1].json, { surface: "hr" });
+  await assert.rejects(
+    sessionApi.listSessions(api, { offset: 0, limit: 50, surface: "invalid" }),
+    /Surface session không hợp lệ/,
+  );
+});
+
 test("session REST client rejects invalid IDs and malformed list responses", async () => {
   let calls = 0;
   const api = {

@@ -109,6 +109,7 @@ function isSessionResponse(value: unknown): value is SessionResponse {
   if (!isRecord(value) || !isRecord(value.scope)) return false;
   return isSessionId(value.session_id)
     && typeof value.title === "string"
+    && (value.surface === undefined || value.surface === "workspace" || value.surface === "hr")
     && (value.scope.mode === "ALL_ACTIVE" || value.scope.mode === "SELECTED_DOCUMENTS")
     && Array.isArray(value.scope.document_ids)
     && value.scope.document_ids.every((id) => typeof id === "string")
@@ -226,8 +227,13 @@ export async function listSessions(
   if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 200) {
     throw new TypeError("Pagination session không hợp lệ.");
   }
+  const surface = query.surface ?? undefined;
+  if (surface !== undefined && surface !== "workspace" && surface !== "hr") {
+    throw new TypeError("Surface session không hợp lệ.");
+  }
+  const surfaceParam = surface ? `&surface=${encodeURIComponent(surface)}` : "";
   const response = await api.request<SessionPageResponse>(
-    `/sessions?offset=${offset}&limit=${limit}`,
+    `/sessions?offset=${offset}&limit=${limit}${surfaceParam}`,
     { method: "GET", signal }
   );
   if (response.status !== 200 || !isSessionPageResponse(response.data)

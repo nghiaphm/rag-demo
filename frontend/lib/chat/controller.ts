@@ -3,12 +3,17 @@ import { safeApiErrorMessage, safeStreamErrorMessage } from "@/lib/api/error-ux"
 import type {
   ChatError,
   ChatRequest,
+  ChatUiContext,
   MessageAttachment,
   ChatUsage,
   Citation,
   Source,
   SSEEvent,
 } from "@/types/chat";
+
+export interface ChatSubmitOptions {
+  uiContext?: ChatUiContext | null;
+}
 import type { MessageStatus, SessionResponse, SessionScopeResponse, UpdateSessionScopeRequest } from "@/types/sessions";
 
 export interface ChatViewMessage {
@@ -228,7 +233,11 @@ export class ChatController {
   }
 
   /** Returns false for blank or duplicate submits; true means the turn was accepted. */
-  async submit(rawQuestion: string, attachments: readonly MessageAttachment[] = []): Promise<boolean> {
+  async submit(
+    rawQuestion: string,
+    attachments: readonly MessageAttachment[] = [],
+    options?: ChatSubmitOptions
+  ): Promise<boolean> {
     const question = rawQuestion.trim();
     if (!question || this.activeTurn) return false;
 
@@ -308,7 +317,12 @@ export class ChatController {
         this.publish({ ...this.state, sessionId });
       }
       await waitForSignal(this.services.stream(
-        { question, session_id: sessionId, ...(attachments.length ? { attachments: attachments.map(({ document_id, version_id }) => ({ document_id, version_id })) } : {}) },
+        {
+          question,
+          session_id: sessionId,
+          ...(attachments.length ? { attachments: attachments.map(({ document_id, version_id }) => ({ document_id, version_id })) } : {}),
+          ...(options?.uiContext ? { ui_context: options.uiContext } : {}),
+        },
         {
           signal: turn.abortController.signal,
           onEvent: (event) => this.acceptEvent(turn, event),

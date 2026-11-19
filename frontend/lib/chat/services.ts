@@ -4,14 +4,15 @@ import { createSession, listSessionMessages, updateSessionScope } from "@/lib/ap
 import type { ChatControllerServices } from "@/lib/chat/controller";
 import { historyMessageToViewMessage, loadMessageHistory } from "@/lib/sessions/history";
 import { invalidateSessionList } from "@/lib/sessions/invalidation";
+import type { SessionSurface } from "@/types/sessions";
 
 /** Shared composer wiring; confirmed creation invalidates the existing list owner. */
-export function createChatServices(baseUrl: string): ChatControllerServices {
+export function createChatServices(baseUrl: string, surface?: SessionSurface): ChatControllerServices {
   const api = createApiClient({ baseUrl });
   const streamClient = createChatStreamClient({ baseUrl });
   return {
     createSession: async (signal) => {
-      const session = await createSession(api, {}, signal);
+      const session = await createSession(api, surface ? { surface } : {}, signal);
       if (!signal.aborted) invalidateSessionList(baseUrl);
       return session;
     },

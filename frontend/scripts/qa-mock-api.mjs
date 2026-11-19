@@ -13,7 +13,7 @@ new Function("exports", ts.transpileModule(fs.readFileSync(new URL("../fixtures/
 const timestamp = "2026-10-14T00:00:00Z";
 const usage = { input_tokens: 10, output_tokens: 20, total_tokens: 30 };
 const ids = ["aaaaaaaa-1111-4111-8111-111111111111", "bbbbbbbb-1111-4111-8111-111111111111"];
-const makeSession = (session_id, title) => ({ session_id, title, scope: { mode: "ALL_ACTIVE", document_ids: [] },
+const makeSession = (session_id, title, surface = "workspace") => ({ session_id, title, surface, scope: { mode: "ALL_ACTIVE", document_ids: [] },
   user_id: null, created_at: timestamp, updated_at: timestamp });
 const source = { document_id: exports.documentFixtures[0].document_id,
   version_id: exports.documentFixtures[0].active_version_id, chunk_id: "cccccccc-1111-4111-8111-111111111111",
@@ -74,9 +74,20 @@ export function createQaMockServer({ delayMs = 600, deltaMs = 250 } = {}) {
         const offset = Number(url.searchParams.get("offset") ?? 0), limit = Number(url.searchParams.get("limit") ?? 50);
         return { items: items.slice(offset, offset + limit), offset, limit, total: items.length };
       };
-      if (path === "/sessions" && method === "GET") { json(200, page(scenario === "empty" ? [] : sessions.filter(item => !deleted.has(item.session_id)))); return; }
+      if (path === "/sessions" && method === "GET") {
+        const surfaceFilter = url.searchParams.get("surface");
+        const visible = scenario === "empty" ? [] : sessions.filter(item => {
+          if (deleted.has(item.session_id)) return false;
+          if (!surfaceFilter) return true;
+          return (item.surface ?? "workspace") === surfaceFilter;
+        });
+        json(200, page(visible)); return;
+      }
       if (path === "/sessions" && method === "POST") {
-        const session = makeSession(randomUUID(), "QA new chat"); sessions.unshift(session); histories.set(session.session_id, []);
+        const payload = body.length ? JSON.parse(body.toString()) : {};
+        const surface = payload.surface === "hr" ? "hr" : "workspace";
+        const title = typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : "QA new chat";
+        const session = makeSession(randomUUID(), title, surface); sessions.unshift(session); histories.set(session.session_id, []);
         json(201, session); return;
       }
       const sessionRoute = /^\/sessions\/([^/]+)(\/messages|\/scope)?$/.exec(path);

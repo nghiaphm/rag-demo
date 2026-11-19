@@ -9,12 +9,30 @@ export interface MessageAttachment extends AttachmentReference {
   file_name: string;
 }
 
+export interface ChatUiRelatedPage {
+  route: string;
+  title: string;
+  description?: string | null;
+}
+
+export interface ChatUiContext {
+  portal?: "hr";
+  route: string;
+  page_title: string;
+  page_purpose: string;
+  available_features?: string[];
+  related_pages?: ChatUiRelatedPage[];
+  selected_document_name?: string | null;
+  selected_category?: string | null;
+}
+
 /** POST /chat and POST /chat/stream. Omitted/null session_id is stateless. */
 export interface ChatRequest {
   /** Backend trims and rejects empty/whitespace-only questions. */
   question: string;
   session_id?: UUID | null;
   attachments?: AttachmentReference[];
+  ui_context?: ChatUiContext | null;
 }
 
 export type ChatResponseMode = "STATELESS" | "PERSISTENT";
