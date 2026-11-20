@@ -24,11 +24,11 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** Không.
   - **Nội dung:** Khai báo `StorageBackend(Protocol)` (`put`, `get`, `exists`, `delete_prefix`), giữ tương thích `FileStorage` cũ; thêm `build_versioned_storage_key(tenant_id, document_id, version, filename)` sinh `{tenant}/{doc_id}/v{n}/original{ext}`; thêm `tenant_id: str = "default"` vào `DocumentRecord` và `UserContext`; thêm `storage_backend: Literal["local", "s3"] = "local"` vào `DocumentVersionRecord`; mở rộng `config.py` cho `STORAGE_BACKEND=local|s3`, `DEFAULT_TENANT_ID="default"`, `S3_USE_IF_NONE_MATCH=true` và nhóm biến S3 ingestion (`S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT_URL`, `S3_INGEST_ACCESS_KEY_ID`, `S3_INGEST_SECRET_ACCESS_KEY`).
 
-- [ ] **T1.2 — Triển khai `LocalStorageBackend` & `S3StorageBackend` + factory**
+- [x] **T1.2 — Triển khai `LocalStorageBackend` & `S3StorageBackend` + factory**
   - **File dự kiến tạo:** `backend/app/infrastructure/s3_storage.py`
-  - **File dự kiến sửa:** `backend/app/infrastructure/storage.py`, `backend/requirements.txt` (`boto3`)
+  - **File dự kiến sửa:** `backend/app/infrastructure/storage.py`, `backend/requirements.txt` (`boto3>=1.35.4,<2.0.0`)
   - **Phụ thuộc:** T1.1.
-  - **Nội dung:** Bổ sung `delete_prefix` & adapter `StorageBackend` cho `LocalFileStorage` (giữ chặn path traversal); triển khai `S3StorageBackend` dùng `boto3` (chặn ghi đè bản gốc bằng conditional put `IfNoneMatch="*"`, batch delete 1000 objects cho `delete_prefix`, tính SHA-256 + `size_bytes`); cập nhật `create_file_storage(config)` chọn adapter theo `STORAGE_BACKEND`.
+  - **Nội dung:** Bổ sung `delete_prefix` & adapter `StorageBackend` cho `LocalFileStorage` (giữ chặn path traversal); triển khai `S3FileStorage` dùng `boto3` (chặn ghi đè bản gốc bằng conditional put `IfNoneMatch="*"` hoặc fallback `head_object` theo `s3_use_if_none_match`, batch delete 1000 objects cho `delete_prefix`, tính SHA-256 + `size_bytes`, thông báo lỗi an toàn không lộ credential); cập nhật `create_file_storage(config)` chọn adapter theo `STORAGE_BACKEND`.
 
 - [ ] **T1.3 — Chuyển bước `_prepare_upload` sang key mới & kiểm chứng sync/async**
   - **File dự kiến sửa:** `backend/app/documents/ingestion.py`, `backend/app/api/routes/documents.py`, `backend/app/workers/ingestion_worker.py`
