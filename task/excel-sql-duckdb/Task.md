@@ -53,11 +53,11 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
 **Mục tiêu**: Mở rộng bước ingest Excel: làm sạch từng sheet từ `read_workbook()` → ghi Parquet lên S3 (`{tenant}/{doc_id}/v{n}/tables/{ten_bang}.parquet`) → sinh Table Catalog (tên bảng, cột, kiểu, mô tả, dòng mẫu) lưu vào MongoDB.
 
 ### Danh sách task
-- [ ] **T2.1 — Bộ chuẩn hóa bảng & chuyển đổi Parquet (`tabular.py`)**
+- [x] **T2.1 — Bộ chuẩn hóa bảng & chuyển đổi Parquet (`tabular.py`)**
   - **File dự kiến tạo:** `backend/app/documents/excel/tabular.py`
-  - **File dự kiến sửa:** `backend/requirements.txt` (`pyarrow`)
+  - **File dự kiến sửa:** `backend/requirements.txt` (`pyarrow>=17.0.0`)
   - **Phụ thuộc:** T1.2.
-  - **Nội dung:** Tái sử dụng `read_workbook()`; chuẩn hóa tên bảng `snake_case` ASCII duy nhất (`[a-z][a-z0-9_]{0,62}`), chuẩn hóa tên cột duy nhất (giữ `original_name`); suy luận kiểu dữ liệu an toàn (`INT64`, `DOUBLE`, `BOOLEAN`, `DATE`/`TIMESTAMP`, `VARCHAR`), chuẩn hóa chuỗi số/rỗng thành `NULL`; xuất Parquet bytes bằng `pyarrow` và trích `row_count`, `sample_rows` (3–5 dòng mẫu giới hạn độ dài ô).
+  - **Nội dung:** Tái sử dụng `read_workbook()`; dò dòng header tự động (>= 2 ô text khác nhau, bỏ qua sheet trống/chỉ có tiêu đề); chuẩn hóa tên bảng/cột `snake_case` ASCII duy nhất (`[a-z][a-z0-9_]{0,62}`, cột trống -> `col_{index}`, lưu `sheet_name`/`original_name`); đọc cached value cho ô công thức (`data_only=True, read_only=True, keep_links=False`), ô công thức thiếu cached value -> `NULL` + `has_formula_values=True`; suy luận kiểu dữ liệu (`INT64`, `DOUBLE`, `BOOLEAN`, `DATE`, `TIMESTAMP`, `VARCHAR`) bảo toàn mã `"00123"`, số nguyên lớn và số định dạng VN nhất quán 100%; xuất Parquet bytes bằng `pyarrow` và trích `sample_rows` + mô tả cột theo rule.
 
 - [ ] **T2.2 — MongoDB model, index & repository cho Table Catalog**
   - **File dự kiến sửa:** `backend/app/documents/models.py`, `backend/app/documents/indexes.py`, `backend/app/documents/repository.py`
