@@ -140,6 +140,14 @@ class Settings(BaseSettings):
     excel_parquet_ingestion_enabled: bool = False
     excel_catalog_sample_rows: int = 3
 
+    # ----- DuckDB SQL Executor & S3 Read-Only Query Credentials -----
+    s3_query_access_key_id: SecretStr | None = None
+    s3_query_secret_access_key: SecretStr | None = None
+    duckdb_memory_limit: str = "512MB"
+    duckdb_threads: int = 2
+    duckdb_query_timeout_seconds: float = 15.0
+    duckdb_max_rows: int = 200
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:
@@ -371,6 +379,35 @@ class Settings(BaseSettings):
     def _validate_excel_catalog_sample_rows(cls, value: int) -> int:
         if value < 0 or value > 20:
             raise ValueError("EXCEL_CATALOG_SAMPLE_ROWS phải từ 0 đến 20")
+        return value
+
+    @field_validator("duckdb_memory_limit")
+    @classmethod
+    def _validate_duckdb_memory_limit(cls, value: str) -> str:
+        limit = value.strip().upper()
+        if not re.fullmatch(r"\d+(?:MB|GB|KB|MIB|GIB)", limit):
+            raise ValueError("DUCKDB_MEMORY_LIMIT phải có dạng số kèm đơn vị (ví dụ '512MB', '1GB')")
+        return limit
+
+    @field_validator("duckdb_threads")
+    @classmethod
+    def _validate_duckdb_threads(cls, value: int) -> int:
+        if value < 1 or value > 32:
+            raise ValueError("DUCKDB_THREADS phải từ 1 đến 32")
+        return value
+
+    @field_validator("duckdb_query_timeout_seconds")
+    @classmethod
+    def _validate_duckdb_query_timeout(cls, value: float) -> float:
+        if value <= 0 or value > 120:
+            raise ValueError("DUCKDB_QUERY_TIMEOUT_SECONDS phải lớn hơn 0 và không quá 120")
+        return value
+
+    @field_validator("duckdb_max_rows")
+    @classmethod
+    def _validate_duckdb_max_rows(cls, value: int) -> int:
+        if value < 1 or value > 2000:
+            raise ValueError("DUCKDB_MAX_ROWS phải từ 1 đến 2000")
         return value
 
     @model_validator(mode="after")

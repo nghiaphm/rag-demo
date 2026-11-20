@@ -88,10 +88,10 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
 **Mục tiêu**: Xây dựng tool `run_sql` dùng DuckDB in-memory tạo TEMP VIEW từ catalog được cấp quyền, kiểm duyệt chỉ cho `SELECT` bằng `sqlglot` + whitelist tên bảng, giới hạn memory/threads/timeout/số hàng và dùng credential S3 chỉ đọc.
 
 ### Danh sách task
-- [ ] **T3.1 — Khai báo contract `run_sql` & cấu hình S3 Read-Only / DuckDB limits**
-  - **File dự kiến sửa:** `backend/app/tool_use/contracts.py`, `backend/app/shared/config.py`, `backend/requirements.txt` (`duckdb`, `sqlglot`), `.env.example`
+- [x] **T3.1 — Khai báo contract `run_sql` & cấu hình S3 Read-Only / DuckDB limits**
+  - **File dự kiến sửa:** `backend/app/tool_use/contracts.py`, `backend/app/shared/config.py`, `backend/requirements.txt` (`duckdb>=1.1.0`, `sqlglot>=25.0.0`), `.env.example`
   - **Phụ thuộc:** T2.2.
-  - **Nội dung:** Thêm `"run_sql"` vào `ToolName` & `ALLOWED_TOOL_NAMES`, khai báo `RunSqlArguments(sql: str)` (tuyệt đối không có `user_id`/`tenant_id`/`s3_path`); thêm cấu hình `S3_QUERY_ACCESS_KEY_ID`, `S3_QUERY_SECRET_ACCESS_KEY`, `DUCKDB_MEMORY_LIMIT`, `DUCKDB_THREADS`, `DUCKDB_QUERY_TIMEOUT_SECONDS`, `DUCKDB_MAX_ROWS`.
+  - **Nội dung:** Thêm `"run_sql"` vào `ToolName` & `ALLOWED_TOOL_NAMES`, khai báo `RunSqlArguments(sql: str)` với độ dài tối đa 5000 ký tự (tuyệt đối không có `user_id`/`tenant_id`/`s3_path`/`document_id`); thêm cấu hình `S3_QUERY_ACCESS_KEY_ID`, `S3_QUERY_SECRET_ACCESS_KEY`, `DUCKDB_MEMORY_LIMIT=512MB`, `DUCKDB_THREADS=2`, `DUCKDB_QUERY_TIMEOUT_SECONDS=15`, `DUCKDB_MAX_ROWS=200`.
 
 - [ ] **T3.2 — Bộ kiểm duyệt SQL AST (`sql_guard.py`) dùng `sqlglot`**
   - **File dự kiến tạo:** `backend/app/documents/excel/sql_guard.py`

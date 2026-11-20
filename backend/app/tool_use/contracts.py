@@ -8,13 +8,26 @@ from typing import Any, Callable, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-ToolName = Literal["count_documents", "list_documents", "rag_search", "query_excel_table"]
+ToolName = Literal[
+    "count_documents",
+    "list_documents",
+    "rag_search",
+    "query_excel_table",
+    "run_sql",
+]
 ToolErrorCode = Literal[
     "TOOL_UNKNOWN", "TOOL_INVALID_ARGUMENTS", "TOOL_QUERY_FAILED",
     "TOOL_TIMEOUT", "TOOL_OUTPUT_LIMIT", "TOOL_LIMIT_EXCEEDED",
 ]
-ALLOWED_TOOL_NAMES = frozenset({"count_documents", "list_documents", "rag_search", "query_excel_table"})
+ALLOWED_TOOL_NAMES = frozenset({
+    "count_documents",
+    "list_documents",
+    "rag_search",
+    "query_excel_table",
+    "run_sql",
+})
 MAX_ARGUMENT_BYTES = 2 * 1024
+MAX_RUN_SQL_ARGUMENT_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 8 * 1024
 MAX_BATCH_RESULT_BYTES = 16 * 1024
 
@@ -50,6 +63,16 @@ class QueryExcelTableArguments(BaseModel):
         description="Structured query operation: rows, count, sum, avg, min, or max.",
     )
     limit: int = Field(default=10, ge=1, le=25, description="Maximum rows returned when operation is rows.")
+
+
+class RunSqlArguments(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    sql: str = Field(
+        min_length=1,
+        max_length=5000,
+        description="Read-only DuckDB SELECT query over authorized Excel tables.",
+    )
 
 
 class ToolError(TypedDict):
@@ -131,13 +154,16 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def validate_arguments(name: str, arguments: object) -> dict[str, Any]:
     if name not in ALLOWED_TOOL_NAMES:
         raise ToolContractError("TOOL_UNKNOWN")
+    max_arg_bytes = (
+        MAX_RUN_SQL_ARGUMENT_BYTES if name == "run_sql" else MAX_ARGUMENT_BYTES
+    )
     try:
         if type(arguments) is str:
-            if len(arguments.encode("utf-8")) > MAX_ARGUMENT_BYTES:
+            if len(arguments.encode("utf-8")) > max_arg_bytes:
                 raise ValueError("argument size")
             value = json.loads(arguments, object_pairs_hook=_unique_object)
         elif type(arguments) is dict:
-            if len(_json(arguments).encode("utf-8")) > MAX_ARGUMENT_BYTES:
+            if len(_json(arguments).encode("utf-8")) > max_arg_bytes:
                 raise ValueError("argument size")
             value = arguments
         else:
@@ -147,6 +173,7 @@ def validate_arguments(name: str, arguments: object) -> dict[str, Any]:
             "list_documents": ListDocumentsArguments,
             "rag_search": RagSearchArguments,
             "query_excel_table": QueryExcelTableArguments,
+            "run_sql": RunSqlArguments,
         }
         model = argument_models[name]
         return model.model_validate(value).model_dump()
