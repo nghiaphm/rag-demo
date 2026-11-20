@@ -82,17 +82,35 @@ Tài liệu này ghi nhận toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Giai đoạn 3 — Tool `run_sql` (DuckDB In-Memory + `sqlglot` + RBAC + S3 Read-Only)
-> **Trạng thái**: Chưa bắt đầu  
-> **Phạm vi**: `sqlglot AST Guard` · `DuckDB In-Memory Sandbox` · `S3 Read-Only Secret` · `RBAC Catalog Scoping`
+> **Trạng thái**: Hoàn thành  
+> **Phạm vi**: `sqlglot AST Guard` · `DuckDB In-Memory Sandbox` · `S3 Read-Only Secret` · `RBAC Catalog Scoping` · `Structured Audit Log`
 
 ### Thay đổi đã thực hiện
-- *(Sẽ cập nhật sau khi triển khai T3.1 – T3.5)*
+- **T3.1 (`9e2d5bd`)**:
+  - Thêm `"run_sql"` vào `ToolName` & `ALLOWED_TOOL_NAMES` và khai báo `RunSqlArguments(sql: str)` (tối đa 5000 ký tự, cấm mọi trường định danh phụ) trong `backend/app/tool_use/contracts.py`.
+  - Thêm cấu hình `S3_QUERY_ACCESS_KEY_ID`, `S3_QUERY_SECRET_ACCESS_KEY`, `DUCKDB_MEMORY_LIMIT=512MB`, `DUCKDB_THREADS=2`, `DUCKDB_QUERY_TIMEOUT_SECONDS=15.0`, `DUCKDB_MAX_ROWS=200` vào `backend/app/shared/config.py` và `.env.example`.
+  - Thêm `duckdb>=1.1.0` (`2.0.0`) và `sqlglot>=25.0.0` (`30.33.0`) vào `backend/requirements.txt`.
+- **T3.2 (`e98daff`)**:
+  - Tạo `backend/app/documents/excel/sql_guard.py` (`validate_and_rewrite_sql`): parse dialect `duckdb`, ép đúng 1 statement `SELECT`/`UNION`/`INTERSECT`/`EXCEPT` (+ CTE `WITH`), whitelist tuyệt đối bảng trong `FROM`/`JOIN`, chặn `schema.table`, chuỗi đường dẫn, mọi table-valued function và CTE trùng tên che giấu bảng; blocklist bổ sung các hàm `getenv`, `current_setting`, `duckdb_*`, `pragma_*`, `read_*`, `parquet_*`; tự chèn/hạ `LIMIT <= max_rows` ở mức AST (bọc `SELECT * FROM (...) LIMIT n` cho `UNION`/`INTERSECT`/`EXCEPT`) và sinh SQL đã lọc bỏ comment từ AST.
+- **T3.3 (`aec696a`)**:
+  - Thêm port `SqlQueryExecutor`, `AuthorizedSqlTable`, `SqlExecutionResult` và các exception domain vào `backend/app/documents/ports.py`.
+  - Tạo `backend/app/infrastructure/duckdb_executor.py` (`DuckDBSqlExecutor`, `create_duckdb_sql_executor`): chỉ hoạt động khi `STORAGE_BACKEND=s3`, kiểm tra `S3_QUERY_ACCESS_KEY_ID != S3_INGEST_ACCESS_KEY_ID`; giữ đúng thứ tự khởi tạo: mở `:memory:` → `LOAD httpfs` → tạo `SECRET` chỉ đọc (`SCOPE 's3://{bucket}/{tenant_id}/'`) → `CREATE TEMP VIEW` → `SET memory_limit/threads` → tắt spill đĩa (`temp_directory=''`, `max_temp_directory_size='0B'`) → `SET disabled_filesystems='LocalFileSystem'` → `SET autoinstall_known_extensions=false`, `autoload_known_extensions=false` → `SET lock_configuration=true` → thực thi SQL kèm watchdog `threading.Timer` (`conn.interrupt()`), lấy `max_rows + 1` hàng phát hiện `truncated`, cắt chuỗi > 1000 ký tự và làm sạch lỗi kèm danh sách cột hợp lệ.
+  - Cập nhật `backend/Dockerfile` cài sẵn extension `httpfs` lúc build image; tạo script `backend/scripts/smoke_run_sql_s3.py`.
+- **T3.4 (`5f4f231`)**:
+  - Tạo `backend/app/documents/excel/sql_service.py` (`ExcelSqlService`, `create_run_sql_handler`, `run_sql_tool_definition`): lọc document `INDEXED` (không `DELETED`), kiểm tra `tenant_id`, `can_access_resource`, `SessionScope`, chỉ lấy catalog của `active_version_id`; cấp alias view xác định không đụng độ giữa nhiều file trùng tên sheet; chuyển đổi kết quả JSON-safe; ghi structured audit log (`OK` / `GUARD_REJECTED` / `TIMEOUT` / `ERROR`) cho mỗi truy vấn mà không lộ dữ liệu hàng hay credential.
+- **T3.5**:
+  - Thêm unit tests `backend/tests/unit/test_sql_guard.py`, `backend/tests/unit/test_duckdb_executor.py` và integration tests `backend/tests/integration/test_run_sql_rbac.py`.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có)*
+- **Thêm mới:** `backend/app/documents/excel/sql_guard.py`, `backend/app/infrastructure/duckdb_executor.py`, `backend/app/documents/excel/sql_service.py`, `backend/scripts/smoke_run_sql_s3.py`, `backend/tests/unit/test_sql_guard.py`, `backend/tests/unit/test_duckdb_executor.py`, `backend/tests/integration/test_run_sql_rbac.py`.
+- **Chỉnh sửa:** `.env.example`, `backend/requirements.txt`, `backend/Dockerfile`, `backend/app/shared/config.py`, `backend/app/tool_use/contracts.py`, `backend/app/documents/ports.py`.
 
 ### Kết quả kiểm thử
-- *(Chưa chạy)*
+- `python -m unittest tests/architecture/test_dependency_rules.py -v`: **9/9 PASS**
+- `python -m unittest tests/unit/test_sql_guard.py -v`: **11/11 PASS**
+- `python -m unittest tests/unit/test_duckdb_executor.py -v`: **6/6 PASS**
+- `python -m unittest tests/integration/test_run_sql_rbac.py -v`: **4/4 PASS**
+- `npm.cmd run test:contract` (Frontend): **PASS** (`58 REST/SSE/health schemas`)
 
 ---
 

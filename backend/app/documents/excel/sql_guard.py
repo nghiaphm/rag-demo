@@ -353,10 +353,10 @@ def validate_and_rewrite_sql(
                     reason="Hàm hệ thống hoặc hàm đọc file trực tiếp không được phép sử dụng.",
                 )
 
-    # 5. Kiểm tra WHITELIST cho toàn bộ exp.Table trong AST
+    # 5. Kiểm tra WHITELIST cho toàn bộ exp.Table trong AST (duyệt DFS theo thứ tự xuất hiện trong câu SQL)
     referenced: list[str] = []
     seen_referenced: set[str] = set()
-    all_tables = list(root.find_all(exp.Table))
+    all_tables = [node for node in root.walk(bfs=False) if isinstance(node, exp.Table)]
     if not all_tables:
         return SqlGuardResult(
             ok=False,
@@ -438,13 +438,13 @@ def validate_and_rewrite_sql(
             ),
         )
 
-    # 6. Tự động chèn hoặc hạ LIMIT <= max_rows ở mức AST và sinh lại SQL
+    # 6. Tự động chèn hoặc hạ LIMIT <= max_rows ở mức AST và sinh lại SQL (loại bỏ toàn bộ comment)
     rewritten_ast = _enforce_ast_row_limit(root.copy(), max_rows=max_rows)
-    rewritten_sql = rewritten_ast.sql(dialect="duckdb")
+    rewritten_sql = rewritten_ast.sql(dialect="duckdb", comments=False)
 
     return SqlGuardResult(
         ok=True,
         normalized_sql=rewritten_sql,
-        referenced_tables=tuple(referenced),
+        referenced_tables=tuple(sorted(referenced)),
         reason=None,
     )

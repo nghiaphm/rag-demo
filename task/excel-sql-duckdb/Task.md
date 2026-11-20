@@ -109,13 +109,13 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T3.3, T2.2.
   - **Nội dung:** Nhận `(user, tenant_id, session_scope, sql)` từ Backend; lọc document `INDEXED` (không `DELETED`), thỏa `can_access_resource`, thuộc `tenant_id` và `SessionScope`; lấy catalog của `active_version_id`; cấp alias view xác định không đụng độ giữa nhiều file; chạy `sql_guard` → `DuckDBSqlExecutor` → trả kết quả JSON-safe kèm metadata bảng/tài liệu đã tham chiếu, cờ `truncated`, xử lý trường hợp không có bảng khả dụng và ghi structured audit log (`OK` / `GUARD_REJECTED` / `TIMEOUT` / `ERROR`).
 
-- [ ] **T3.5 — Unit & Security tests cho Giai đoạn 3**
+- [x] **T3.5 — Unit & Security tests cho Giai đoạn 3**
   - **File dự kiến tạo:** `backend/tests/unit/test_sql_guard.py`, `backend/tests/unit/test_duckdb_executor.py`, `backend/tests/integration/test_run_sql_rbac.py`
   - **Phụ thuộc:** T3.4.
 
 ### Tiêu chí hoàn thành (Definition of Done — Giai đoạn 3)
-- [ ] Chặn 100% payload nguy hiểm: DDL/DML, multi-statement, `read_parquet('/etc/passwd')`, `duckdb_secrets()`, `PRAGMA`, bảng ngoài whitelist, vượt quyền user/tenant, document `DELETED` hoặc version chưa `INDEXED`.
-- [ ] `LIMIT` tự động áp dụng đúng `duckdb_max_rows`; truy vấn quá hạn bị ngắt trả `TOOL_TIMEOUT`; truy vấn tổng hợp (`SUM`, `AVG`, `COUNT`, `GROUP BY`) trên Parquet trả kết quả chính xác.
+- [x] Chặn 100% payload nguy hiểm: DDL/DML, multi-statement, `read_parquet('/etc/passwd')`, `duckdb_secrets()`, `PRAGMA`, bảng ngoài whitelist, vượt quyền user/tenant, document `DELETED` hoặc version chưa `INDEXED`.
+- [x] `LIMIT` tự động áp dụng đúng `duckdb_max_rows`; truy vấn quá hạn bị ngắt trả `TOOL_TIMEOUT`; truy vấn tổng hợp (`SUM`, `AVG`, `COUNT`, `GROUP BY`, `JOIN`) trên Parquet trả kết quả chính xác.
 
 ### Rủi ro & giảm thiểu (Giai đoạn 3)
 - **Môi trường production không ra ngoài tải `httpfs`:** Cài sẵn extension `httpfs` lúc build Docker image và đặt `autoinstall_known_extensions = false` lúc runtime.
