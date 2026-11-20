@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import ValidationError
-from pymongo import DESCENDING
+from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from app.documents.indexes import (
     DOCUMENTS_COLLECTION,
+    DOCUMENT_TABLE_CATALOGS_COLLECTION,
     DOCUMENT_VERSIONS_COLLECTION,
     INGESTION_JOBS_COLLECTION,
 )
 from app.documents.models import (
     DocumentRecord,
     DocumentStatus,
+    DocumentTableCatalogRecord,
     DocumentVersionRecord,
     IngestionJobRecord,
     IngestionJobStatus,
@@ -77,6 +80,10 @@ class MongoDocumentRepository:
         self.documents = database[DOCUMENTS_COLLECTION]
         self.versions = database[DOCUMENT_VERSIONS_COLLECTION]
         self.jobs = database[INGESTION_JOBS_COLLECTION]
+        try:
+            self.table_catalogs = database[DOCUMENT_TABLE_CATALOGS_COLLECTION]
+        except KeyError:
+            self.table_catalogs = None
 
     def create_upload(
         self,
@@ -526,9 +533,74 @@ class MongoDocumentRepository:
                 {
                     "_id": {"$in": version_ids},
                     "status": {"$in": [DocumentStatus.PROCESSING.value, DocumentStatus.INDEXED.value]},
-                    "chunk_count": {"$gt": 0},
+                    "chunk_count": {"$gte": 0},
                 }
             ).sort("updated_at", 1)
-            return [DocumentVersionRecord.model_validate(value) for value in values]
+            return [
+                record
+                for record in (DocumentVersionRecord.model_validate(value) for value in values)
+                if record.chunk_count > 0 or record.vector_collection is not None
+            ]
         except PyMongoError as exc:
             raise RepositoryError("Không thể liệt kê version cần reconciliation") from exc
+
+    def replace_version_tables(
+        self,
+        version_id: str,
+        records: Sequence[DocumentTableCatalogRecord],
+    ) -> None:
+        """Thay thế nguyên tử danh sách bảng catalog của một version_id (idempotent khi retry)."""
+        seen_names: set[str] = set()
+        for record in records:
+            if record.version_id != version_id:
+                raise RepositoryError("Catalog record không khớp version_id")
+            if record.table_name in seen_names:
+                raise RepositoryConflictError("Trùng table_name trong cùng một version")
+            seen_names.add(record.table_name)
+
+        if self.table_catalogs is None:
+            raise RepositoryError("Collection document_table_catalogs chưa được khởi tạo")
+        try:
+            self.table_catalogs.delete_many({"version_id": version_id})
+            for record in records:
+                self.table_catalogs.insert_one(record.to_mongo())
+        except DuplicateKeyError as exc:
+            raise RepositoryConflictError("Bảng catalog đã tồn tại trong version") from exc
+        except PyMongoError as exc:
+            raise RepositoryError("Không thể lưu catalog bảng cho version") from exc
+
+    def list_tables_for_versions(
+        self,
+        version_ids: Sequence[str],
+        *,
+        tenant_id: str | None = None,
+    ) -> list[DocumentTableCatalogRecord]:
+        """Liệt kê toàn bộ bảng catalog thuộc danh sách version_ids."""
+        if self.table_catalogs is None:
+            return []
+        normalized_ids = [str(v) for v in version_ids if v]
+        if not normalized_ids:
+            return []
+        query: dict[str, Any] = {"version_id": {"$in": normalized_ids}}
+        if tenant_id is not None:
+            query["tenant_id"] = tenant_id
+        try:
+            cursor = self.table_catalogs.find(query)
+            sort_fn = getattr(cursor, "sort", None)
+            if callable(sort_fn):
+                cursor = cursor.sort([("version_id", ASCENDING), ("table_name", ASCENDING)])
+            records = [DocumentTableCatalogRecord.model_validate(item) for item in cursor]
+            records.sort(key=lambda item: (item.version_id, item.table_name))
+            return records
+        except PyMongoError as exc:
+            raise RepositoryError("Không thể đọc catalog bảng theo version") from exc
+
+    def delete_tables_for_version(self, version_id: str) -> int:
+        """Xóa toàn bộ bảng catalog của một version_id và trả số lượng đã xóa."""
+        if self.table_catalogs is None:
+            return 0
+        try:
+            result = self.table_catalogs.delete_many({"version_id": version_id})
+            return int(getattr(result, "deleted_count", 0))
+        except PyMongoError as exc:
+            raise RepositoryError("Không thể xóa catalog bảng của version") from exc

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from app.shared.config import settings
 from app.documents.models import DocumentRecord, DocumentStatus, DocumentVersionRecord
@@ -46,11 +46,26 @@ class DocumentService:
         storage: FileStorage,
         vector_index: VectorIndex,
         ingestion: IngestionService,
+        storage_resolver: Callable[[str], FileStorage] | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
         self.vector_index = vector_index
         self.ingestion = ingestion
+        self.storage_resolver = storage_resolver
+
+    def resolve_storage(self, backend_name: str | None) -> FileStorage:
+        """Trả về storage adapter khớp với storage_backend của version."""
+        target = (backend_name or "local").strip().lower()
+        current = getattr(self.storage, "backend_name", "local")
+        if target == current:
+            return self.storage
+        if self.storage_resolver is not None:
+            return self.storage_resolver(target)
+        resolver = getattr(self.ingestion, "resolve_storage", None)
+        if callable(resolver):
+            return resolver(target)
+        return self.storage
 
     def list_documents(
         self, *, include_deleted: bool = False, offset: int = 0, limit: int = 100
@@ -113,11 +128,18 @@ class DocumentService:
         active = self.repository.get_version(document.active_version_id)
         if active.storage_key is None:
             raise IngestionError("missing_storage_key", "Active version không có raw file.")
+        version_storage = self.resolve_storage(getattr(active, "storage_backend", "local"))
         try:
-            content = self.storage.read(active.storage_key)
+            content = version_storage.read(active.storage_key)
         except StorageError as exc:
             raise IngestionError("raw_file_read_failed", "Không thể đọc raw file.") from exc
-        return self.update(document_id, file_name=active.file_name, content=content)
+        result = self.update(document_id, file_name=active.file_name, content=content)
+        if result.activated and active.version_id != result.version_id:
+            try:
+                self.vector_index.delete(VectorFilter(version_id=active.version_id))
+            except VectorIndexError:
+                pass
+        return result
 
     def delete(self, document_id: str) -> DeleteResult:
         # Unpublish metadata trước để retrieval về sau không được coi document là active,
@@ -152,11 +174,15 @@ def create_document_service(
     qdrant_client: Any,
     storage: FileStorage | None = None,
     vector_index: VectorIndex | None = None,
+    storage_resolver: Callable[[str], FileStorage] | None = None,
 ) -> DocumentService:
     repository = MongoDocumentRepository(database)
+    resolved_resolver = storage_resolver
     if storage is None:
         from app.infrastructure.storage import create_file_storage
         resolved_storage: FileStorage = create_file_storage(settings)
+        if resolved_resolver is None:
+            resolved_resolver = lambda backend: create_file_storage(settings, backend=backend)
     else:
         resolved_storage = storage
     if vector_index is None:
@@ -169,10 +195,12 @@ def create_document_service(
         storage=resolved_storage,
         vector_index=resolved_index,
         embedding_model=settings.embedding_model,
+        storage_resolver=resolved_resolver,
     )
     return DocumentService(
         repository=repository,
         storage=resolved_storage,
         vector_index=resolved_index,
         ingestion=ingestion,
+        storage_resolver=resolved_resolver,
     )

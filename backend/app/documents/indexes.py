@@ -8,6 +8,7 @@ from pymongo import ASCENDING, DESCENDING, IndexModel
 DOCUMENTS_COLLECTION = "documents"
 DOCUMENT_VERSIONS_COLLECTION = "document_versions"
 INGESTION_JOBS_COLLECTION = "ingestion_jobs"
+DOCUMENT_TABLE_CATALOGS_COLLECTION = "document_table_catalogs"
 
 DOCUMENT_INDEXES: tuple[IndexModel, ...] = (
     IndexModel([("file_name", ASCENDING)], name="idx_documents_file_name"),
@@ -59,10 +60,23 @@ INGESTION_JOB_INDEXES: tuple[IndexModel, ...] = (
     ),
 )
 
+DOCUMENT_TABLE_CATALOG_INDEXES: tuple[IndexModel, ...] = (
+    IndexModel(
+        [("version_id", ASCENDING), ("table_name", ASCENDING)],
+        name="uq_document_table_catalogs_version_table",
+        unique=True,
+    ),
+    IndexModel(
+        [("tenant_id", ASCENDING), ("document_id", ASCENDING), ("version_id", ASCENDING)],
+        name="idx_document_table_catalogs_tenant_doc_version",
+    ),
+)
+
 INDEX_DEFINITIONS: Mapping[str, Sequence[IndexModel]] = {
     DOCUMENTS_COLLECTION: DOCUMENT_INDEXES,
     DOCUMENT_VERSIONS_COLLECTION: DOCUMENT_VERSION_INDEXES,
     INGESTION_JOBS_COLLECTION: INGESTION_JOB_INDEXES,
+    DOCUMENT_TABLE_CATALOGS_COLLECTION: DOCUMENT_TABLE_CATALOG_INDEXES,
 }
 
 

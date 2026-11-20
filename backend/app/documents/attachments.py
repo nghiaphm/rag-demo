@@ -39,7 +39,7 @@ def resolve_attachments(repository, references):
     return attachments
 
 
-def preview_version(repository, storage, document_id, version_id):
+def preview_version(repository, storage, document_id, version_id, *, storage_resolver=None):
     version = resolve_version(repository, document_id, version_id)
     if not version.storage_key:
         raise AttachmentUnavailableError("Phiên bản không có file gốc.", 404)
@@ -49,7 +49,14 @@ def preview_version(repository, storage, document_id, version_id):
     if suffix not in {".txt", ".md", ".markdown", ".xlsx"}:
         return result
     limit = MAX_XLSX_BYTES if suffix == ".xlsx" else 256 * 1024
-    with storage.open(version.storage_key) as stream:
+    version_backend = (getattr(version, "storage_backend", "local") or "local").strip().lower()
+    current_backend = getattr(storage, "backend_name", "local")
+    effective_storage = (
+        storage_resolver(version_backend)
+        if version_backend != current_backend and callable(storage_resolver)
+        else storage
+    )
+    with effective_storage.open(version.storage_key) as stream:
         content = stream.read(limit + 1)
     if suffix == ".xlsx":
         result.update(workbook_preview(content))

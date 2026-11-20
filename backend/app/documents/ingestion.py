@@ -9,12 +9,16 @@ from typing import Any, Callable
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
+from app.shared.auth import UserContext
 from app.shared.config import settings
+from app.documents.excel.tabular import extract_workbook_tables
 from app.documents.models import (
     DocumentRecord,
     DocumentStatus,
+    DocumentTableCatalogRecord,
     DocumentVersionRecord,
     IngestionJobRecord,
+    TableColumnSchema,
 )
 from app.documents.repository import (
     MongoDocumentRepository,
@@ -24,7 +28,14 @@ from app.documents.repository import (
 from app.rag.indexing import build_vector_records, embed_chunks, parse_and_split
 from app.rag.loaders.files import SUPPORTED_EXTENSIONS, load_document
 from app.rag.splitter import split_documents
-from app.documents.ports import FileStorage, StorageError, build_document_storage_key
+from app.documents.ports import (
+    FileStorage,
+    StorageError,
+    build_document_storage_key,
+    build_version_table_parquet_key,
+    build_version_tables_prefix,
+    build_versioned_storage_key,
+)
 from app.rag.vector_index import (
     VectorFilter,
     VectorIndex,
@@ -61,6 +72,10 @@ class IngestionService:
         loader: Callable[[str | Path], list[Document]] = load_document,
         splitter: Callable[[list[Document]], list[Document]] = split_documents,
         embedding_model: str = settings.embedding_model,
+        storage_resolver: Callable[[str], FileStorage] | None = None,
+        parquet_ingestion_enabled: bool | None = None,
+        catalog_sample_rows: int | None = None,
+        text_only_embedding_enabled: bool | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -70,6 +85,74 @@ class IngestionService:
         self.loader = loader
         self.splitter = splitter
         self.embedding_model = embedding_model
+        self.storage_resolver = storage_resolver
+        self.parquet_ingestion_enabled = parquet_ingestion_enabled
+        self.catalog_sample_rows = catalog_sample_rows
+        self.text_only_embedding_enabled = text_only_embedding_enabled
+
+    def _is_parquet_ingestion_enabled(self) -> bool:
+        if self.parquet_ingestion_enabled is not None:
+            return bool(self.parquet_ingestion_enabled)
+        return bool(getattr(settings, "excel_parquet_ingestion_enabled", False))
+
+    def _is_text_only_embedding_enabled(self) -> bool:
+        if self.text_only_embedding_enabled is not None:
+            return bool(self.text_only_embedding_enabled)
+        return bool(getattr(settings, "excel_text_only_embedding_enabled", False))
+
+    def _version_has_valid_parquet_and_catalog(
+        self,
+        version: DocumentVersionRecord,
+    ) -> bool:
+        if Path(version.file_name).suffix.lower() != ".xlsx":
+            return False
+        list_tables_fn = getattr(self.repository, "list_tables_for_versions", None)
+        if not callable(list_tables_fn):
+            return False
+        try:
+            persisted = list_tables_fn([version.version_id])
+        except Exception:
+            return False
+        if not persisted:
+            return False
+        version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
+        try:
+            return all(version_storage.exists(item.parquet_key) for item in persisted)
+        except Exception:
+            return False
+
+    def _can_accept_zero_chunks(self, version: DocumentVersionRecord) -> bool:
+        return (
+            Path(version.file_name).suffix.lower() == ".xlsx"
+            and self._is_text_only_embedding_enabled()
+            and self._is_parquet_ingestion_enabled()
+            and self._version_has_valid_parquet_and_catalog(version)
+        )
+
+    def _get_catalog_sample_rows(self) -> int:
+        if self.catalog_sample_rows is not None:
+            return max(0, int(self.catalog_sample_rows))
+        return max(0, int(getattr(settings, "excel_catalog_sample_rows", 3)))
+
+    def _resolve_version_tenant_id(self, version: DocumentVersionRecord) -> str:
+        try:
+            document = self.repository.get_document(version.document_id)
+            tenant = getattr(document, "tenant_id", None)
+            if isinstance(tenant, str) and tenant.strip():
+                return tenant.strip()
+        except Exception:
+            pass
+        return settings.default_tenant_id
+
+    def resolve_storage(self, backend_name: str | None) -> FileStorage:
+        """Trả về storage adapter khớp với storage_backend của version."""
+        target = (backend_name or "local").strip().lower()
+        current = getattr(self.storage, "backend_name", "local")
+        if target == current:
+            return self.storage
+        if self.storage_resolver is not None:
+            return self.storage_resolver(target)
+        return self.storage
 
     @staticmethod
     def _safe_file_name(file_name: str) -> str:
@@ -88,6 +171,7 @@ class IngestionService:
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
+        tenant_id: str | None = None,
         owner_id: str | None = None,
         allowed_roles: list[str] | None = None,
     ) -> tuple[DocumentVersionRecord, IngestionJobRecord]:
@@ -95,10 +179,19 @@ class IngestionService:
         if not content:
             raise IngestionError("empty_file", "File rỗng.")
 
+        default_user_ctx = UserContext(
+            user_id=owner_id or "anonymous",
+            username=owner_id or "anonymous",
+            tenant_id=(tenant_id or settings.default_tenant_id).strip()
+            or settings.default_tenant_id,
+            is_authenticated=owner_id is not None,
+        )
         if document_id is None:
+            effective_tenant_id = default_user_ctx.tenant_id
             document = DocumentRecord(
                 file_name=safe_name,
                 source_key=source_key,
+                tenant_id=effective_tenant_id,
                 owner_id=owner_id,
                 allowed_roles=list(allowed_roles or []),
             )
@@ -112,18 +205,34 @@ class IngestionService:
             document = self.repository.get_document(document_id)
             if document.status == DocumentStatus.DELETED:
                 raise IngestionError("document_deleted", "Document đã bị xóa/unpublish.")
+            effective_tenant_id = (
+                getattr(document, "tenant_id", None) or default_user_ctx.tenant_id
+            )
             version_number = self.repository.next_version_number(document_id)
 
+        active_backend = (
+            "s3" if getattr(self.storage, "backend_name", "local") == "s3" else "local"
+        )
         version = DocumentVersionRecord(
             document_id=document.document_id,
             version=version_number,
             file_name=safe_name,
             checksum_sha256="0" * 64,
             size_bytes=0,
+            storage_backend=active_backend,
         )
-        storage_key = build_document_storage_key(document.document_id, version.version_id)
+        storage_key = build_versioned_storage_key(
+            effective_tenant_id,
+            document.document_id,
+            version_number,
+            safe_name,
+        )
         try:
-            stored = self.storage.save(storage_key, content)
+            put_fn = getattr(self.storage, "put", None)
+            if callable(put_fn):
+                stored = put_fn(storage_key, content)
+            else:
+                stored = self.storage.save(storage_key, content)
         except StorageError as exc:
             raise IngestionError("storage_failed") from exc
 
@@ -131,6 +240,7 @@ class IngestionService:
             "checksum_sha256": stored.checksum_sha256,
             "size_bytes": stored.size_bytes,
             "storage_key": stored.storage_key,
+            "storage_backend": active_backend,
         })
         job = IngestionJobRecord(document_id=document.document_id, version_id=version.version_id)
         try:
@@ -156,6 +266,7 @@ class IngestionService:
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
+        tenant_id: str | None = None,
         owner_id: str | None = None,
         allowed_roles: list[str] | None = None,
     ) -> IngestionResult:
@@ -164,6 +275,7 @@ class IngestionService:
             content=content,
             document_id=document_id,
             source_key=source_key,
+            tenant_id=tenant_id,
             owner_id=owner_id,
             allowed_roles=allowed_roles,
         )
@@ -176,6 +288,7 @@ class IngestionService:
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
+        tenant_id: str | None = None,
         owner_id: str | None = None,
         allowed_roles: list[str] | None = None,
     ) -> IngestionResult:
@@ -185,6 +298,7 @@ class IngestionService:
             content=content,
             document_id=document_id,
             source_key=source_key,
+            tenant_id=tenant_id,
             owner_id=owner_id,
             allowed_roles=allowed_roles,
         )
@@ -224,13 +338,25 @@ class IngestionService:
             raise IngestionError("metadata_read_failed") from exc
         return self._process(version, job)
 
-    def _materialize_and_split(self, version: DocumentVersionRecord) -> list[Document]:
+    def _materialize_and_split(
+        self,
+        version: DocumentVersionRecord,
+        *,
+        allow_empty_chunks: bool = False,
+    ) -> list[Document]:
         if version.storage_key is None:
             raise IngestionError("missing_storage_key")
         suffix = Path(version.file_name).suffix.lower()
+        version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
+        previous_flag = getattr(settings, "excel_text_only_embedding_enabled", False)
+        override_flag = self.text_only_embedding_enabled is not None
         try:
+            if override_flag:
+                settings.excel_text_only_embedding_enabled = bool(
+                    self.text_only_embedding_enabled
+                )
             chunks = parse_and_split(
-                lambda: self.storage.open(version.storage_key),
+                lambda: version_storage.open(version.storage_key),
                 suffix=suffix,
                 loader=self.loader,
                 splitter=self.splitter,
@@ -241,9 +367,155 @@ class IngestionService:
             raise
         except Exception as exc:
             raise IngestionError("parse_failed") from exc
-        if not chunks:
+        finally:
+            if override_flag:
+                settings.excel_text_only_embedding_enabled = previous_flag
+        if not chunks and not allow_empty_chunks:
             raise IngestionError("empty_chunks")
         return chunks
+
+    def _cleanup_version_parquet_and_catalog(
+        self,
+        version: DocumentVersionRecord,
+    ) -> None:
+        """Xóa best-effort prefix Parquet và catalog của version đang xử lý (không chạm active version)."""
+        if Path(version.file_name).suffix.lower() != ".xlsx":
+            return
+        try:
+            tenant_id = self._resolve_version_tenant_id(version)
+            tables_prefix = build_version_tables_prefix(
+                tenant_id,
+                version.document_id,
+                version.version,
+            )
+            version_storage = self.resolve_storage(
+                getattr(version, "storage_backend", "local")
+            )
+            version_storage.delete_prefix(tables_prefix)
+        except Exception:
+            pass
+
+        delete_tables_fn = getattr(self.repository, "delete_tables_for_version", None)
+        if callable(delete_tables_fn):
+            try:
+                delete_tables_fn(version.version_id)
+            except Exception:
+                pass
+
+    def _ingest_excel_parquet_and_catalog(
+        self,
+        version: DocumentVersionRecord,
+    ) -> list[DocumentTableCatalogRecord]:
+        """Làm sạch từng sheet -> ghi Parquet -> lưu catalog -> verify số Parquet khớp catalog."""
+        if version.storage_key is None:
+            raise IngestionError("missing_storage_key")
+        version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
+        tenant_id = self._resolve_version_tenant_id(version)
+        tables_prefix = build_version_tables_prefix(
+            tenant_id,
+            version.document_id,
+            version.version,
+        )
+
+        # 1. Idempotent cleanup trước khi ghi lại cho version_id hiện tại
+        try:
+            version_storage.delete_prefix(tables_prefix)
+        except StorageError as exc:
+            raise IngestionError("parquet_cleanup_failed") from exc
+
+        delete_tables_fn = getattr(self.repository, "delete_tables_for_version", None)
+        if callable(delete_tables_fn):
+            try:
+                delete_tables_fn(version.version_id)
+            except RepositoryError as exc:
+                raise IngestionError("catalog_cleanup_failed") from exc
+
+        # 2. Đọc raw workbook & chuẩn hóa thành danh sách bảng Parquet
+        try:
+            raw_bytes = version_storage.read(version.storage_key)
+        except (StorageError, OSError) as exc:
+            raise IngestionError("raw_file_read_failed") from exc
+
+        try:
+            normalized_tables = extract_workbook_tables(
+                raw_bytes,
+                sample_rows_limit=self._get_catalog_sample_rows(),
+            )
+        except IngestionError:
+            raise
+        except Exception as exc:
+            raise IngestionError("tabular_parse_failed") from exc
+
+        # 3. Ghi toàn bộ Parquet lên storage trước khi lưu catalog
+        catalog_records: list[DocumentTableCatalogRecord] = []
+        try:
+            for tbl in normalized_tables:
+                parquet_key = build_version_table_parquet_key(
+                    tenant_id,
+                    version.document_id,
+                    version.version,
+                    tbl.table_name,
+                )
+                version_storage.put(
+                    parquet_key,
+                    tbl.parquet_bytes,
+                    content_type="application/vnd.apache.parquet",
+                )
+                catalog_records.append(
+                    DocumentTableCatalogRecord(
+                        tenant_id=tenant_id,
+                        document_id=version.document_id,
+                        version_id=version.version_id,
+                        table_name=tbl.table_name,
+                        sheet_name=tbl.sheet_name,
+                        parquet_key=parquet_key,
+                        row_count=tbl.row_count,
+                        columns=[
+                            TableColumnSchema(
+                                name=col.name,
+                                original_name=col.original_name,
+                                type=col.data_type,
+                                nullable=col.nullable,
+                                description=col.description,
+                                has_formula_values=col.has_formula_values,
+                                is_free_text=col.is_free_text,
+                            )
+                            for col in tbl.columns
+                        ],
+                        sample_rows=[dict(row) for row in tbl.sample_rows],
+                        has_formula_values=tbl.has_formula_values,
+                    )
+                )
+        except StorageError as exc:
+            raise IngestionError("parquet_storage_failed") from exc
+
+        # 4. Lưu catalog vào MongoDB chỉ sau khi mọi Parquet đã ghi thành công
+        replace_tables_fn = getattr(self.repository, "replace_version_tables", None)
+        if callable(replace_tables_fn):
+            try:
+                replace_tables_fn(version.version_id, catalog_records)
+            except RepositoryError as exc:
+                raise IngestionError("catalog_persistence_failed") from exc
+
+        # 5. Verify số lượng Parquet tồn tại trên storage == số bảng trong catalog
+        list_tables_fn = getattr(self.repository, "list_tables_for_versions", None)
+        persisted = (
+            list_tables_fn([version.version_id])
+            if callable(list_tables_fn)
+            else catalog_records
+        )
+        if len(persisted) != len(catalog_records):
+            raise IngestionError("catalog_verification_failed")
+        try:
+            existing_parquet_count = sum(
+                1 for item in persisted if version_storage.exists(item.parquet_key)
+            )
+        except StorageError as exc:
+            raise IngestionError("parquet_verification_failed") from exc
+        if existing_parquet_count != len(persisted):
+            raise IngestionError("parquet_verification_failed")
+
+        return persisted
 
     def _process(
         self,
@@ -252,34 +524,57 @@ class IngestionService:
     ) -> IngestionResult:
         try:
             self.repository.mark_processing(version.document_id, version.version_id, job.job_id)
-            chunks = self._materialize_and_split(version)
-            try:
-                vectors = embed_chunks(chunks, self.embeddings)
-            except Exception as exc:
-                raise IngestionError("embedding_failed") from exc
-            if len(vectors) != len(chunks) or not vectors:
-                raise IngestionError("embedding_count_mismatch")
-
-            self.repository.set_chunk_plan(
-                version.version_id,
-                chunk_count=len(chunks),
-                embedding_model=self.embedding_model,
-                vector_collection=self.vector_index.collection_name,
+            if (
+                self._is_parquet_ingestion_enabled()
+                and Path(version.file_name).suffix.lower() == ".xlsx"
+            ):
+                self._ingest_excel_parquet_and_catalog(version)
+            allow_zero_chunks = self._can_accept_zero_chunks(version)
+            chunks = self._materialize_and_split(
+                version,
+                allow_empty_chunks=allow_zero_chunks,
             )
-            # Version đang xử lý chưa active; cleanup này làm retry idempotent.
             version_filter = VectorFilter(version_id=version.version_id)
-            self.vector_index.delete(version_filter)
-            records = build_vector_records(
-                document_id=version.document_id,
-                version_id=version.version_id,
-                file_name=version.file_name,
-                chunks=chunks,
-                vectors=vectors,
-            )
-            self.vector_index.upsert(records)
-            actual_count = self.vector_index.count(version_filter)
-            if actual_count != len(chunks):
-                raise IngestionError("vector_verification_failed")
+            if len(chunks) == 0:
+                if not allow_zero_chunks:
+                    raise IngestionError("empty_chunks")
+                self.repository.set_chunk_plan(
+                    version.version_id,
+                    chunk_count=0,
+                    embedding_model=self.embedding_model,
+                    vector_collection=self.vector_index.collection_name,
+                )
+                self.vector_index.delete(version_filter)
+                actual_count = self.vector_index.count(version_filter)
+                if actual_count != 0:
+                    raise IngestionError("vector_verification_failed")
+            else:
+                try:
+                    vectors = embed_chunks(chunks, self.embeddings)
+                except Exception as exc:
+                    raise IngestionError("embedding_failed") from exc
+                if len(vectors) != len(chunks) or not vectors:
+                    raise IngestionError("embedding_count_mismatch")
+
+                self.repository.set_chunk_plan(
+                    version.version_id,
+                    chunk_count=len(chunks),
+                    embedding_model=self.embedding_model,
+                    vector_collection=self.vector_index.collection_name,
+                )
+                # Version đang xử lý chưa active; cleanup này làm retry idempotent.
+                self.vector_index.delete(version_filter)
+                records = build_vector_records(
+                    document_id=version.document_id,
+                    version_id=version.version_id,
+                    file_name=version.file_name,
+                    chunks=chunks,
+                    vectors=vectors,
+                )
+                self.vector_index.upsert(records)
+                actual_count = self.vector_index.count(version_filter)
+                if actual_count != len(chunks):
+                    raise IngestionError("vector_verification_failed")
         except IngestionError as exc:
             self._fail_before_activation(version, job, exc.code)
             raise
@@ -325,6 +620,7 @@ class IngestionService:
         job: IngestionJobRecord,
         error_code: str,
     ) -> None:
+        self._cleanup_version_parquet_and_catalog(version)
         try:
             self.vector_index.delete(VectorFilter(version_id=version.version_id))
         except VectorIndexError:
@@ -360,7 +656,9 @@ class IngestionService:
                 actual_count = self.vector_index.count(
                     VectorFilter(version_id=version.version_id)
                 )
-                if actual_count == version.chunk_count and actual_count > 0:
+                if actual_count == version.chunk_count and (
+                    actual_count > 0 or self._can_accept_zero_chunks(version)
+                ):
                     self.repository.complete_and_activate(version.version_id, job.job_id)
                     summary["completed"] += 1
                 elif self.repository.is_active_version(version.document_id, version.version_id):
@@ -386,11 +684,15 @@ def create_ingestion_service(
     embeddings: Embeddings | None = None,
     storage: FileStorage | None = None,
     vector_index: VectorIndex | None = None,
+    storage_resolver: Callable[[str], FileStorage] | None = None,
 ) -> IngestionService:
     """Composition root nhỏ cho API/script; tests có thể inject toàn bộ adapters."""
+    resolved_resolver = storage_resolver
     if storage is None:
         from app.infrastructure.storage import create_file_storage
         resolved_storage: FileStorage = create_file_storage(settings)
+        if resolved_resolver is None:
+            resolved_resolver = lambda backend: create_file_storage(settings, backend=backend)
     else:
         resolved_storage = storage
     if vector_index is None:
@@ -404,4 +706,5 @@ def create_ingestion_service(
         vector_index=resolved_index,
         embeddings=embeddings,
         embedding_model=settings.embedding_model,
+        storage_resolver=resolved_resolver,
     )

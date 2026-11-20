@@ -11,7 +11,7 @@ import os
 import tempfile
 from contextlib import suppress
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO
+from typing import Any, BinaryIO, Literal
 
 from app.documents.ports import (
     FileStorage,
@@ -21,6 +21,7 @@ from app.documents.ports import (
     StorageNotFoundError,
     StoredFile,
 )
+from app.infrastructure.s3_storage import S3FileStorage
 from app.shared.config import PROJECT_ROOT, Settings, settings
 
 _COPY_CHUNK_SIZE = 1024 * 1024
@@ -33,6 +34,10 @@ class LocalFileStorage(FileStorage):
             self._root.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise StorageError("Không thể khởi tạo local storage") from exc
+
+    @property
+    def backend_name(self) -> Literal["local", "s3"]:
+        return "local"
 
     @property
     def root(self) -> Path:
@@ -147,12 +152,99 @@ class LocalFileStorage(FileStorage):
         except OSError as exc:
             raise StorageError("Không thể kiểm tra file") from exc
 
+    def _delete_tree_files(self, directory: Path) -> int:
+        deleted = 0
+        for child in sorted(directory.rglob("*"), reverse=True):
+            if child.is_file() or child.is_symlink():
+                child.unlink()
+                deleted += 1
+            elif child.is_dir():
+                with suppress(OSError):
+                    child.rmdir()
+        with suppress(OSError):
+            directory.rmdir()
+        return deleted
 
-def create_file_storage(config: Settings = settings) -> FileStorage:
-    """Factory duy nhất mà business layer cần dùng; có thể thêm S3 adapter tại đây."""
-    if config.storage_backend != "local":
-        raise StorageError("Storage backend chưa được hỗ trợ")
-    root = Path(config.documents_dir)
-    if not root.is_absolute():
-        root = PROJECT_ROOT / root
-    return LocalFileStorage(root)
+    def delete_prefix(self, prefix: str) -> int:
+        if not isinstance(prefix, str) or not prefix.strip():
+            raise InvalidStorageKeyError("storage_key không hợp lệ")
+        if "\\" in prefix or prefix.startswith("/") or "//" in prefix.rstrip("/"):
+            raise InvalidStorageKeyError("storage_key phải là relative path canonical")
+        had_trailing_slash = prefix.endswith("/")
+        stripped = prefix.rstrip("/")
+        target = self._resolve(stripped)
+
+        try:
+            deleted = 0
+            if had_trailing_slash:
+                if target.is_dir():
+                    return self._delete_tree_files(target)
+                return 0
+
+            if target.is_file():
+                target.unlink()
+                deleted += 1
+            elif target.is_dir():
+                deleted += self._delete_tree_files(target)
+
+            parent = target.parent
+            if parent.is_dir() and parent.is_relative_to(self._root):
+                prefix_name = target.name
+                for sibling in list(parent.iterdir()):
+                    if sibling == target or not sibling.name.startswith(prefix_name):
+                        continue
+                    if sibling.is_file():
+                        sibling.unlink()
+                        deleted += 1
+                    elif sibling.is_dir():
+                        deleted += self._delete_tree_files(sibling)
+            return deleted
+        except OSError as exc:
+            raise StorageError("Không thể xóa file theo prefix") from exc
+
+
+def _unwrap_secret(value: Any) -> str | None:
+    if value is None:
+        return None
+    getter = getattr(value, "get_secret_value", None)
+    raw = getter() if callable(getter) else str(value)
+    stripped = raw.strip()
+    return stripped or None
+
+
+def create_file_storage(
+    config: Settings | Any = settings,
+    *,
+    backend: str | None = None,
+    s3_client: Any = None,
+) -> FileStorage:
+    """Factory duy nhất mà business layer cần dùng cho Local và S3 storage."""
+    selected = (
+        backend
+        if backend is not None
+        else getattr(config, "storage_backend", "local")
+    )
+    selected_backend = str(selected or "").strip().lower()
+    if selected_backend == "local":
+        root = Path(getattr(config, "documents_dir", "./data/documents"))
+        if not root.is_absolute():
+            root = PROJECT_ROOT / root
+        return LocalFileStorage(root)
+
+    if selected_backend == "s3":
+        bucket = getattr(config, "s3_bucket", None)
+        if not bucket or not str(bucket).strip():
+            raise StorageError("Cần cấu hình S3_BUCKET khi dùng S3 storage backend")
+        return S3FileStorage(
+            bucket=str(bucket).strip(),
+            region=str(getattr(config, "s3_region", "us-east-1") or "us-east-1"),
+            endpoint_url=getattr(config, "s3_endpoint_url", None),
+            access_key_id=_unwrap_secret(getattr(config, "s3_ingest_access_key_id", None)),
+            secret_access_key=_unwrap_secret(
+                getattr(config, "s3_ingest_secret_access_key", None)
+            ),
+            use_if_none_match=bool(getattr(config, "s3_use_if_none_match", True)),
+            client=s3_client,
+        )
+
+    raise StorageError("Storage backend chưa được hỗ trợ")

@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install --no-cache-dir -r backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt \
+    && python -c "import duckdb; conn = duckdb.connect(':memory:'); conn.execute('INSTALL httpfs'); conn.execute('LOAD httpfs'); conn.close()"
 
 COPY backend ./backend
 RUN mkdir -p /app/data/documents
