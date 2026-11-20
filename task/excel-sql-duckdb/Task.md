@@ -104,10 +104,10 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T3.2.
   - **Nội dung:** Mở connection `:memory:` mới cho mỗi truy vấn và đóng trong `finally`; chỉ hoạt động khi `STORAGE_BACKEND=s3` và bắt buộc `S3_QUERY_ACCESS_KEY_ID != S3_INGEST_ACCESS_KEY_ID`; giữ đúng thứ tự: `LOAD httpfs` → tạo `SECRET` chỉ đọc (`SCOPE 's3://{bucket}/{tenant_id}/'`) → `CREATE TEMP VIEW` cho bảng được cấp quyền → `SET memory_limit/threads` → tắt spill đĩa (`temp_directory=''`, `max_temp_directory_size='0B'`) → `SET disabled_filesystems='LocalFileSystem'` → `SET autoinstall_known_extensions=false`, `autoload_known_extensions=false` → `SET lock_configuration=true` → chạy SQL với watchdog `threading.Timer` (`conn.interrupt()`), lấy `max_rows + 1` hàng để báo `truncated`, cắt chuỗi > 1000 ký tự và lọc sạch thông báo lỗi; cập nhật `Dockerfile` cài sẵn `httpfs`.
 
-- [ ] **T3.4 — Service phân quyền catalog & thực thi `run_sql`**
+- [x] **T3.4 — Service phân quyền catalog & thực thi `run_sql`**
   - **File dự kiến tạo:** `backend/app/documents/excel/sql_service.py`
   - **Phụ thuộc:** T3.3, T2.2.
-  - **Nội dung:** Nhận `(user, tenant_id, session_scope)` từ Backend; lọc document `INDEXED` (không `DELETED`), thỏa `can_access_resource`, thuộc `tenant_id` và `SessionScope`; lấy catalog của `active_version_id`; cấp alias view không đụng độ giữa nhiều file; chạy `sql_guard` → `DuckDBSqlExecutor` → trả kết quả JSON-safe kèm metadata bảng/tài liệu đã tham chiếu.
+  - **Nội dung:** Nhận `(user, tenant_id, session_scope, sql)` từ Backend; lọc document `INDEXED` (không `DELETED`), thỏa `can_access_resource`, thuộc `tenant_id` và `SessionScope`; lấy catalog của `active_version_id`; cấp alias view xác định không đụng độ giữa nhiều file; chạy `sql_guard` → `DuckDBSqlExecutor` → trả kết quả JSON-safe kèm metadata bảng/tài liệu đã tham chiếu, cờ `truncated`, xử lý trường hợp không có bảng khả dụng và ghi structured audit log (`OK` / `GUARD_REJECTED` / `TIMEOUT` / `ERROR`).
 
 - [ ] **T3.5 — Unit & Security tests cho Giai đoạn 3**
   - **File dự kiến tạo:** `backend/tests/unit/test_sql_guard.py`, `backend/tests/unit/test_duckdb_executor.py`, `backend/tests/integration/test_run_sql_rbac.py`
