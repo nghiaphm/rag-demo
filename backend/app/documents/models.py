@@ -6,7 +6,7 @@ Datetime luôn timezone-aware và được chuẩn hóa về UTC.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -60,6 +60,7 @@ class DocumentRecord(MongoRecord):
     active_version_id: str | None = None
     status: DocumentStatus = DocumentStatus.UPLOADED
     cleanup_pending: bool = False
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
     owner_id: str | None = Field(default=None, min_length=1, max_length=128)
     allowed_roles: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utc_now)
@@ -101,6 +102,7 @@ class DocumentVersionRecord(MongoRecord):
     checksum_sha256: str
     size_bytes: int = Field(ge=0)
     storage_key: str | None = Field(default=None, min_length=1, max_length=1024)
+    storage_backend: Literal["local", "s3"] = Field(default="local")
     chunk_count: int = Field(default=0, ge=0)
     embedding_model: str | None = Field(default=None, min_length=1, max_length=255)
     vector_collection: str | None = Field(default=None, min_length=1, max_length=255)

@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # ----- Storage -----
     documents_dir: str = "./data/documents"
     storage_backend: str = "local"
+    default_tenant_id: str = "default"
+    s3_bucket: str | None = None
+    s3_region: str = "us-east-1"
+    s3_endpoint_url: str | None = None
+    s3_ingest_access_key_id: SecretStr | None = None
+    s3_ingest_secret_access_key: SecretStr | None = None
+    s3_use_if_none_match: bool = True
 
     # ----- Cloud persistence and retrieval -----
     mongodb_uri: SecretStr | None = None
@@ -133,9 +140,52 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:
         backend = value.strip().lower()
-        if backend != "local":
-            raise ValueError("STORAGE_BACKEND hiện chỉ hỗ trợ giá trị 'local'")
+        if backend not in ("local", "s3"):
+            raise ValueError("STORAGE_BACKEND chỉ hỗ trợ 'local' hoặc 's3'")
         return backend
+
+    @field_validator("default_tenant_id")
+    @classmethod
+    def _validate_default_tenant_id(cls, value: str) -> str:
+        tenant = value.strip()
+        if not tenant or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tenant):
+            raise ValueError(
+                "DEFAULT_TENANT_ID chỉ được chứa chữ, số, '_' hoặc '-' (1..64 ký tự)"
+            )
+        return tenant
+
+    @field_validator("s3_bucket")
+    @classmethod
+    def _validate_s3_bucket(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        bucket = value.strip()
+        if not bucket:
+            return None
+        if not re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", bucket):
+            raise ValueError("S3_BUCKET không hợp lệ")
+        return bucket
+
+    @field_validator("s3_region")
+    @classmethod
+    def _validate_s3_region(cls, value: str) -> str:
+        region = value.strip()
+        if not region:
+            raise ValueError("S3_REGION không được rỗng")
+        return region
+
+    @field_validator("s3_endpoint_url")
+    @classmethod
+    def _validate_s3_endpoint_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        url = value.strip().rstrip("/")
+        if not url:
+            return None
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("S3_ENDPOINT_URL phải là URL http/https hợp lệ")
+        return url
 
     @field_validator("groq_api_key")
     @classmethod
@@ -325,6 +375,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Tổng system/history/chunks/query/output reserve vượt context window"
             )
+        if self.storage_backend == "s3" and not self.s3_bucket:
+            raise ValueError("Cần cấu hình S3_BUCKET khi STORAGE_BACKEND='s3'")
         return self
 
     # Đọc từ file .env, không phân biệt hoa/thường tên biến.

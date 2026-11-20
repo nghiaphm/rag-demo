@@ -41,6 +41,7 @@ class UserContext(BaseModel):
     user_id: str = Field(min_length=1, max_length=128)
     username: str = Field(min_length=1, max_length=128)
     roles: tuple[str, ...] = (UserRole.VIEWER.value,)
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
     is_authenticated: bool = True
 
 
@@ -53,6 +54,7 @@ class UserRecord(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password_hash: str = Field(min_length=1)
     roles: list[str] = Field(default_factory=lambda: [UserRole.VIEWER.value])
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
     is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -117,12 +119,14 @@ def create_access_token(
     roles: Sequence[str],
     secret: str,
     expires_minutes: int = 30,
+    tenant_id: str = "default",
 ) -> str:
     now = int(time.time())
     payload = {
         "sub": user_id,
         "username": username,
         "roles": list(roles),
+        "tenant_id": tenant_id,
         "type": "access",
         "iat": now,
         "exp": now + max(1, expires_minutes) * 60,
@@ -137,12 +141,14 @@ def create_refresh_token(
     roles: Sequence[str],
     secret: str,
     expires_minutes: int = 60 * 24 * 7,
+    tenant_id: str = "default",
 ) -> str:
     now = int(time.time())
     payload = {
         "sub": user_id,
         "username": username,
         "roles": list(roles),
+        "tenant_id": tenant_id,
         "type": "refresh",
         "iat": now,
         "exp": now + max(1, expires_minutes) * 60,
@@ -170,7 +176,13 @@ def decode_token(token: str, *, secret: str, expected_type: str = "access") -> U
         user_id = str(payload["sub"])
         username = str(payload["username"])
         roles = tuple(str(r) for r in payload.get("roles", ()))
-        return UserContext(user_id=user_id, username=username, roles=roles or (UserRole.VIEWER.value,))
+        tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
+        return UserContext(
+            user_id=user_id,
+            username=username,
+            roles=roles or (UserRole.VIEWER.value,),
+            tenant_id=tenant_id,
+        )
     except AuthTokenError:
         raise
     except Exception as exc:
