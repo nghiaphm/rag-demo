@@ -148,6 +148,26 @@ class Settings(BaseSettings):
     duckdb_query_timeout_seconds: float = 15.0
     duckdb_max_rows: int = 200
 
+    # ----- Excel SQL Chat Integration & Selective Text-Only Embedding -----
+    excel_sql_enabled: bool = False
+    excel_text_only_embedding_enabled: bool = False
+    excel_sensitive_column_patterns: tuple[str, ...] | str = (
+        "luong",
+        "salary",
+        "thu_nhap",
+        "cmnd",
+        "cccd",
+        "passport",
+        "so_tai_khoan",
+        "bank",
+        "mat_khau",
+        "password",
+        "token",
+        "ma_so_thue",
+        "dia_chi",
+        "so_dien_thoai",
+    )
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:
@@ -410,6 +430,19 @@ class Settings(BaseSettings):
             raise ValueError("DUCKDB_MAX_ROWS phải từ 1 đến 2000")
         return value
 
+    @field_validator("excel_sensitive_column_patterns", mode="before")
+    @classmethod
+    def _validate_excel_sensitive_column_patterns(cls, value: object) -> tuple[str, ...]:
+        if isinstance(value, str):
+            items = [part.strip().lower() for part in value.split(",") if part.strip()]
+            return tuple(items)
+        if isinstance(value, (list, tuple, set)):
+            items = [str(part).strip().lower() for part in value if str(part).strip()]
+            return tuple(items)
+        raise ValueError(
+            "EXCEL_SENSITIVE_COLUMN_PATTERNS phải là chuỗi phân tách bằng dấu phẩy hoặc danh sách chuỗi"
+        )
+
     @model_validator(mode="after")
     def _validate_context_budget_total(self) -> "Settings":
         allocated = (
@@ -425,6 +458,23 @@ class Settings(BaseSettings):
             )
         if self.storage_backend == "s3" and not self.s3_bucket:
             raise ValueError("Cần cấu hình S3_BUCKET khi STORAGE_BACKEND='s3'")
+        if self.excel_sql_enabled:
+            missing_flags: list[str] = []
+            if not self.agentic_mode_enabled:
+                missing_flags.append("AGENTIC_MODE_ENABLED=true")
+            if self.storage_backend != "s3":
+                missing_flags.append("STORAGE_BACKEND=s3")
+            if not self.excel_parquet_ingestion_enabled:
+                missing_flags.append("EXCEL_PARQUET_INGESTION_ENABLED=true")
+            if missing_flags:
+                raise ValueError(
+                    "Khi EXCEL_SQL_ENABLED=true, bắt buộc phải bật các cấu hình sau: "
+                    + ", ".join(missing_flags)
+                )
+        if self.excel_text_only_embedding_enabled and not self.excel_parquet_ingestion_enabled:
+            raise ValueError(
+                "Khi EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=true, bắt buộc phải bật EXCEL_PARQUET_INGESTION_ENABLED=true"
+            )
         return self
 
     # Đọc từ file .env, không phân biệt hoa/thường tên biến.

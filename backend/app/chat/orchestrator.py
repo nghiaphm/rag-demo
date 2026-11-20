@@ -36,7 +36,7 @@ from app.tool_use.contracts import ToolCall, ToolContractError, serialize_result
 from app.documents.tool_handlers import create_document_tool_registry, document_tool_definitions
 from app.tool_use.executor import MAX_CALL_ID_BYTES, MAX_TOOL_CALLS, ToolExecutor
 
-from app.chat.prompts import FINAL_INSTRUCTION, SELECTOR_INSTRUCTION
+from app.chat.prompts import EXCEL_SQL_AGENT_GUIDANCE, FINAL_INSTRUCTION, SELECTOR_INSTRUCTION
 from app.chat.ui_context import (
     UiPageContext,
     build_selector_ui_note,
@@ -48,6 +48,11 @@ from app.chat.agent_tools import (
     create_agent_tool_registry,
     create_query_excel_handler,
     create_rag_search_handler,
+)
+from app.documents.excel.sql_service import (
+    create_excel_sql_service,
+    create_run_sql_handler,
+    format_catalog_summary_for_prompt,
 )
 
 PROVIDER_CAPABILITY_STATUS: str = settings.provider_capability_status
@@ -132,12 +137,54 @@ class PreparedChatAnswer:
     agent_messages: list[BaseMessage] = field(default_factory=list, repr=False)
     qdrant_client: Any = field(default=None, repr=False)
     active_version_ids: tuple[str, ...] = ()
+    include_run_sql: bool = False
+    session_scope: Any = field(default=None, repr=False)
     _owner: object = field(default=None, repr=False)
     _started: bool = field(default=False, repr=False)
 
     @property
     def usage(self) -> Usage | None:
         return self.ledger.total
+
+
+def _fit_excel_sql_system_instruction(
+    base_instruction: str,
+    bindings: Sequence[Any],
+    *,
+    question: str,
+    count_system_tokens: Callable[[str], int],
+    max_system_tokens: int,
+) -> str:
+    """Gắn hướng dẫn `run_sql` + bản tóm tắt Table Catalog mà không bao giờ vượt `max_system_tokens`."""
+    if not bindings:
+        return base_instruction
+    candidate_with_guidance = f"{base_instruction}\n\n{EXCEL_SQL_AGENT_GUIDANCE}"
+    if count_system_tokens(candidate_with_guidance) <= max_system_tokens:
+        prefix = candidate_with_guidance
+    else:
+        compact_guidance = (
+            "Dùng `run_sql` (DuckDB SELECT) cho thống kê/lọc bảng Excel bên dưới; "
+            "dùng `rag_search` cho văn bản tự do; không tự bịa số liệu."
+        )
+        candidate_compact = f"{base_instruction}\n\n{compact_guidance}"
+        prefix = (
+            candidate_compact
+            if count_system_tokens(candidate_compact) <= max_system_tokens
+            else base_instruction
+        )
+
+    catalog_summary = format_catalog_summary_for_prompt(
+        bindings,
+        question=question,
+        count_tokens=lambda summary: count_system_tokens(f"{prefix}\n\n{summary}"),
+        max_tokens=max_system_tokens,
+    )
+    if not catalog_summary:
+        return prefix
+    combined = f"{prefix}\n\n{catalog_summary}"
+    if count_system_tokens(combined) <= max_system_tokens:
+        return combined
+    return prefix
 
 
 def estimate_context_tokens(
@@ -297,6 +344,10 @@ class ChatOrchestrator:
         max_agent_steps: int | None = None,
         rag_search_fn: Callable[[str, int], list[Any]] | None = None,
         excel_loader_fn: Callable[[str | None], tuple[str, bytes]] | None = None,
+        sql_service: Any = None,
+        current_user: Any = None,
+        tenant_id: str | None = None,
+        excel_sql_enabled: bool | None = None,
     ) -> None:
         if type(tools_enabled) is not bool:
             raise ValueError("tools_enabled phải là boolean")
@@ -311,6 +362,25 @@ class ChatOrchestrator:
         self.max_agent_steps = settings.max_agent_steps if max_agent_steps is None else max_agent_steps
         self.rag_search_fn = rag_search_fn
         self.excel_loader_fn = excel_loader_fn
+        self.sql_service = sql_service
+        self.current_user = current_user
+        self.tenant_id = tenant_id
+        self.excel_sql_enabled = (
+            settings.excel_sql_enabled if excel_sql_enabled is None else bool(excel_sql_enabled)
+        )
+        if self.excel_sql_enabled:
+            missing_flags: list[str] = []
+            if not self.agentic_mode:
+                missing_flags.append("AGENTIC_MODE_ENABLED=true")
+            if getattr(settings, "storage_backend", "local") != "s3":
+                missing_flags.append("STORAGE_BACKEND=s3")
+            if not getattr(settings, "excel_parquet_ingestion_enabled", False):
+                missing_flags.append("EXCEL_PARQUET_INGESTION_ENABLED=true")
+            if missing_flags:
+                raise ValueError(
+                    "Khi EXCEL_SQL_ENABLED=true, bắt buộc phải bật các cấu hình sau: "
+                    + ", ".join(missing_flags)
+                )
 
     def _schemas(self) -> list[dict]:
         return [{"type": "function", "function": {
@@ -406,21 +476,47 @@ class ChatOrchestrator:
             response, calls = None, ()
             counter = ApproximateTokenCounter(chars_per_token=self.config.chars_per_token)
             if self.tools_enabled and self.agentic_mode:
+                session_scope = None
                 if session_id is not None:
                     loader = self.history_loader or ConversationHistoryLoader(MongoConversationRepository(database))
                     loaded = await _wait(lambda: asyncio.to_thread(loader.load, session_id), deadline)
                     turns = loaded.turns
+                    session_scope = getattr(loaded, "retrieval_scope", None)
                 agent_instruction = fit_ui_system_instruction(
                     AGENT_SYSTEM_INSTRUCTION,
                     ui_context,
                     counter.system,
                     self.config.system_max_tokens,
                 )
+                include_run_sql = False
+                if self.excel_sql_enabled:
+                    if self.sql_service is None and database is not None:
+                        self.sql_service = create_excel_sql_service(database)
+                    if self.sql_service is not None:
+                        authorized_tables = await _wait(
+                            lambda: asyncio.to_thread(
+                                self.sql_service.list_authorized_tables,
+                                user=self.current_user,
+                                tenant_id=self.tenant_id,
+                                session_scope=session_scope,
+                            ),
+                            deadline,
+                        )
+                        if authorized_tables:
+                            include_run_sql = True
+                            agent_instruction = _fit_excel_sql_system_instruction(
+                                agent_instruction,
+                                authorized_tables,
+                                question=question,
+                                count_system_tokens=counter.system,
+                                max_system_tokens=self.config.system_max_tokens,
+                            )
+                schemas = agent_tool_schemas(include_run_sql=include_run_sql)
                 agent_messages, turns = self._fit(
                     question,
                     turns,
                     agent_instruction,
-                    tools=agent_tool_schemas(),
+                    tools=schemas,
                 )
                 return PreparedChatAnswer(
                     "AGENTIC",
@@ -433,6 +529,8 @@ class ChatOrchestrator:
                     model=model,
                     agent_messages=agent_messages,
                     qdrant_client=qdrant_client,
+                    include_run_sql=include_run_sql,
+                    session_scope=session_scope,
                     _owner=self,
                 )
             if self.tools_enabled:
@@ -552,6 +650,63 @@ class ChatOrchestrator:
         ):
             raise ChatOrchestrationError("CHAT_CONTEXT_LIMIT")
 
+    async def _execute_agentic_plan(
+        self,
+        plan: PreparedChatAnswer,
+        *,
+        trace: Any = None,
+    ) -> tuple[str, list[dict]]:
+        collected_sources: list[dict] = []
+        rag_handler = create_rag_search_handler(
+            retrieve_fn=self.rag_search_fn,
+            qdrant_client=plan.qdrant_client,
+            active_version_ids=plan.active_version_ids,
+            collected_sources=collected_sources,
+        )
+        excel_handler = (
+            create_query_excel_handler(excel_loader_fn=self.excel_loader_fn)
+            if self.excel_loader_fn is not None
+            else None
+        )
+        run_sql_handler = (
+            create_run_sql_handler(
+                self.sql_service,
+                user=self.current_user,
+                tenant_id=self.tenant_id,
+                session_scope=plan.session_scope,
+                collected_sources=collected_sources,
+            )
+            if (plan.include_run_sql and self.sql_service is not None)
+            else None
+        )
+        registry = create_agent_tool_registry(
+            self.queries,
+            rag_search_handler=rag_handler,
+            query_excel_handler=excel_handler,
+            run_sql_handler=run_sql_handler,
+        )
+        runner = AgenticRunner(
+            model=plan.model,
+            schemas=agent_tool_schemas(include_run_sql=plan.include_run_sql),
+            registry=registry,
+            parse_calls=self._calls,
+            extract_text=_text,
+            extract_usage=_message_usage,
+            wait_fn=_wait,
+            output_reserve_tokens=self.config.output_reserve_tokens,
+            max_steps=self.max_agent_steps,
+        )
+        answer, final_sources, _state = await runner.run(
+            initial_messages=plan.agent_messages,
+            collected_sources=collected_sources,
+            ledger=plan.ledger,
+            error_cls=ChatOrchestrationError,
+            deadline=plan.deadline,
+            trace=trace,
+        )
+        plan.sources[:] = final_sources
+        return answer, final_sources
+
     async def generate_json(self, plan: PreparedChatAnswer) -> dict:
         self._claim(plan)
         entry = None
@@ -560,40 +715,8 @@ class ChatOrchestrator:
         try:
             with trace.span("llm_generation", input={"route": plan.route}) as span:
                 if plan.route == "AGENTIC":
-                    collected_sources: list[dict] = []
-                    rag_handler = create_rag_search_handler(
-                        retrieve_fn=self.rag_search_fn,
-                        qdrant_client=plan.qdrant_client,
-                        active_version_ids=plan.active_version_ids,
-                        collected_sources=collected_sources,
-                    )
-                    excel_handler = (
-                        create_query_excel_handler(excel_loader_fn=self.excel_loader_fn)
-                        if self.excel_loader_fn is not None
-                        else None
-                    )
-                    registry = create_agent_tool_registry(
-                        self.queries,
-                        rag_search_handler=rag_handler,
-                        query_excel_handler=excel_handler,
-                    )
-                    runner = AgenticRunner(
-                        model=plan.model,
-                        schemas=agent_tool_schemas(),
-                        registry=registry,
-                        parse_calls=self._calls,
-                        extract_text=_text,
-                        extract_usage=_message_usage,
-                        wait_fn=_wait,
-                        output_reserve_tokens=self.config.output_reserve_tokens,
-                        max_steps=self.max_agent_steps,
-                    )
-                    answer, final_sources, _state = await runner.run(
-                        initial_messages=plan.agent_messages,
-                        collected_sources=collected_sources,
-                        ledger=plan.ledger,
-                        error_cls=ChatOrchestrationError,
-                        deadline=plan.deadline,
+                    answer, final_sources = await self._execute_agentic_plan(
+                        plan,
                         trace=trace,
                     )
                     result = {"answer": answer, "sources": final_sources, "usage": plan.usage}
@@ -642,6 +765,33 @@ class ChatOrchestrator:
         iterator = None
         adapter = _FinalModel(plan.model, self.config.output_reserve_tokens)
         try:
+            if plan.route == "AGENTIC":
+                trace = self.tracer.trace("llm_generation_turn", input={"route": plan.route})
+                with trace.span("llm_generation", input={"route": plan.route}) as span:
+                    answer, final_sources = await self._execute_agentic_plan(
+                        plan,
+                        trace=trace,
+                    )
+                    if plan.usage:
+                        span.record_usage(
+                            prompt_tokens=plan.usage.get("input_tokens", 0) or 0,
+                            completion_tokens=plan.usage.get("output_tokens", 0) or 0,
+                            total_tokens=plan.usage.get("total_tokens", 0) or 0,
+                        )
+                    span.set_output(
+                        {
+                            "answer_chars": len(answer),
+                            "source_count": len(final_sources),
+                        }
+                    )
+                if not answer.strip():
+                    raise ChatOrchestrationError("CHAT_EMPTY_ANSWER")
+                if len(answer) > MAX_ANSWER_CHARS:
+                    raise ChatOrchestrationError("CHAT_OUTPUT_LIMIT")
+                yield ProviderStreamChunk(answer, None)
+                if plan.tools_enabled:
+                    yield ProviderStreamChunk(None, plan.usage)
+                return
             if plan.route == "DOCUMENT_TOOLS":
                 messages, notice = await self._tool_context(plan)
                 prepared = PreparedRagStream(prompt_value=messages, sources=[])

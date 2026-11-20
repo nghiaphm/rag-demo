@@ -8,6 +8,7 @@ from typing import Any
 from langchain_core.documents import Document
 
 from app.documents.excel.query import query_workbook_bytes
+from app.documents.excel.sql_service import run_sql_tool_definition
 from app.documents.queries import DocumentQueries
 from app.documents.tool_handlers import create_document_tool_registry, document_tool_definitions
 from app.rag.reranker import get_reranker
@@ -54,6 +55,7 @@ def agent_tool_definitions(
     *,
     include_rag_search: bool = True,
     include_excel_query: bool = True,
+    include_run_sql: bool = False,
 ) -> tuple[ToolDefinition, ...]:
     """Return tool definitions exposed to the Agentic Orchestrator."""
     tools: list[ToolDefinition] = list(document_tool_definitions())
@@ -61,6 +63,8 @@ def agent_tool_definitions(
         tools.append(rag_search_tool_definition())
     if include_excel_query:
         tools.append(query_excel_table_tool_definition())
+    if include_run_sql:
+        tools.append(run_sql_tool_definition())
     return tuple(tools)
 
 
@@ -68,6 +72,7 @@ def agent_tool_schemas(
     *,
     include_rag_search: bool = True,
     include_excel_query: bool = True,
+    include_run_sql: bool = False,
 ) -> list[dict[str, Any]]:
     """OpenAI-compatible function tool schemas for model.bind_tools()."""
     return [
@@ -82,13 +87,14 @@ def agent_tool_schemas(
         for definition in agent_tool_definitions(
             include_rag_search=include_rag_search,
             include_excel_query=include_excel_query,
+            include_run_sql=include_run_sql,
         )
     ]
 
 
 def _doc_to_source(document: Document) -> dict[str, Any]:
     metadata = document.metadata or {}
-    return {
+    source: dict[str, Any] = {
         "chunk_id": metadata.get("chunk_id"),
         "document_id": metadata.get("document_id"),
         "version_id": metadata.get("version_id"),
@@ -96,6 +102,11 @@ def _doc_to_source(document: Document) -> dict[str, Any]:
         "page": metadata.get("page"),
         "chunk_index": metadata.get("chunk_index"),
     }
+    if metadata.get("sheet_name") is not None:
+        source["sheet_name"] = metadata.get("sheet_name")
+    if metadata.get("row_index") is not None:
+        source["row_index"] = metadata.get("row_index")
+    return source
 
 
 def _append_unique_sources(target: list[dict[str, Any]], docs: list[Document]) -> None:
@@ -210,8 +221,9 @@ def create_agent_tool_registry(
     *,
     rag_search_handler: ToolHandler | None = None,
     query_excel_handler: ToolHandler | None = None,
+    run_sql_handler: ToolHandler | None = None,
 ) -> dict[str, ToolHandler]:
-    """Assemble combined read-only document + rag_search + query_excel_table registry."""
+    """Assemble combined read-only document + rag_search + query_excel_table + run_sql registry."""
     registry: dict[str, ToolHandler] = {}
     if queries is not None:
         registry.update(create_document_tool_registry(queries))
@@ -219,4 +231,6 @@ def create_agent_tool_registry(
         registry["rag_search"] = rag_search_handler
     if query_excel_handler is not None:
         registry["query_excel_table"] = query_excel_handler
+    if run_sql_handler is not None:
+        registry["run_sql"] = run_sql_handler
     return registry

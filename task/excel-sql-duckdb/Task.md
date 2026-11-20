@@ -127,7 +127,7 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
 **Mục tiêu**: Tích hợp `run_sql` song song với `rag_search` (`search_text`) vào `ChatOrchestrator` cho cả `/chat` và `/chat/stream`, sau đó tối ưu embedding Excel chỉ embed cột văn bản tự do và chấp nhận file 0 chunk.
 
 ### Danh sách task
-- [ ] **T4.1 — Tích hợp `run_sql` + tóm tắt catalog vào Chat Flow (JSON & SSE parity)**
+- [x] **T4.1 — Tích hợp `run_sql` + tóm tắt catalog vào Chat Flow (JSON & SSE parity)**
   - **File dự kiến sửa:** `backend/app/chat/agent_tools.py`, `backend/app/chat/orchestrator.py`, `backend/app/chat/agent.py`, `backend/app/chat/prompts.py`, `backend/app/api/routes/chat.py`, `backend/app/shared/config.py`
   - **Phụ thuộc:** T3.4.
   - **Nội dung:** Thêm cờ `EXCEL_SQL_ENABLED=false`; truyền `current_user`, `tenant_id`, `sql_service` từ `api/routes/chat.py` (cả `/chat` và `/chat/stream`) vào `ChatOrchestrator`; đăng ký `run_sql` cạnh `rag_search` và document metadata tools; chèn bản tóm tắt catalog (tôn trọng `ContextBudget`) vào prompt khi phiên có bảng Excel hợp lệ; gắn nguồn tài liệu Excel vào `sources` để hiển thị citation đồng nhất trên JSON & SSE.

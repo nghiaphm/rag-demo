@@ -80,7 +80,10 @@ class MongoDocumentRepository:
         self.documents = database[DOCUMENTS_COLLECTION]
         self.versions = database[DOCUMENT_VERSIONS_COLLECTION]
         self.jobs = database[INGESTION_JOBS_COLLECTION]
-        self.table_catalogs = database[DOCUMENT_TABLE_CATALOGS_COLLECTION]
+        try:
+            self.table_catalogs = database[DOCUMENT_TABLE_CATALOGS_COLLECTION]
+        except KeyError:
+            self.table_catalogs = None
 
     def create_upload(
         self,
@@ -551,6 +554,8 @@ class MongoDocumentRepository:
                 raise RepositoryConflictError("Trùng table_name trong cùng một version")
             seen_names.add(record.table_name)
 
+        if self.table_catalogs is None:
+            raise RepositoryError("Collection document_table_catalogs chưa được khởi tạo")
         try:
             self.table_catalogs.delete_many({"version_id": version_id})
             for record in records:
@@ -567,6 +572,8 @@ class MongoDocumentRepository:
         tenant_id: str | None = None,
     ) -> list[DocumentTableCatalogRecord]:
         """Liệt kê toàn bộ bảng catalog thuộc danh sách version_ids."""
+        if self.table_catalogs is None:
+            return []
         normalized_ids = [str(v) for v in version_ids if v]
         if not normalized_ids:
             return []
@@ -586,6 +593,8 @@ class MongoDocumentRepository:
 
     def delete_tables_for_version(self, version_id: str) -> int:
         """Xóa toàn bộ bảng catalog của một version_id và trả số lượng đã xóa."""
+        if self.table_catalogs is None:
+            return 0
         try:
             result = self.table_catalogs.delete_many({"version_id": version_id})
             return int(getattr(result, "deleted_count", 0))

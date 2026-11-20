@@ -106,12 +106,16 @@ async def _encode_provider_stream_impl(
 ):
     """Encode provider deltas and keep an optional persistent turn truthful."""
     persistent = turn is not None
-    sources = [Source(**source) for source in prepared.sources]
+    is_agentic = orchestrator is not None and getattr(prepared, "route", None) == "AGENTIC"
     sequence = 1
     tracker.mark_first_event()
     yield start_frame(sequence=sequence, request_id=request_id, turn=turn)
-    sequence += 1
-    yield metadata_frame(sequence=sequence, sources=sources)
+    metadata_emitted = False
+    if not is_agentic:
+        sources = [Source(**source) for source in prepared.sources]
+        sequence += 1
+        metadata_emitted = True
+        yield metadata_frame(sequence=sequence, sources=sources)
 
     # Citations need answer ordinals. The contract requires them before the
     # first delta, so P4-02 leaves them absent rather than buffering the full
@@ -140,6 +144,11 @@ async def _encode_provider_stream_impl(
                 )
             except StopAsyncIteration:
                 break
+            if not metadata_emitted:
+                sources = [Source(**source) for source in prepared.sources]
+                sequence += 1
+                metadata_emitted = True
+                yield metadata_frame(sequence=sequence, sources=sources)
             if chunk.usage is not None:
                 usage = chunk.usage
                 state["usage"] = usage
@@ -173,6 +182,12 @@ async def _encode_provider_stream_impl(
                 await asyncio.shield(close())
             except (asyncio.CancelledError, Exception):
                 pass
+
+    if not metadata_emitted:
+        sources = [Source(**source) for source in prepared.sources]
+        sequence += 1
+        metadata_emitted = True
+        yield metadata_frame(sequence=sequence, sources=sources)
 
     content = "".join(content_parts)
     # Terminal states follow MessageRecord's existing meaningful-content rule;
@@ -304,6 +319,29 @@ def _to_domain_ui_context(ui_context: ChatUiContext | None) -> UiPageContext | N
     )
 
 
+def _excel_sql_orchestrator_kwargs(
+    request: Request | None,
+    current_user: UserContext | None,
+) -> dict[str, Any]:
+    if not settings.excel_sql_enabled:
+        return {}
+    sql_service = (
+        getattr(request.app.state, "excel_sql_service", None)
+        if request is not None
+        else None
+    )
+    tenant_id = (
+        current_user.tenant_id
+        if current_user is not None and getattr(current_user, "tenant_id", None)
+        else settings.default_tenant_id
+    )
+    return {
+        "sql_service": sql_service,
+        "current_user": current_user,
+        "tenant_id": tenant_id,
+    }
+
+
 async def _answer_with_tools(
     question: str,
     database: Any,
@@ -311,6 +349,8 @@ async def _answer_with_tools(
     session_id: str | None = None,
     tracer: Any = None,
     ui_context: UiPageContext | None = None,
+    request: Request | None = None,
+    current_user: UserContext | None = None,
 ) -> dict:
     """Compose JSON-only dependencies from managed handles, without new clients."""
     queries = DocumentQueries(MongoDocumentRepository(database))
@@ -318,6 +358,7 @@ async def _answer_with_tools(
         queries=queries,
         tools_enabled=True,
         **({"tracer": tracer} if tracer is not None else {}),
+        **_excel_sql_orchestrator_kwargs(request, current_user),
     )
     plan = await orchestrator.prepare_plan(
         question,
@@ -357,6 +398,11 @@ async def chat(
                     cloud.mongodb.database,
                     cloud.qdrant.client,
                     **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
+                    **(
+                        {"request": request, "current_user": current_user}
+                        if settings.excel_sql_enabled
+                        else {}
+                    ),
                 )
             else:
                 result = await run_in_threadpool(
@@ -376,11 +422,17 @@ async def chat(
                     # ConversationService owns this worker callback after guard/pair setup.
                     # Return to the request loop instead of creating another SDK event loop.
                     try:
+                        extra_args = (
+                            (request, current_user)
+                            if settings.excel_sql_enabled
+                            else ()
+                        )
                         return from_thread.run(
                             _answer_with_tools, payload.question, cloud.mongodb.database,
                             cloud.qdrant.client, str(payload.session_id),
                             getattr(request.app.state, "tracer", None),
                             domain_ui_context,
+                            *extra_args,
                         )
                     except FutureCancelledError:
                         # AnyIO translates async cancellation at the worker bridge.
@@ -485,6 +537,7 @@ async def chat_stream(
                 queries=queries,
                 tools_enabled=True,
                 **({"tracer": tracer} if tracer is not None else {}),
+                **_excel_sql_orchestrator_kwargs(request, current_user),
             )
             # C05 pre-guard preparation is intentionally retained. No tools run here.
             prepared = await orchestrator.prepare_plan(

@@ -11,7 +11,7 @@ Module này nằm trong `app.documents.excel`, tuân thủ ranh giới Hexagonal
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -19,8 +19,10 @@ import json
 import logging
 import math
 from pathlib import Path
+import re
 from time import monotonic
 from typing import Any, Literal
+import unicodedata
 
 from app.documents.excel.sql_guard import validate_and_rewrite_sql
 from app.documents.models import (
@@ -532,6 +534,231 @@ class ExcelSqlService:
         )
 
 
+def _normalize_for_pattern_match(text: str) -> str:
+    """Bỏ dấu tiếng Việt, chuyển chữ thường và chuẩn hóa khoảng trắng/ký tự đặc biệt thành '_'."""
+    raw = (text or "").replace("đ", "d").replace("Đ", "d").lower()
+    decomposed = unicodedata.normalize("NFD", raw)
+    stripped = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    normalized = unicodedata.normalize("NFC", stripped)
+    return re.sub(r"[^a-z0-9]+", "_", normalized).strip("_")
+
+
+def is_sensitive_column(
+    name: str,
+    original_name: str = "",
+    patterns: Sequence[str] | None = None,
+) -> bool:
+    """Kiểm tra cột có khớp danh sách từ khóa nhạy cảm (`EXCEL_SENSITIVE_COLUMN_PATTERNS`) hay không."""
+    active_patterns = (
+        patterns
+        if patterns is not None
+        else getattr(settings, "excel_sensitive_column_patterns", ())
+    )
+    if isinstance(active_patterns, str):
+        active_patterns = [p.strip().lower() for p in active_patterns.split(",") if p.strip()]
+
+    norm_name = _normalize_for_pattern_match(name)
+    norm_original = _normalize_for_pattern_match(original_name)
+    name_tokens = set(norm_name.split("_")) if norm_name else set()
+    orig_tokens = set(norm_original.split("_")) if norm_original else set()
+
+    for raw_pattern in active_patterns:
+        pat = _normalize_for_pattern_match(str(raw_pattern))
+        if not pat:
+            continue
+        if "_" in pat:
+            if pat in norm_name or pat in norm_original:
+                return True
+        else:
+            if (
+                pat in name_tokens
+                or pat in orig_tokens
+                or pat in norm_name
+                or pat in norm_original
+            ):
+                return True
+    return False
+
+
+def _sanitize_sensitive_description(col: TableColumnSchema) -> str:
+    """Loại bỏ phần `giá trị mẫu: ...` khỏi description của cột nhạy cảm."""
+    desc = col.description or ""
+    cleaned = re.sub(r",?\s*giá trị mẫu:.*$", "", desc, flags=re.IGNORECASE).strip()
+    if cleaned:
+        return f"{cleaned} (ẩn giá trị mẫu vì cột nhạy cảm)"
+    return f"Cột gốc '{col.original_name}', kiểu {col.data_type} (ẩn giá trị mẫu vì cột nhạy cảm)"
+
+
+def _score_binding_relevance(binding: AuthorizedTableBinding, query_tokens: set[str]) -> int:
+    if not query_tokens:
+        return 0
+    haystack_parts = [
+        _normalize_for_pattern_match(binding.view_name),
+        _normalize_for_pattern_match(binding.file_name),
+        _normalize_for_pattern_match(binding.sheet_name),
+        _normalize_for_pattern_match(binding.table_name),
+    ]
+    for col in binding.columns:
+        haystack_parts.append(_normalize_for_pattern_match(col.name))
+        haystack_parts.append(_normalize_for_pattern_match(col.original_name))
+    haystack = " ".join(part for part in haystack_parts if part)
+    score = 0
+    for token in query_tokens:
+        if token in haystack:
+            score += 1
+    return score
+
+
+def _render_single_table_summary(
+    binding: AuthorizedTableBinding,
+    *,
+    include_descriptions: bool,
+    sample_rows_count: int,
+    max_columns: int | None = None,
+    sensitive_patterns: Sequence[str] | None = None,
+) -> str:
+    lines: list[str] = [
+        (
+            f"- View SQL: `{binding.view_name}` "
+            f"(file: `{binding.file_name}`, sheet: `{binding.sheet_name}`, "
+            f"số dòng: {binding.row_count})"
+        )
+    ]
+    if binding.has_formula_values:
+        lines.append(
+            "  Ghi chú: Bảng có ô công thức Excel thiếu cached value (giá trị trong bảng là NULL)."
+        )
+
+    sensitive_col_names: set[str] = set()
+    cols_to_show = (
+        binding.columns[:max_columns]
+        if max_columns is not None
+        else binding.columns
+    )
+    col_lines: list[str] = []
+    for col in cols_to_show:
+        sensitive = is_sensitive_column(col.name, col.original_name, sensitive_patterns)
+        if sensitive:
+            sensitive_col_names.add(col.name)
+        if include_descriptions:
+            desc = (
+                _sanitize_sensitive_description(col)
+                if sensitive
+                else (col.description or f"Cột gốc '{col.original_name}', kiểu {col.data_type}")
+            )
+            col_lines.append(
+                f"    + `{col.name}` (tên gốc: '{col.original_name}', kiểu: {col.data_type}): {desc}"
+            )
+        else:
+            col_lines.append(
+                f"    + `{col.name}` ('{col.original_name}', {col.data_type})"
+            )
+
+    if col_lines:
+        lines.append("  Các cột:")
+        lines.extend(col_lines)
+        if max_columns is not None and len(binding.columns) > max_columns:
+            lines.append(f"    + ... ({len(binding.columns) - max_columns} cột khác đã rút gọn)")
+
+    if sample_rows_count > 0 and binding.sample_rows:
+        safe_samples: list[dict[str, Any]] = []
+        for row in binding.sample_rows[:sample_rows_count]:
+            filtered_row = {
+                k: v for k, v in row.items() if k not in sensitive_col_names
+            }
+            if filtered_row:
+                safe_samples.append(filtered_row)
+        if safe_samples:
+            lines.append(
+                "  Dòng mẫu: " + json.dumps(safe_samples, ensure_ascii=False)
+            )
+    return "\n".join(lines)
+
+
+def format_catalog_summary_for_prompt(
+    bindings: Sequence[AuthorizedTableBinding],
+    *,
+    question: str = "",
+    count_tokens: Callable[[str], int],
+    max_tokens: int,
+    sample_rows_limit: int | None = None,
+    sensitive_patterns: Sequence[str] | None = None,
+) -> str:
+    """Sinh bản tóm tắt Table Catalog đã lọc quyền + che cột nhạy cảm + đảm bảo không vượt `max_tokens`."""
+    if not bindings or max_tokens <= 0:
+        return ""
+
+    effective_samples = (
+        int(sample_rows_limit)
+        if sample_rows_limit is not None and sample_rows_limit >= 0
+        else int(getattr(settings, "excel_catalog_sample_rows", 3))
+    )
+    query_norm = _normalize_for_pattern_match(question)
+    query_tokens = {tok for tok in query_norm.split("_") if len(tok) >= 2}
+
+    indexed_bindings = list(enumerate(bindings))
+    indexed_bindings.sort(
+        key=lambda item: (-_score_binding_relevance(item[1], query_tokens), item[0])
+    )
+    ordered_bindings = [b for _, b in indexed_bindings]
+    header = "Danh mục bảng Excel được phép truy vấn bằng `run_sql`:"
+
+    # Bước 1: Thử bản đầy đủ (mô tả cột + sample_rows) rồi giảm dần sample_rows -> bỏ mô tả cột.
+    sample_steps = sorted({effective_samples, 1, 0}, reverse=True)
+    for samples in sample_steps:
+        if samples > effective_samples:
+            continue
+        for include_desc in (True, False):
+            if include_desc is False and samples > 0:
+                continue
+            body = "\n".join(
+                _render_single_table_summary(
+                    b,
+                    include_descriptions=include_desc,
+                    sample_rows_count=samples,
+                    sensitive_patterns=sensitive_patterns,
+                )
+                for b in ordered_bindings
+            )
+            candidate = f"{header}\n{body}"
+            if count_tokens(candidate) <= max_tokens:
+                return candidate
+
+    # Bước 2: Rút gọn số bảng theo thứ tự khớp câu hỏi (chỉ giữ tên bảng + tên cột + kiểu).
+    for table_limit in range(len(ordered_bindings) - 1, 0, -1):
+        body = "\n".join(
+            _render_single_table_summary(
+                b,
+                include_descriptions=False,
+                sample_rows_count=0,
+                sensitive_patterns=sensitive_patterns,
+            )
+            for b in ordered_bindings[:table_limit]
+        )
+        candidate = f"{header}\n{body}"
+        if count_tokens(candidate) <= max_tokens:
+            return candidate
+
+    # Bước 3: Chỉ còn 1 bảng ưu tiên nhất, giảm dần số cột hiển thị cho tới khi vừa ngân sách.
+    top_binding = ordered_bindings[0]
+    for col_limit in range(len(top_binding.columns), 0, -1):
+        body = _render_single_table_summary(
+            top_binding,
+            include_descriptions=False,
+            sample_rows_count=0,
+            max_columns=col_limit,
+            sensitive_patterns=sensitive_patterns,
+        )
+        candidate = f"{header}\n{body}"
+        if count_tokens(candidate) <= max_tokens:
+            return candidate
+
+    minimal = f"{header}\n- View SQL: `{top_binding.view_name}` (file: `{top_binding.file_name}`, sheet: `{top_binding.sheet_name}`)"
+    if count_tokens(minimal) <= max_tokens:
+        return minimal
+    return ""
+
+
 def run_sql_tool_definition() -> ToolDefinition:
     """Định nghĩa schema tool `run_sql` (chỉ nhận tham số `sql`)."""
     return ToolDefinition(
@@ -550,6 +777,7 @@ def create_run_sql_handler(
     user: UserContext | None = None,
     tenant_id: str | None = None,
     session_scope: Any = None,
+    collected_sources: list[dict[str, Any]] | None = None,
 ) -> ToolHandler:
     """Tạo synchronous ToolHandler cho `run_sql` gắn cứng user/tenant/scope từ Backend."""
 
@@ -558,11 +786,69 @@ def create_run_sql_handler(
             validated = validate_arguments("run_sql", arguments)
         except ToolContractError as exc:
             return failure_result("run_sql", exc.code)
-        return service.execute_query(
+        envelope = service.execute_query(
             sql=str(validated["sql"]),
             user=user,
             tenant_id=tenant_id,
             session_scope=session_scope,
         )
+        if envelope.get("ok") and collected_sources is not None:
+            data = envelope.get("data") or {}
+            normalized_sql = str(data.get("sql") or "")
+            referenced_tables = data.get("referenced_tables") or []
+            seen_keys = {
+                (
+                    s.get("document_id"),
+                    s.get("version_id"),
+                    s.get("sheet_name"),
+                    s.get("source"),
+                )
+                for s in collected_sources
+            }
+            for ref in referenced_tables:
+                if not isinstance(ref, dict):
+                    continue
+                view_name = str(ref.get("view_name") or ref.get("table_name") or "")
+                source_label = (
+                    f"sql:{view_name} | {normalized_sql[:180]}"
+                    if normalized_sql
+                    else f"sql:{view_name}"
+                )
+                entry = {
+                    "file_name": ref.get("file_name"),
+                    "sheet_name": ref.get("sheet_name"),
+                    "document_id": ref.get("document_id"),
+                    "version_id": ref.get("version_id"),
+                    "source": source_label,
+                }
+                dedup_key = (
+                    entry["document_id"],
+                    entry["version_id"],
+                    entry["sheet_name"],
+                    entry["source"],
+                )
+                if dedup_key not in seen_keys:
+                    seen_keys.add(dedup_key)
+                    collected_sources.append(entry)
+        return envelope
 
     return _handle_run_sql
+
+
+def create_excel_sql_service(
+    database: Any,
+    *,
+    executor: SqlQueryExecutor | None = None,
+) -> ExcelSqlService:
+    """Factory khởi tạo `ExcelSqlService` với repository MongoDB và `DuckDBSqlExecutor`."""
+    from app.documents.repository import DocumentRepository
+
+    effective_executor = executor
+    if effective_executor is None:
+        from app.infrastructure.duckdb_executor import create_duckdb_sql_executor
+
+        effective_executor = create_duckdb_sql_executor()
+    return ExcelSqlService(
+        repository=DocumentRepository(database),
+        executor=effective_executor,
+    )
