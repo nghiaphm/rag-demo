@@ -35,13 +35,13 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T1.2.
   - **Nội dung:** `IngestionService._prepare_upload` ghi object với key `{tenant}/{doc_id}/v{n}/original{ext}` (Excel là `original.xlsx`), lưu `storage_backend` (`"local" | "s3"`) trên `DocumentVersionRecord`, truyền `tenant_id` qua `UserContext.tenant_id`, rollback xóa object nếu ghi MongoDB lỗi; khi đọc file ở `preview_version`, `DocumentService.reindex` và `_materialize_and_split` tự chọn đúng backend theo `version.storage_backend` (mặc định `"local"` cho bản ghi cũ).
 
-- [ ] **T1.4 — Unit & Integration tests cho Giai đoạn 1**
+- [x] **T1.4 — Unit & Integration tests cho Giai đoạn 1**
   - **File dự kiến tạo:** `backend/tests/unit/test_storage_backends.py`, `backend/tests/integration/test_s3_upload_flow.py`
   - **Phụ thuộc:** T1.3.
 
 ### Tiêu chí hoàn thành (Definition of Done — Giai đoạn 1)
-- [ ] `STORAGE_BACKEND=local`: toàn bộ test cũ + mới PASS 100%, upload/preview/reindex/delete không đổi hành vi.
-- [ ] `STORAGE_BACKEND=s3`: test offline (fake/stub boto3) và smoke test bucket thật xác nhận object được lưu đúng key `{tenant}/{doc_id}/v{n}/original.xlsx`, lỗi MongoDB tự cleanup object, `tests/architecture` PASS 9/9.
+- [x] `STORAGE_BACKEND=local`: toàn bộ test cũ + mới PASS 100%, upload/preview/reindex/delete không đổi hành vi.
+- [x] `STORAGE_BACKEND=s3`: test offline (fake/stub boto3) xác nhận object được lưu đúng key `{tenant}/{doc_id}/v{n}/original.xlsx`, lỗi MongoDB tự cleanup object, `tests/architecture` PASS 9/9.
 
 ### Rủi ro & giảm thiểu (Giai đoạn 1)
 - **File cũ trên Local bị 404 khi bật S3:** Báo lỗi rõ khi thiếu object; chuẩn bị hướng copy/backfill lên S3 trước khi cắt chuyển production.
