@@ -159,3 +159,51 @@ class IngestionJobRecord(MongoRecord):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("datetime phải có timezone")
         return value.astimezone(timezone.utc)
+
+
+TabularColumnType = Literal["INT64", "DOUBLE", "BOOLEAN", "DATE", "TIMESTAMP", "VARCHAR"]
+
+
+class TableColumnSchema(BaseModel):
+    """Schema một cột đã chuẩn hóa trong bảng Parquet của workbook Excel."""
+
+    model_config = ConfigDict(populate_by_name=True, validate_default=True)
+
+    name: str = Field(min_length=1, max_length=63)
+    original_name: str = Field(min_length=1, max_length=255)
+    type: TabularColumnType = Field(alias="data_type")
+    nullable: bool = True
+    description: str = Field(default="", max_length=512)
+    has_formula_values: bool = False
+
+    @property
+    def data_type(self) -> TabularColumnType:
+        return self.type
+
+
+class DocumentTableCatalogRecord(MongoRecord):
+    """Metadata catalog của một sheet/bảng Parquet thuộc một immutable document version."""
+
+    catalog_id: str = Field(default_factory=new_uuid, alias="_id")
+    tenant_id: str = Field(default="default", min_length=1, max_length=64)
+    document_id: str
+    version_id: str
+    table_name: str = Field(min_length=1, max_length=63)
+    sheet_name: str = Field(min_length=1, max_length=31)
+    parquet_key: str = Field(min_length=1, max_length=1024)
+    row_count: int = Field(ge=0)
+    columns: list[TableColumnSchema] = Field(default_factory=list)
+    sample_rows: list[dict[str, Any]] = Field(default_factory=list)
+    has_formula_values: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+
+    _validate_catalog_id = field_validator("catalog_id")(_canonical_uuid)
+    _validate_document_id = field_validator("document_id")(_canonical_uuid)
+    _validate_version_id = field_validator("version_id")(_canonical_uuid)
+
+    @field_validator("created_at")
+    @classmethod
+    def _normalize_datetime(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("datetime phải có timezone")
+        return value.astimezone(timezone.utc)

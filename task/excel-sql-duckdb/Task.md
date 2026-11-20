@@ -59,7 +59,7 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T1.2.
   - **Nội dung:** Tái sử dụng `read_workbook()`; dò dòng header tự động (>= 2 ô text khác nhau, bỏ qua sheet trống/chỉ có tiêu đề); chuẩn hóa tên bảng/cột `snake_case` ASCII duy nhất (`[a-z][a-z0-9_]{0,62}`, cột trống -> `col_{index}`, lưu `sheet_name`/`original_name`); đọc cached value cho ô công thức (`data_only=True, read_only=True, keep_links=False`), ô công thức thiếu cached value -> `NULL` + `has_formula_values=True`; suy luận kiểu dữ liệu (`INT64`, `DOUBLE`, `BOOLEAN`, `DATE`, `TIMESTAMP`, `VARCHAR`) bảo toàn mã `"00123"`, số nguyên lớn và số định dạng VN nhất quán 100%; xuất Parquet bytes bằng `pyarrow` và trích `sample_rows` + mô tả cột theo rule.
 
-- [ ] **T2.2 — MongoDB model, index & repository cho Table Catalog**
+- [x] **T2.2 — MongoDB model, index & repository cho Table Catalog**
   - **File dự kiến sửa:** `backend/app/documents/models.py`, `backend/app/documents/indexes.py`, `backend/app/documents/repository.py`
   - **Phụ thuộc:** T2.1.
   - **Nội dung:** Thêm `DocumentTableCatalogRecord` & `TableColumnSchema` (collection `document_table_catalogs`); tạo index unique `(version_id, table_name)` và index `(tenant_id, document_id, version_id)` trong `initialize_document_indexes()`; thêm phương thức repository `replace_version_tables`, `list_tables_for_versions`, `delete_tables_for_version`.
