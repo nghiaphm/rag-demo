@@ -139,8 +139,18 @@ class AgenticRunner:
                     state.deadline,
                 )
                 if not batch.ok:
-                    error = next(r.envelope["error"] for r in batch.results if not r.envelope["ok"])
-                    raise error_cls(error["code"])
+                    non_recoverable = [
+                        r.envelope["error"]
+                        for call, r in zip(calls, batch.results, strict=True)
+                        if not r.envelope["ok"]
+                        and not (
+                            call.name == "run_sql"
+                            and r.envelope.get("error", {}).get("code")
+                            in {"TOOL_INVALID_ARGUMENTS", "TOOL_TIMEOUT"}
+                        )
+                    ]
+                    if non_recoverable:
+                        raise error_cls(non_recoverable[0]["code"])
 
                 for call, result in zip(calls, batch.results, strict=True):
                     payload_json = serialize_result(result.envelope)

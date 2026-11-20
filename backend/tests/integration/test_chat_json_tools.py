@@ -579,7 +579,16 @@ class ToolGateSettingsTests(unittest.TestCase):
 
     def test_root_environment_template_keeps_the_gate_disabled(self):
         template = Path(__file__).parents[3] / ".env.example"
-        self.assertIn("TOOL_USE_ENABLED=false", template.read_text(encoding="utf-8"))
+        content = template.read_text(encoding="utf-8")
+        self.assertIn("TOOL_USE_ENABLED=false", content)
+        self.assertIn("EXCEL_SQL_ENABLED=false", content)
+        self.assertIn("EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=false", content)
+
+    def test_excel_sql_and_selective_embedding_gates_default_disabled(self):
+        with patch.dict(os.environ, {}, clear=True):
+            configured = Settings(**self.values())
+        self.assertFalse(configured.excel_sql_enabled)
+        self.assertFalse(configured.excel_text_only_embedding_enabled)
 
 
 if __name__ == "__main__":

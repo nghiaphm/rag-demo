@@ -137,15 +137,15 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T4.1, T2.3.
   - **Nội dung:** Thêm cờ `EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=false`; phân loại cột `is_free_text` trong `tabular.py` (loại cột số/ngày/mã ID/nhãn phân loại ngắn); khi bật cờ, `workbook_documents()` chỉ tạo text chunks cho các cột văn bản tự do; cập nhật `IngestionService._process` và `reconcile_processing` chấp nhận `chunk_count == 0` (bỏ qua embedding & Qdrant upsert, vẫn kích hoạt `INDEXED`) khi `.xlsx` đã có ≥ 1 bảng Parquet + catalog hợp lệ.
 
-- [ ] **T4.3 — Integration & Regression tests cho Giai đoạn 4**
+- [x] **T4.3 — Integration & Regression tests cho Giai đoạn 4**
   - **File dự kiến tạo:** `backend/tests/integration/test_chat_sql_routing.py`, `backend/tests/unit/test_excel_selective_embedding.py`
   - **File dự kiến sửa:** `backend/tests/integration/test_chat_json_tools.py`
   - **Phụ thuộc:** T4.2.
 
 ### Tiêu chí hoàn thành (Definition of Done — Giai đoạn 4)
-- [ ] Câu hỏi tính toán/lọc trên Excel đi qua `run_sql` trên cả `/chat` và `/chat/stream`, trả số liệu chính xác kèm citation nguồn; câu hỏi chính sách đi qua `rag_search`; câu hỏi kết hợp gọi phối hợp cả hai.
-- [ ] File Excel thuần số/bảng biểu (0 cột văn bản tự do) vẫn đạt trạng thái `INDEXED` với `chunk_count=0`, không gọi Gemini embedding và không báo lỗi `empty_chunks`.
-- [ ] Toàn bộ `tests/architecture` (9/9), `tests/unit`, `tests/integration` và Frontend `npm.cmd run test:contract` PASS 100%.
+- [x] Câu hỏi tính toán/lọc trên Excel đi qua `run_sql` trên cả `/chat` và `/chat/stream`, trả số liệu chính xác kèm citation nguồn; câu hỏi chính sách đi qua `rag_search`; câu hỏi kết hợp gọi phối hợp cả hai.
+- [x] File Excel thuần số/bảng biểu (0 cột văn bản tự do) vẫn đạt trạng thái `INDEXED` với `chunk_count=0`, không gọi Gemini embedding và không báo lỗi `empty_chunks`.
+- [x] Toàn bộ `tests/architecture` (9/9), `tests/unit`, `tests/integration` và Frontend `npm.cmd run test:contract` PASS 100%.
 
 ### Rủi ro & giảm thiểu (Giai đoạn 4)
 - **Catalog lớn làm tràn `rag_system_max_tokens` (1024):** Cắt gọn catalog theo `ContextBudget` (ưu tiên document trong `SessionScope` hoặc tên khớp câu hỏi; tự rút bớt dòng mẫu nếu sát ngưỡng).

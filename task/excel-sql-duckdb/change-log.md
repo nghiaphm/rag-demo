@@ -114,15 +114,29 @@ Tài liệu này ghi nhận toàn bộ lịch sử thay đổi, quyết định 
 
 ---
 
-## Giai đoạn 4 — Tích hợp Chat Flow (`run_sql` + `search_text`) & Tối ưu Embedding
-> **Trạng thái**: Chưa bắt đầu  
-> **Phạm vi**: `ChatOrchestrator (JSON & SSE)` · `Catalog Prompt Budgeting` · `Free-Text Selective Embedding` · `Zero-Chunk Support`
+## Giai đoạn 4 — Tích hợp Chat Flow (`run_sql` + `rag_search`) & Tối ưu Embedding
+> **Trạng thái**: Hoàn thành  
+> **Phạm vi**: `ChatOrchestrator (JSON & SSE)` · `Catalog Prompt Budgeting` · `Sensitive Column Masking` · `Free-Text Selective Embedding` · `Zero-Chunk Support`
 
 ### Thay đổi đã thực hiện
-- *(Sẽ cập nhật sau khi triển khai T4.1 – T4.3)*
+- **T4.1 (`12f4d5b`)**:
+  - Thêm cờ `EXCEL_SQL_ENABLED=false`, `EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=false` và `EXCEL_SENSITIVE_COLUMN_PATTERNS` vào `backend/app/shared/config.py` và `.env.example`, kèm `@model_validator` kiểm tra phụ thuộc giữa các cờ lúc khởi động (`EXCEL_SQL_ENABLED=true` bắt buộc `AGENTIC_MODE_ENABLED=true`, `STORAGE_BACKEND=s3`, `EXCEL_PARQUET_INGESTION_ENABLED=true`; `EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=true` bắt buộc `EXCEL_PARQUET_INGESTION_ENABLED=true`).
+  - Thêm `is_sensitive_column`, `format_catalog_summary_for_prompt`, `create_excel_sql_service` và gắn nguồn citation (`file_name`, `sheet_name`, `document_id`, `version_id`, `source="sql:<view> | <sql>"`) trong `create_run_sql_handler` tại `backend/app/documents/excel/sql_service.py`.
+  - Thêm `EXCEL_SQL_AGENT_GUIDANCE` tiếng Việt trong `backend/app/chat/prompts.py`.
+  - Cập nhật `backend/app/chat/agent_tools.py`, `backend/app/chat/orchestrator.py`, `backend/app/chat/agent.py` và `backend/app/api/routes/chat.py`: chỉ đăng ký `run_sql` và chèn tóm tắt Table Catalog (đã che giá trị mẫu cột nhạy cảm và cắt gọn trong `RAG_SYSTEM_MAX_TOKENS`) khi phiên có ≥ 1 bảng được phép; hỗ trợ `AGENTIC` trên cả `generate_json` (`/chat`) và `stream_final` (`/chat/stream`) đảm bảo parity 100% giữa JSON và SSE.
+- **T4.2 (`0a86caf`)**:
+  - Thêm các hằng số ngưỡng có tên và hàm `classify_free_text_column`, `is_sensitive_column_name`, `extract_free_text_row_entries` trong `backend/app/documents/excel/tabular.py`; lưu `is_free_text: bool = False` vào `NormalizedColumnSchema` và `TableColumnSchema` (`backend/app/documents/models.py`).
+  - Cập nhật `backend/app/rag/loaders/excel.py`: khi `EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=true`, chỉ tạo `Document` cho các dòng có ít nhất một cột `is_free_text=True` khác rỗng (kèm sheet, row_index và cột định danh dòng không nhạy cảm nếu có).
+  - Cập nhật `backend/app/documents/ingestion.py`, `backend/app/documents/service.py` và `backend/app/documents/repository.py`: chấp nhận `chunk_count == 0` (không gọi `embed_chunks`, không upsert Qdrant, vẫn kích hoạt `INDEXED` và hỗ trợ `reconcile_processing`) khi và chỉ khi file là `.xlsx`, bật cả `EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=true` và `EXCEL_PARQUET_INGESTION_ENABLED=true`, và version có ≥ 1 bảng Parquet + catalog hợp lệ; dọn sạch vector Qdrant cũ khi retry/reindex.
+- **T4.3**:
+  - Thêm unit tests `backend/tests/unit/test_excel_selective_embedding.py` (6/6 PASS) và integration tests `backend/tests/integration/test_chat_sql_routing.py` (7/7 PASS); cập nhật `backend/tests/integration/test_chat_json_tools.py`.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có)*
+- **Thêm mới:** `backend/tests/unit/test_excel_selective_embedding.py`, `backend/tests/integration/test_chat_sql_routing.py`.
+- **Chỉnh sửa:** `.env.example`, `backend/app/shared/config.py`, `backend/app/documents/excel/sql_service.py`, `backend/app/documents/excel/tabular.py`, `backend/app/documents/models.py`, `backend/app/documents/repository.py`, `backend/app/documents/ingestion.py`, `backend/app/documents/service.py`, `backend/app/rag/loaders/excel.py`, `backend/app/chat/prompts.py`, `backend/app/chat/agent_tools.py`, `backend/app/chat/agent.py`, `backend/app/chat/orchestrator.py`, `backend/app/api/routes/chat.py`, `backend/tests/integration/test_chat_json_tools.py`, `task/excel-sql-duckdb/Task.md`, `task/excel-sql-duckdb/change-log.md`.
 
 ### Kết quả kiểm thử
-- *(Chưa chạy)*
+- `python -m unittest discover -s tests/architecture -v`: **9/9 PASS**
+- `python -m unittest discover -s tests/unit -v`: **331/331 PASS** (bao gồm `test_excel_selective_embedding.py` 6/6 PASS)
+- `python -m unittest discover -s tests/integration -v`: **179/179 PASS** (bao gồm `test_chat_sql_routing.py` 7/7 PASS, `test_chat_json_tools.py` 28/28 PASS, `test_chat_stream_tools.py` 29/29 PASS)
+- `npm.cmd run test:contract` (Frontend): **PASS** (`58 REST/SSE/health schemas`)
