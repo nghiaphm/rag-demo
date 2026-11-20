@@ -132,7 +132,7 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T3.4.
   - **Nội dung:** Thêm cờ `EXCEL_SQL_ENABLED=false`; truyền `current_user`, `tenant_id`, `sql_service` từ `api/routes/chat.py` (cả `/chat` và `/chat/stream`) vào `ChatOrchestrator`; đăng ký `run_sql` cạnh `rag_search` và document metadata tools; chèn bản tóm tắt catalog (tôn trọng `ContextBudget`) vào prompt khi phiên có bảng Excel hợp lệ; gắn nguồn tài liệu Excel vào `sources` để hiển thị citation đồng nhất trên JSON & SSE.
 
-- [ ] **T4.2 — Tối ưu Embedding Excel: chỉ embed cột văn bản tự do & hỗ trợ 0 chunk**
+- [x] **T4.2 — Tối ưu Embedding Excel: chỉ embed cột văn bản tự do & hỗ trợ 0 chunk**
   - **File dự kiến sửa:** `backend/app/documents/excel/tabular.py`, `backend/app/rag/loaders/excel.py`, `backend/app/documents/ingestion.py`, `backend/app/shared/config.py`
   - **Phụ thuộc:** T4.1, T2.3.
   - **Nội dung:** Thêm cờ `EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=false`; phân loại cột `is_free_text` trong `tabular.py` (loại cột số/ngày/mã ID/nhãn phân loại ngắn); khi bật cờ, `workbook_documents()` chỉ tạo text chunks cho các cột văn bản tự do; cập nhật `IngestionService._process` và `reconcile_processing` chấp nhận `chunk_count == 0` (bỏ qua embedding & Qdrant upsert, vẫn kích hoạt `INDEXED`) khi `.xlsx` đã có ≥ 1 bảng Parquet + catalog hợp lệ.

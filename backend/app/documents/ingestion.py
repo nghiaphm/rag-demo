@@ -75,6 +75,7 @@ class IngestionService:
         storage_resolver: Callable[[str], FileStorage] | None = None,
         parquet_ingestion_enabled: bool | None = None,
         catalog_sample_rows: int | None = None,
+        text_only_embedding_enabled: bool | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -87,11 +88,46 @@ class IngestionService:
         self.storage_resolver = storage_resolver
         self.parquet_ingestion_enabled = parquet_ingestion_enabled
         self.catalog_sample_rows = catalog_sample_rows
+        self.text_only_embedding_enabled = text_only_embedding_enabled
 
     def _is_parquet_ingestion_enabled(self) -> bool:
         if self.parquet_ingestion_enabled is not None:
             return bool(self.parquet_ingestion_enabled)
         return bool(getattr(settings, "excel_parquet_ingestion_enabled", False))
+
+    def _is_text_only_embedding_enabled(self) -> bool:
+        if self.text_only_embedding_enabled is not None:
+            return bool(self.text_only_embedding_enabled)
+        return bool(getattr(settings, "excel_text_only_embedding_enabled", False))
+
+    def _version_has_valid_parquet_and_catalog(
+        self,
+        version: DocumentVersionRecord,
+    ) -> bool:
+        if Path(version.file_name).suffix.lower() != ".xlsx":
+            return False
+        list_tables_fn = getattr(self.repository, "list_tables_for_versions", None)
+        if not callable(list_tables_fn):
+            return False
+        try:
+            persisted = list_tables_fn([version.version_id])
+        except Exception:
+            return False
+        if not persisted:
+            return False
+        version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
+        try:
+            return all(version_storage.exists(item.parquet_key) for item in persisted)
+        except Exception:
+            return False
+
+    def _can_accept_zero_chunks(self, version: DocumentVersionRecord) -> bool:
+        return (
+            Path(version.file_name).suffix.lower() == ".xlsx"
+            and self._is_text_only_embedding_enabled()
+            and self._is_parquet_ingestion_enabled()
+            and self._version_has_valid_parquet_and_catalog(version)
+        )
 
     def _get_catalog_sample_rows(self) -> int:
         if self.catalog_sample_rows is not None:
@@ -302,12 +338,23 @@ class IngestionService:
             raise IngestionError("metadata_read_failed") from exc
         return self._process(version, job)
 
-    def _materialize_and_split(self, version: DocumentVersionRecord) -> list[Document]:
+    def _materialize_and_split(
+        self,
+        version: DocumentVersionRecord,
+        *,
+        allow_empty_chunks: bool = False,
+    ) -> list[Document]:
         if version.storage_key is None:
             raise IngestionError("missing_storage_key")
         suffix = Path(version.file_name).suffix.lower()
         version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
+        previous_flag = getattr(settings, "excel_text_only_embedding_enabled", False)
+        override_flag = self.text_only_embedding_enabled is not None
         try:
+            if override_flag:
+                settings.excel_text_only_embedding_enabled = bool(
+                    self.text_only_embedding_enabled
+                )
             chunks = parse_and_split(
                 lambda: version_storage.open(version.storage_key),
                 suffix=suffix,
@@ -320,7 +367,10 @@ class IngestionService:
             raise
         except Exception as exc:
             raise IngestionError("parse_failed") from exc
-        if not chunks:
+        finally:
+            if override_flag:
+                settings.excel_text_only_embedding_enabled = previous_flag
+        if not chunks and not allow_empty_chunks:
             raise IngestionError("empty_chunks")
         return chunks
 
@@ -428,6 +478,7 @@ class IngestionService:
                                 nullable=col.nullable,
                                 description=col.description,
                                 has_formula_values=col.has_formula_values,
+                                is_free_text=col.is_free_text,
                             )
                             for col in tbl.columns
                         ],
@@ -478,34 +529,52 @@ class IngestionService:
                 and Path(version.file_name).suffix.lower() == ".xlsx"
             ):
                 self._ingest_excel_parquet_and_catalog(version)
-            chunks = self._materialize_and_split(version)
-            try:
-                vectors = embed_chunks(chunks, self.embeddings)
-            except Exception as exc:
-                raise IngestionError("embedding_failed") from exc
-            if len(vectors) != len(chunks) or not vectors:
-                raise IngestionError("embedding_count_mismatch")
-
-            self.repository.set_chunk_plan(
-                version.version_id,
-                chunk_count=len(chunks),
-                embedding_model=self.embedding_model,
-                vector_collection=self.vector_index.collection_name,
+            allow_zero_chunks = self._can_accept_zero_chunks(version)
+            chunks = self._materialize_and_split(
+                version,
+                allow_empty_chunks=allow_zero_chunks,
             )
-            # Version đang xử lý chưa active; cleanup này làm retry idempotent.
             version_filter = VectorFilter(version_id=version.version_id)
-            self.vector_index.delete(version_filter)
-            records = build_vector_records(
-                document_id=version.document_id,
-                version_id=version.version_id,
-                file_name=version.file_name,
-                chunks=chunks,
-                vectors=vectors,
-            )
-            self.vector_index.upsert(records)
-            actual_count = self.vector_index.count(version_filter)
-            if actual_count != len(chunks):
-                raise IngestionError("vector_verification_failed")
+            if len(chunks) == 0:
+                if not allow_zero_chunks:
+                    raise IngestionError("empty_chunks")
+                self.repository.set_chunk_plan(
+                    version.version_id,
+                    chunk_count=0,
+                    embedding_model=self.embedding_model,
+                    vector_collection=self.vector_index.collection_name,
+                )
+                self.vector_index.delete(version_filter)
+                actual_count = self.vector_index.count(version_filter)
+                if actual_count != 0:
+                    raise IngestionError("vector_verification_failed")
+            else:
+                try:
+                    vectors = embed_chunks(chunks, self.embeddings)
+                except Exception as exc:
+                    raise IngestionError("embedding_failed") from exc
+                if len(vectors) != len(chunks) or not vectors:
+                    raise IngestionError("embedding_count_mismatch")
+
+                self.repository.set_chunk_plan(
+                    version.version_id,
+                    chunk_count=len(chunks),
+                    embedding_model=self.embedding_model,
+                    vector_collection=self.vector_index.collection_name,
+                )
+                # Version đang xử lý chưa active; cleanup này làm retry idempotent.
+                self.vector_index.delete(version_filter)
+                records = build_vector_records(
+                    document_id=version.document_id,
+                    version_id=version.version_id,
+                    file_name=version.file_name,
+                    chunks=chunks,
+                    vectors=vectors,
+                )
+                self.vector_index.upsert(records)
+                actual_count = self.vector_index.count(version_filter)
+                if actual_count != len(chunks):
+                    raise IngestionError("vector_verification_failed")
         except IngestionError as exc:
             self._fail_before_activation(version, job, exc.code)
             raise
@@ -587,7 +656,9 @@ class IngestionService:
                 actual_count = self.vector_index.count(
                     VectorFilter(version_id=version.version_id)
                 )
-                if actual_count == version.chunk_count and actual_count > 0:
+                if actual_count == version.chunk_count and (
+                    actual_count > 0 or self._can_accept_zero_chunks(version)
+                ):
                     self.repository.complete_and_activate(version.version_id, job.job_id)
                     summary["completed"] += 1
                 elif self.repository.is_active_version(version.document_id, version.version_id):

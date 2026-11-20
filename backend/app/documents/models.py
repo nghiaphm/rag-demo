@@ -175,6 +175,7 @@ class TableColumnSchema(BaseModel):
     nullable: bool = True
     description: str = Field(default="", max_length=512)
     has_formula_values: bool = False
+    is_free_text: bool = False
 
     @property
     def data_type(self) -> TabularColumnType:

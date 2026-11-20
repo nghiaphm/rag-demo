@@ -133,7 +133,13 @@ class DocumentService:
             content = version_storage.read(active.storage_key)
         except StorageError as exc:
             raise IngestionError("raw_file_read_failed", "Không thể đọc raw file.") from exc
-        return self.update(document_id, file_name=active.file_name, content=content)
+        result = self.update(document_id, file_name=active.file_name, content=content)
+        if result.activated and active.version_id != result.version_id:
+            try:
+                self.vector_index.delete(VectorFilter(version_id=active.version_id))
+            except VectorIndexError:
+                pass
+        return result
 
     def delete(self, document_id: str) -> DeleteResult:
         # Unpublish metadata trước để retrieval về sau không được coi document là active,

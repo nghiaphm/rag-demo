@@ -12,6 +12,7 @@ Module này hoàn toàn thuần (pure logic, không I/O xuống Storage hay Mong
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
@@ -31,10 +32,21 @@ from app.documents.excel.validation import (
     WorkbookError,
     read_workbook,
 )
+from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
 
 ColumnDataType = Literal["INT64", "DOUBLE", "BOOLEAN", "DATE", "TIMESTAMP", "VARCHAR"]
+
+FREE_TEXT_MIN_AVG_CHARS: int = 30
+FREE_TEXT_MIN_WORDS_PER_CELL: int = 5
+FREE_TEXT_MIN_MULTIWORD_RATIO: float = 0.5
+ID_CODE_MIN_UNIQUE_RATIO: float = 0.8
+ID_CODE_MAX_AVG_CHARS: int = 24
+SHORT_CATEGORY_MAX_DISTINCT: int = 10
+SHORT_CATEGORY_MAX_UNIQUE_RATIO: float = 0.4
+SHORT_CATEGORY_MAX_AVG_CHARS: int = 25
+_ID_COLUMN_NAME_TOKENS = frozenset({"id", "ma", "code", "sku", "uuid", "mst", "stt"})
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
@@ -75,6 +87,7 @@ class NormalizedColumnSchema:
     nullable: bool
     description: str
     has_formula_values: bool = False
+    is_free_text: bool = False
 
     @property
     def type(self) -> ColumnDataType:
@@ -689,6 +702,12 @@ def extract_workbook_tables(
                 typed_values,
                 has_formula_values=col_has_formula,
             )
+            is_free_text = classify_free_text_column(
+                name=col_name,
+                original_name=original_name,
+                data_type=data_type,
+                values=typed_values,
+            )
             columns_meta.append(
                 NormalizedColumnSchema(
                     name=col_name,
@@ -697,6 +716,7 @@ def extract_workbook_tables(
                     nullable=nullable,
                     description=description,
                     has_formula_values=col_has_formula,
+                    is_free_text=is_free_text,
                 )
             )
             pa_type = _arrow_type_for(data_type)
@@ -738,3 +758,229 @@ def extract_workbook_tables(
         )
 
     return tables
+
+
+def is_sensitive_column_name(
+    name: str,
+    original_name: str = "",
+    patterns: Sequence[str] | None = None,
+) -> bool:
+    """Kiểm tra tên cột có khớp danh sách từ khóa nhạy cảm (`EXCEL_SENSITIVE_COLUMN_PATTERNS`) hay không."""
+    active_patterns = (
+        patterns
+        if patterns is not None
+        else getattr(settings, "excel_sensitive_column_patterns", ())
+    )
+    if isinstance(active_patterns, str):
+        active_patterns = [p.strip().lower() for p in active_patterns.split(",") if p.strip()]
+
+    norm_name = _NON_ALNUM_RE.sub("_", _strip_accents(name or "").lower()).strip("_")
+    norm_orig = _NON_ALNUM_RE.sub("_", _strip_accents(original_name or "").lower()).strip("_")
+    name_tokens = set(norm_name.split("_")) if norm_name else set()
+    orig_tokens = set(norm_orig.split("_")) if norm_orig else set()
+
+    for raw_pattern in active_patterns:
+        pat = _NON_ALNUM_RE.sub("_", _strip_accents(str(raw_pattern)).lower()).strip("_")
+        if not pat:
+            continue
+        if "_" in pat:
+            if pat in norm_name or pat in norm_orig:
+                return True
+        else:
+            if (
+                pat in name_tokens
+                or pat in orig_tokens
+                or pat in norm_name
+                or pat in norm_orig
+            ):
+                return True
+    return False
+
+
+def classify_free_text_column(
+    *,
+    name: str,
+    original_name: str,
+    data_type: ColumnDataType,
+    values: Sequence[Any],
+    sensitive_patterns: Sequence[str] | None = None,
+) -> bool:
+    """Phân loại cột Excel có phải văn bản tự do (`is_free_text`) để embed lên Qdrant hay không."""
+    if data_type != "VARCHAR":
+        return False
+    if is_sensitive_column_name(name, original_name, sensitive_patterns):
+        return False
+
+    non_empty = [
+        str(val).strip()
+        for val in values
+        if val is not None and str(val).strip()
+    ]
+    if not non_empty:
+        return False
+
+    total = len(non_empty)
+    avg_chars = sum(len(s) for s in non_empty) / total
+    distinct_count = len(set(non_empty))
+    unique_ratio = distinct_count / total
+    no_space_ratio = sum(1 for s in non_empty if " " not in s) / total
+    word_counts = [len(s.split()) for s in non_empty]
+    multiword_ratio = (
+        sum(1 for wc in word_counts if wc >= FREE_TEXT_MIN_WORDS_PER_CELL) / total
+    )
+
+    # Loại cột mã / ID (chuỗi ngắn không khoảng trắng hoặc tỷ lệ duy nhất cao kèm từ khóa mã/ID)
+    if no_space_ratio >= ID_CODE_MIN_UNIQUE_RATIO and avg_chars <= ID_CODE_MAX_AVG_CHARS:
+        return False
+    name_tokens = set(
+        _NON_ALNUM_RE.sub("_", _strip_accents(f"{name}_{original_name}").lower())
+        .strip("_")
+        .split("_")
+    )
+    if (
+        unique_ratio >= ID_CODE_MIN_UNIQUE_RATIO
+        and avg_chars <= ID_CODE_MAX_AVG_CHARS
+        and bool(name_tokens & _ID_COLUMN_NAME_TOKENS)
+    ):
+        return False
+
+    # Loại cột nhãn phân loại ngắn (ít giá trị distinct lặp lại nhiều hoặc câu rất ngắn)
+    if (
+        avg_chars < FREE_TEXT_MIN_AVG_CHARS
+        and distinct_count <= SHORT_CATEGORY_MAX_DISTINCT
+        and (
+            unique_ratio <= SHORT_CATEGORY_MAX_UNIQUE_RATIO
+            or max(word_counts) < FREE_TEXT_MIN_WORDS_PER_CELL
+        )
+    ):
+        return False
+
+    return bool(
+        avg_chars >= FREE_TEXT_MIN_AVG_CHARS
+        or multiword_ratio >= FREE_TEXT_MIN_MULTIWORD_RATIO
+    )
+
+
+def extract_free_text_row_entries(
+    content: bytes,
+    *,
+    content_type: str | None = None,
+    sensitive_patterns: Sequence[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Trích xuất các dòng chứa giá trị cột `is_free_text=True` phục vụ selective embedding."""
+    raw_sheets = read_workbook(content, content_type=content_type)
+    cached_sheets = _read_cached_native_sheets(content)
+    entries: list[dict[str, Any]] = []
+
+    for sheet in raw_sheets:
+        sheet_name: str = sheet["name"]
+        all_rows: list[tuple[int, list[str]]] = [
+            (sheet["header_row"], list(sheet["columns"])),
+            *[(idx, list(vals)) for idx, vals in sheet["rows"]],
+        ]
+        native_rows_by_index = cached_sheets.get(sheet_name, {})
+        header_pos = _detect_header_position(all_rows, native_rows_by_index)
+        if header_pos is None:
+            continue
+        _header_row_index, raw_header_cells = all_rows[header_pos]
+        data_rows = all_rows[header_pos + 1 :]
+        if not data_rows:
+            continue
+
+        max_col = 0
+        for idx, cell in enumerate(raw_header_cells, start=1):
+            if cell.strip():
+                max_col = max(max_col, idx)
+        for row_idx, row_cells in data_rows:
+            native_row = native_rows_by_index.get(row_idx, [])
+            for idx, cell in enumerate(row_cells, start=1):
+                native_val = native_row[idx - 1] if idx - 1 < len(native_row) else None
+                if cell.strip() or native_val is not None:
+                    max_col = max(max_col, idx)
+        if max_col == 0:
+            continue
+
+        used_col_names: set[str] = set()
+        col_names_and_originals: list[tuple[str, str]] = []
+        for col_idx in range(1, max_col + 1):
+            raw_header = (
+                raw_header_cells[col_idx - 1] if col_idx - 1 < len(raw_header_cells) else ""
+            )
+            col_names_and_originals.append(
+                normalize_column_name(raw_header, col_idx, used_col_names)
+            )
+
+        column_samples: list[list[_CellSample]] = [[] for _ in range(max_col)]
+        for row_idx, raw_cells in data_rows:
+            native_row = native_rows_by_index.get(row_idx, [])
+            for col_offset in range(max_col):
+                raw_text = raw_cells[col_offset] if col_offset < len(raw_cells) else ""
+                native_val = native_row[col_offset] if col_offset < len(native_row) else None
+                is_formula = raw_text.strip().startswith("=")
+                column_samples[col_offset].append(
+                    _CellSample(
+                        raw_text=raw_text,
+                        native_value=native_val,
+                        is_formula=is_formula,
+                    )
+                )
+
+        typed_columns_data: list[list[Any]] = []
+        free_text_col_indices: list[int] = []
+        id_col_index: int | None = None
+
+        for col_offset, (col_name, original_name) in enumerate(col_names_and_originals):
+            data_type, typed_values, _nullable, _col_has_formula = _infer_column_type_and_values(
+                column_samples[col_offset]
+            )
+            typed_columns_data.append(typed_values)
+            is_ft = classify_free_text_column(
+                name=col_name,
+                original_name=original_name,
+                data_type=data_type,
+                values=typed_values,
+                sensitive_patterns=sensitive_patterns,
+            )
+            if is_ft:
+                free_text_col_indices.append(col_offset)
+            elif id_col_index is None and not is_sensitive_column_name(
+                col_name, original_name, sensitive_patterns
+            ):
+                col_tokens = set(col_name.split("_"))
+                if col_tokens & _ID_COLUMN_NAME_TOKENS or col_offset == 0:
+                    id_col_index = col_offset
+
+        if not free_text_col_indices:
+            continue
+
+        for r_idx, (excel_row_idx, _raw_cells) in enumerate(data_rows):
+            free_text_fields: list[tuple[str, str]] = []
+            for ft_col_idx in free_text_col_indices:
+                val = typed_columns_data[ft_col_idx][r_idx]
+                if val is None:
+                    continue
+                text_val = str(val).strip()
+                if not text_val:
+                    continue
+                _col_name, orig_name = col_names_and_originals[ft_col_idx]
+                free_text_fields.append((orig_name, text_val))
+            if not free_text_fields:
+                continue
+
+            identifier: tuple[str, str] | None = None
+            if id_col_index is not None:
+                id_val = typed_columns_data[id_col_index][r_idx]
+                if id_val is not None and str(id_val).strip():
+                    _id_name, id_orig_name = col_names_and_originals[id_col_index]
+                    identifier = (id_orig_name, str(id_val).strip())
+
+            entries.append(
+                {
+                    "sheet_name": sheet_name,
+                    "row_index": excel_row_idx,
+                    "identifier": identifier,
+                    "free_text_fields": free_text_fields,
+                }
+            )
+
+    return entries

@@ -533,10 +533,14 @@ class MongoDocumentRepository:
                 {
                     "_id": {"$in": version_ids},
                     "status": {"$in": [DocumentStatus.PROCESSING.value, DocumentStatus.INDEXED.value]},
-                    "chunk_count": {"$gt": 0},
+                    "chunk_count": {"$gte": 0},
                 }
             ).sort("updated_at", 1)
-            return [DocumentVersionRecord.model_validate(value) for value in values]
+            return [
+                record
+                for record in (DocumentVersionRecord.model_validate(value) for value in values)
+                if record.chunk_count > 0 or record.vector_collection is not None
+            ]
         except PyMongoError as exc:
             raise RepositoryError("Không thể liệt kê version cần reconciliation") from exc
 
