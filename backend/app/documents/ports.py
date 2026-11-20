@@ -8,10 +8,11 @@ Concrete adapter nằm ở :mod:`app.infrastructure.storage`.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 import re
-from typing import BinaryIO, Literal, Protocol, runtime_checkable
+from typing import Any, BinaryIO, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 _SAFE_TENANT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -201,3 +202,58 @@ class IngestionQueue(ABC):
     async def close(self) -> None:
         """Đóng connection pool nếu adapter có giữ tài nguyên."""
         return None
+
+
+class SqlEngineError(Exception):
+    """Base exception an toàn cho thực thi SQL trên DuckDB, không lộ đường dẫn/credential."""
+
+
+class SqlConfigurationError(SqlEngineError):
+    """Raised when DuckDB/S3 read-only query executor is misconfigured."""
+
+
+class SqlQueryTimeoutError(SqlEngineError):
+    """Raised when a DuckDB SQL query exceeds duckdb_query_timeout_seconds."""
+
+
+class SqlQueryExecutionError(SqlEngineError):
+    """Raised when DuckDB rejects or fails executing a query (with safe hint for LLM)."""
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedSqlTable:
+    """Thông tin một bảng Parquet đã qua kiểm tra RBAC/scope để gắn TEMP VIEW trong DuckDB."""
+
+    view_name: str
+    parquet_key: str
+    tenant_id: str
+    document_id: str = ""
+    version_id: str = ""
+    file_name: str = ""
+    sheet_name: str = ""
+    columns: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SqlExecutionResult:
+    """Kết quả thô đã giới hạn hàng và độ dài chuỗi từ SqlQueryExecutor."""
+
+    columns: tuple[str, ...]
+    rows: tuple[tuple[Any, ...], ...]
+    truncated: bool
+
+
+@runtime_checkable
+class SqlQueryExecutor(Protocol):
+    """Port thực thi câu lệnh SELECT đã qua sql_guard trên DuckDB in-memory."""
+
+    def execute(
+        self,
+        *,
+        tables: Sequence[AuthorizedSqlTable],
+        sql: str,
+        tenant_id: str,
+        max_rows: int | None = None,
+        timeout_seconds: float | None = None,
+    ) -> SqlExecutionResult:
+        ...

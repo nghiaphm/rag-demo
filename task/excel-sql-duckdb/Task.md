@@ -98,11 +98,11 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T3.1.
   - **Nội dung:** Parse với dialect `duckdb`; ép đúng 1 statement; chỉ chấp nhận `SELECT`/`UNION`/`INTERSECT`/`EXCEPT` (+ CTE `WITH`), chặn toàn bộ DDL/DML/PRAGMA/COPY/ATTACH/CALL/LOAD/INSTALL/EXPORT/SELECT INTO; whitelist tuyệt đối bảng trong `FROM`/`JOIN` (cấm `schema.table`, cấm đường dẫn chuỗi `FROM 'x.parquet'`, cấm mọi table-valued function và CTE trùng tên che giấu bảng); blocklist bổ sung các hàm đọc file/secret (`getenv`, `current_setting`, `duckdb_*`, `pragma_*`, `read_*`, `parquet_*`); tự chèn/giới hạn `LIMIT <= max_rows` ở mức AST (bọc `SELECT * FROM (...) LIMIT n` cho `UNION`/`INTERSECT`/`EXCEPT`) và trả về SQL viết lại từ AST.
 
-- [ ] **T3.3 — Port `SqlQueryExecutor` & Adapter `DuckDBSqlExecutor`**
-  - **File dự kiến sửa:** `backend/app/documents/ports.py`
-  - **File dự kiến tạo:** `backend/app/infrastructure/duckdb_executor.py`
+- [x] **T3.3 — Port `SqlQueryExecutor` & Adapter `DuckDBSqlExecutor`**
+  - **File dự kiến sửa:** `backend/app/documents/ports.py`, `backend/Dockerfile`
+  - **File dự kiến tạo:** `backend/app/infrastructure/duckdb_executor.py`, `backend/scripts/smoke_run_sql_s3.py`
   - **Phụ thuộc:** T3.2.
-  - **Nội dung:** Mở connection `:memory:` mới cho mỗi truy vấn và đóng trong `finally`; thiết lập `memory_limit`, `threads`, tắt spill đĩa (`temp_directory=''`); với S3: nạp `httpfs`, tạo `SECRET` chỉ đọc (`SCOPE 's3://{bucket}/{tenant_id}/'`), bật `disabled_filesystems = 'LocalFileSystem'`; tạo `CREATE TEMP VIEW` chỉ cho các bảng được cấp quyền; khóa cấu hình (`SET lock_configuration = true`) trước khi chạy SQL; giới hạn timeout bằng watchdog `threading.Timer` gọi `conn.interrupt()`.
+  - **Nội dung:** Mở connection `:memory:` mới cho mỗi truy vấn và đóng trong `finally`; chỉ hoạt động khi `STORAGE_BACKEND=s3` và bắt buộc `S3_QUERY_ACCESS_KEY_ID != S3_INGEST_ACCESS_KEY_ID`; giữ đúng thứ tự: `LOAD httpfs` → tạo `SECRET` chỉ đọc (`SCOPE 's3://{bucket}/{tenant_id}/'`) → `CREATE TEMP VIEW` cho bảng được cấp quyền → `SET memory_limit/threads` → tắt spill đĩa (`temp_directory=''`, `max_temp_directory_size='0B'`) → `SET disabled_filesystems='LocalFileSystem'` → `SET autoinstall_known_extensions=false`, `autoload_known_extensions=false` → `SET lock_configuration=true` → chạy SQL với watchdog `threading.Timer` (`conn.interrupt()`), lấy `max_rows + 1` hàng để báo `truncated`, cắt chuỗi > 1000 ký tự và lọc sạch thông báo lỗi; cập nhật `Dockerfile` cài sẵn `httpfs`.
 
 - [ ] **T3.4 — Service phân quyền catalog & thực thi `run_sql`**
   - **File dự kiến tạo:** `backend/app/documents/excel/sql_service.py`
