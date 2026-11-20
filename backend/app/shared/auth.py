@@ -156,7 +156,13 @@ def create_refresh_token(
     return _encode_jwt(payload, secret)
 
 
-def decode_token(token: str, *, secret: str, expected_type: str = "access") -> UserContext:
+def decode_token(
+    token: str,
+    *,
+    secret: str,
+    expected_type: str = "access",
+    default_tenant_id: str = "default",
+) -> UserContext:
     """Validate HS256 signature, expiration, and token type."""
     try:
         parts = token.split(".")
@@ -176,7 +182,10 @@ def decode_token(token: str, *, secret: str, expected_type: str = "access") -> U
         user_id = str(payload["sub"])
         username = str(payload["username"])
         roles = tuple(str(r) for r in payload.get("roles", ()))
-        tenant_id = str(payload.get("tenant_id") or "default").strip() or "default"
+        tenant_id = (
+            str(payload.get("tenant_id") or default_tenant_id).strip()
+            or default_tenant_id
+        )
         return UserContext(
             user_id=user_id,
             username=username,

@@ -41,6 +41,7 @@ def get_current_user(
             token,
             secret=settings.jwt_secret_key.get_secret_value(),
             expected_type="access",
+            default_tenant_id=settings.default_tenant_id,
         )
     except AuthTokenError as exc:
         raise HTTPException(

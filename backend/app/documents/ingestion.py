@@ -9,6 +9,7 @@ from typing import Any, Callable
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
+from app.shared.auth import UserContext
 from app.shared.config import settings
 from app.documents.models import (
     DocumentRecord,
@@ -24,7 +25,12 @@ from app.documents.repository import (
 from app.rag.indexing import build_vector_records, embed_chunks, parse_and_split
 from app.rag.loaders.files import SUPPORTED_EXTENSIONS, load_document
 from app.rag.splitter import split_documents
-from app.documents.ports import FileStorage, StorageError, build_document_storage_key
+from app.documents.ports import (
+    FileStorage,
+    StorageError,
+    build_document_storage_key,
+    build_versioned_storage_key,
+)
 from app.rag.vector_index import (
     VectorFilter,
     VectorIndex,
@@ -61,6 +67,7 @@ class IngestionService:
         loader: Callable[[str | Path], list[Document]] = load_document,
         splitter: Callable[[list[Document]], list[Document]] = split_documents,
         embedding_model: str = settings.embedding_model,
+        storage_resolver: Callable[[str], FileStorage] | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -70,6 +77,17 @@ class IngestionService:
         self.loader = loader
         self.splitter = splitter
         self.embedding_model = embedding_model
+        self.storage_resolver = storage_resolver
+
+    def resolve_storage(self, backend_name: str | None) -> FileStorage:
+        """Trả về storage adapter khớp với storage_backend của version."""
+        target = (backend_name or "local").strip().lower()
+        current = getattr(self.storage, "backend_name", "local")
+        if target == current:
+            return self.storage
+        if self.storage_resolver is not None:
+            return self.storage_resolver(target)
+        return self.storage
 
     @staticmethod
     def _safe_file_name(file_name: str) -> str:
@@ -88,6 +106,7 @@ class IngestionService:
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
+        tenant_id: str | None = None,
         owner_id: str | None = None,
         allowed_roles: list[str] | None = None,
     ) -> tuple[DocumentVersionRecord, IngestionJobRecord]:
@@ -95,10 +114,19 @@ class IngestionService:
         if not content:
             raise IngestionError("empty_file", "File rỗng.")
 
+        default_user_ctx = UserContext(
+            user_id=owner_id or "anonymous",
+            username=owner_id or "anonymous",
+            tenant_id=(tenant_id or settings.default_tenant_id).strip()
+            or settings.default_tenant_id,
+            is_authenticated=owner_id is not None,
+        )
         if document_id is None:
+            effective_tenant_id = default_user_ctx.tenant_id
             document = DocumentRecord(
                 file_name=safe_name,
                 source_key=source_key,
+                tenant_id=effective_tenant_id,
                 owner_id=owner_id,
                 allowed_roles=list(allowed_roles or []),
             )
@@ -112,18 +140,34 @@ class IngestionService:
             document = self.repository.get_document(document_id)
             if document.status == DocumentStatus.DELETED:
                 raise IngestionError("document_deleted", "Document đã bị xóa/unpublish.")
+            effective_tenant_id = (
+                getattr(document, "tenant_id", None) or default_user_ctx.tenant_id
+            )
             version_number = self.repository.next_version_number(document_id)
 
+        active_backend = (
+            "s3" if getattr(self.storage, "backend_name", "local") == "s3" else "local"
+        )
         version = DocumentVersionRecord(
             document_id=document.document_id,
             version=version_number,
             file_name=safe_name,
             checksum_sha256="0" * 64,
             size_bytes=0,
+            storage_backend=active_backend,
         )
-        storage_key = build_document_storage_key(document.document_id, version.version_id)
+        storage_key = build_versioned_storage_key(
+            effective_tenant_id,
+            document.document_id,
+            version_number,
+            safe_name,
+        )
         try:
-            stored = self.storage.save(storage_key, content)
+            put_fn = getattr(self.storage, "put", None)
+            if callable(put_fn):
+                stored = put_fn(storage_key, content)
+            else:
+                stored = self.storage.save(storage_key, content)
         except StorageError as exc:
             raise IngestionError("storage_failed") from exc
 
@@ -131,6 +175,7 @@ class IngestionService:
             "checksum_sha256": stored.checksum_sha256,
             "size_bytes": stored.size_bytes,
             "storage_key": stored.storage_key,
+            "storage_backend": active_backend,
         })
         job = IngestionJobRecord(document_id=document.document_id, version_id=version.version_id)
         try:
@@ -156,6 +201,7 @@ class IngestionService:
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
+        tenant_id: str | None = None,
         owner_id: str | None = None,
         allowed_roles: list[str] | None = None,
     ) -> IngestionResult:
@@ -164,6 +210,7 @@ class IngestionService:
             content=content,
             document_id=document_id,
             source_key=source_key,
+            tenant_id=tenant_id,
             owner_id=owner_id,
             allowed_roles=allowed_roles,
         )
@@ -176,6 +223,7 @@ class IngestionService:
         content: bytes,
         document_id: str | None = None,
         source_key: str | None = None,
+        tenant_id: str | None = None,
         owner_id: str | None = None,
         allowed_roles: list[str] | None = None,
     ) -> IngestionResult:
@@ -185,6 +233,7 @@ class IngestionService:
             content=content,
             document_id=document_id,
             source_key=source_key,
+            tenant_id=tenant_id,
             owner_id=owner_id,
             allowed_roles=allowed_roles,
         )
@@ -228,9 +277,10 @@ class IngestionService:
         if version.storage_key is None:
             raise IngestionError("missing_storage_key")
         suffix = Path(version.file_name).suffix.lower()
+        version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
         try:
             chunks = parse_and_split(
-                lambda: self.storage.open(version.storage_key),
+                lambda: version_storage.open(version.storage_key),
                 suffix=suffix,
                 loader=self.loader,
                 splitter=self.splitter,
@@ -386,11 +436,15 @@ def create_ingestion_service(
     embeddings: Embeddings | None = None,
     storage: FileStorage | None = None,
     vector_index: VectorIndex | None = None,
+    storage_resolver: Callable[[str], FileStorage] | None = None,
 ) -> IngestionService:
     """Composition root nhỏ cho API/script; tests có thể inject toàn bộ adapters."""
+    resolved_resolver = storage_resolver
     if storage is None:
         from app.infrastructure.storage import create_file_storage
         resolved_storage: FileStorage = create_file_storage(settings)
+        if resolved_resolver is None:
+            resolved_resolver = lambda backend: create_file_storage(settings, backend=backend)
     else:
         resolved_storage = storage
     if vector_index is None:
@@ -404,4 +458,5 @@ def create_ingestion_service(
         vector_index=resolved_index,
         embeddings=embeddings,
         embedding_model=settings.embedding_model,
+        storage_resolver=resolved_resolver,
     )

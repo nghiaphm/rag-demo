@@ -30,10 +30,10 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T1.1.
   - **Nội dung:** Bổ sung `delete_prefix` & adapter `StorageBackend` cho `LocalFileStorage` (giữ chặn path traversal); triển khai `S3FileStorage` dùng `boto3` (chặn ghi đè bản gốc bằng conditional put `IfNoneMatch="*"` hoặc fallback `head_object` theo `s3_use_if_none_match`, batch delete 1000 objects cho `delete_prefix`, tính SHA-256 + `size_bytes`, thông báo lỗi an toàn không lộ credential); cập nhật `create_file_storage(config)` chọn adapter theo `STORAGE_BACKEND`.
 
-- [ ] **T1.3 — Chuyển bước `_prepare_upload` sang key mới & kiểm chứng sync/async**
-  - **File dự kiến sửa:** `backend/app/documents/ingestion.py`, `backend/app/api/routes/documents.py`, `backend/app/workers/ingestion_worker.py`
+- [x] **T1.3 — Chuyển bước `_prepare_upload` sang key mới & kiểm chứng sync/async**
+  - **File dự kiến sửa:** `backend/app/documents/ingestion.py`, `backend/app/documents/service.py`, `backend/app/documents/attachments.py`, `backend/app/api/routes/documents.py`, `backend/app/api/dependencies/auth.py`, `backend/app/shared/auth.py`
   - **Phụ thuộc:** T1.2.
-  - **Nội dung:** `IngestionService._prepare_upload` ghi object với key `{tenant}/{doc_id}/v{n}/original{ext}` (Excel là `original.xlsx`), rollback xóa object nếu ghi MongoDB lỗi; giữ `attachments.py::preview_version` và `DocumentService.reindex` đọc theo `version.storage_key` lưu trong MongoDB để đọc được cả file cũ và mới; đảm bảo ARQ worker dùng chung factory khi `ASYNC_INGESTION_ENABLED=true`.
+  - **Nội dung:** `IngestionService._prepare_upload` ghi object với key `{tenant}/{doc_id}/v{n}/original{ext}` (Excel là `original.xlsx`), lưu `storage_backend` (`"local" | "s3"`) trên `DocumentVersionRecord`, truyền `tenant_id` qua `UserContext.tenant_id`, rollback xóa object nếu ghi MongoDB lỗi; khi đọc file ở `preview_version`, `DocumentService.reindex` và `_materialize_and_split` tự chọn đúng backend theo `version.storage_backend` (mặc định `"local"` cho bản ghi cũ).
 
 - [ ] **T1.4 — Unit & Integration tests cho Giai đoạn 1**
   - **File dự kiến tạo:** `backend/tests/unit/test_storage_backends.py`, `backend/tests/integration/test_s3_upload_flow.py`

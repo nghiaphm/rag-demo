@@ -180,9 +180,17 @@ async def _read_upload(file: UploadFile) -> tuple[str, bytes]:
 @router.get("/{document_id}/versions/{version_id}/preview", response_model=DocumentPreviewResponse)
 async def document_preview(document_id: UUID, version_id: UUID, request: Request):
     service = await _service(request)
+    resolver = getattr(service, "resolve_storage", None)
+    preview_kwargs = {"storage_resolver": resolver} if callable(resolver) else {}
     try:
-        return await run_in_threadpool(preview_version, service.repository, service.storage,
-                                       str(document_id), str(version_id))
+        return await run_in_threadpool(
+            preview_version,
+            service.repository,
+            service.storage,
+            str(document_id),
+            str(version_id),
+            **preview_kwargs,
+        )
     except AttachmentUnavailableError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
     except WorkbookError as exc:
@@ -208,7 +216,11 @@ async def upload_document(
     """Tạo document identity mới và index version đầu tiên (hoặc enqueue nếu async)."""
     file_name, content = await _read_upload(file)
     service = await _service(request)
-    kwargs = {"owner_id": current_user.user_id} if current_user is not None else {}
+    kwargs = (
+        {"owner_id": current_user.user_id, "tenant_id": current_user.tenant_id}
+        if current_user is not None
+        else {}
+    )
     if settings.async_ingestion_enabled:
         try:
             result = await run_in_threadpool(
