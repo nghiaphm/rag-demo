@@ -69,14 +69,14 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T2.2, T1.3.
   - **Nội dung:** Thêm cờ `EXCEL_PARQUET_INGESTION_ENABLED=false` và `EXCEL_CATALOG_SAMPLE_ROWS=3`; với file `.xlsx` khi cờ bật: gọi `storage.delete_prefix("{tenant}/{doc_id}/v{n}/tables/")` và xóa catalog cũ của `version_id` để đảm bảo **idempotent khi retry**; xuất Parquet lên storage → lưu catalog vào MongoDB → verify số Parquet tồn tại == số bảng trong catalog trước khi `complete_and_activate()`; cleanup cả prefix `tables/` và catalog của `version_id` trong `_fail_before_activation` nếu job lỗi trước khi activate (không chạm version đang active); hỗ trợ `reindex` sinh lại Parquet + catalog cho file cũ khi cờ bật.
 
-- [ ] **T2.4 — Unit & Integration tests cho Giai đoạn 2**
+- [x] **T2.4 — Unit & Integration tests cho Giai đoạn 2**
   - **File dự kiến tạo:** `backend/tests/unit/test_excel_tabular.py`, `backend/tests/integration/test_excel_parquet_ingestion.py`
   - **Phụ thuộc:** T2.3.
 
 ### Tiêu chí hoàn thành (Definition of Done — Giai đoạn 2)
-- [ ] Upload `.xlsx` (gồm nhiều sheet, cột tiếng Việt, cột trùng/trống, kiểu hỗn hợp, `data/hr_employees_mock.xlsx`) tạo đúng file Parquet trên `{tenant}/{doc_id}/v{n}/tables/*.parquet` và catalog khớp schema/row count trong MongoDB.
-- [ ] Retry job không tạo rác Parquet hay trùng catalog; upload v2 lỗi vẫn giữ nguyên v1 đang active.
-- [ ] Đọc lại Parquet bằng `pyarrow.parquet.read_table` khớp 100% số dòng, tên cột và giá trị.
+- [x] Upload `.xlsx` (gồm nhiều sheet, cột tiếng Việt, cột trùng/trống, kiểu hỗn hợp, `data/hr_employees_mock.xlsx`) tạo đúng file Parquet trên `{tenant}/{doc_id}/v{n}/tables/*.parquet` và catalog khớp schema/row count trong MongoDB.
+- [x] Retry job không tạo rác Parquet hay trùng catalog; upload v2 lỗi vẫn giữ nguyên v1 đang active.
+- [x] Đọc lại Parquet bằng `pyarrow.parquet.read_table` khớp 100% số dòng, tên cột và giá trị.
 
 ### Rủi ro & giảm thiểu (Giai đoạn 2)
 - **Ô công thức Excel (`data_only=False`):** Chuỗi công thức `=...` có thể làm cột bị suy luận thành `VARCHAR` — ghi nhận cờ `has_formula_values` trong catalog (hoặc đọc cached value an toàn theo quyết định thiết kế).

@@ -46,17 +46,38 @@ Tài liệu này ghi nhận toàn bộ lịch sử thay đổi, quyết định 
 ---
 
 ## Giai đoạn 2 — Ingest Excel thành Parquet trên S3 + Table Catalog MongoDB
-> **Trạng thái**: Chưa bắt đầu  
-> **Phạm vi**: `Sheet Normalization` · `PyArrow Parquet` · `S3 tables/*.parquet` · `MongoDB Table Catalog`
+> **Trạng thái**: Hoàn thành  
+> **Phạm vi**: `Sheet Normalization` · `PyArrow Parquet` · `S3 tables/*.parquet` · `MongoDB Table Catalog` · `EXCEL_PARQUET_INGESTION_ENABLED`
 
 ### Thay đổi đã thực hiện
-- *(Sẽ cập nhật sau khi triển khai T2.1 – T2.4)*
+- **T2.1 (`90a0d85`)**:
+  - Tạo `backend/app/documents/excel/tabular.py` (`extract_workbook_tables`, `normalize_table_name`, `normalize_column_name`):
+    - Tái sử dụng `read_workbook()` để giữ nguyên 100% giới hạn an toàn (10 MiB, 64 MiB expanded, 50 sheet, 20.000 dòng, 200 cột, 250.000 ô, 32.767 ký tự/ô, chặn macro/zip-bomb).
+    - Đọc cached value cho ô công thức (`data_only=True, read_only=True, keep_links=False`); ô công thức không có cached value hoặc lỗi công thức được gán `NULL` và bật cờ `has_formula_values=True` trên cả cột và bảng.
+    - Dò dòng header tự động (bỏ dòng trống/tiêu đề đơn lẻ, chọn dòng đầu tiên có ≥ 2 ô text khác nhau; bỏ qua sheet không có dữ liệu).
+    - Chuẩn hóa tên bảng và tên cột về `snake_case` ASCII duy nhất khớp `[a-z][a-z0-9_]{0,62}` (cột trống -> `col_{index}`), lưu `sheet_name` và `original_name`.
+    - Suy luận kiểu dữ liệu theo cột (`INT64`, `DOUBLE`, `BOOLEAN`, `DATE`, `TIMESTAMP`, `VARCHAR`), bảo toàn mã bắt đầu bằng số 0 (`"00123"`), số nguyên lớn và định dạng số kiểu VN (`"1.250.000,5"`) khi nhất quán 100%.
+    - Sinh mô tả cột theo rule, cắt `sample_rows` theo giới hạn (mỗi ô ≤ 100 ký tự) và xuất Parquet bytes bằng `pyarrow`.
+  - Thêm `pyarrow>=17.0.0` vào `backend/requirements.txt`.
+- **T2.2 (`a60e2cc`)**:
+  - Thêm `TableColumnSchema` và `DocumentTableCatalogRecord` (collection `document_table_catalogs`) vào `backend/app/documents/models.py`.
+  - Thêm index unique `(version_id, table_name)` và index `(tenant_id, document_id, version_id)` vào `backend/app/documents/indexes.py`.
+  - Thêm `replace_version_tables`, `list_tables_for_versions`, `delete_tables_for_version` vào `backend/app/documents/repository.py`.
+- **T2.3 (`0f6f002`)**:
+  - Thêm cờ `EXCEL_PARQUET_INGESTION_ENABLED=false` và `EXCEL_CATALOG_SAMPLE_ROWS=3` vào `backend/app/shared/config.py` và `.env.example`.
+  - Thêm `build_version_tables_prefix` và `build_version_table_parquet_key` vào `backend/app/documents/ports.py`.
+  - Tích hợp `_ingest_excel_parquet_and_catalog` và `_cleanup_version_parquet_and_catalog` vào `IngestionService._process` & `_fail_before_activation` (đảm bảo idempotent khi retry, thứ tự `sinh bảng -> ghi Parquet -> lưu catalog -> verify số Parquet == số bảng catalog`, cleanup an toàn khi lỗi mà không chạm version đang active, và hỗ trợ `reindex`).
+- **T2.4**:
+  - Thêm unit tests `backend/tests/unit/test_excel_tabular.py` và integration tests `backend/tests/integration/test_excel_parquet_ingestion.py`.
 
 ### Files thêm mới / chỉnh sửa
-- *(Chưa có)*
+- **Thêm mới:** `backend/app/documents/excel/tabular.py`, `backend/tests/unit/test_excel_tabular.py`, `backend/tests/integration/test_excel_parquet_ingestion.py`.
+- **Chỉnh sửa:** `.env.example`, `backend/requirements.txt`, `backend/app/shared/config.py`, `backend/app/documents/models.py`, `backend/app/documents/indexes.py`, `backend/app/documents/repository.py`, `backend/app/documents/ports.py`, `backend/app/documents/ingestion.py`.
 
 ### Kết quả kiểm thử
-- *(Chưa chạy)*
+- `python -m unittest tests/architecture/test_dependency_rules.py -v`: **9/9 PASS**
+- `python -m unittest tests/unit/test_excel_tabular.py -v`: **6/6 PASS**
+- `python -m unittest tests/integration/test_excel_parquet_ingestion.py -v`: **6/6 PASS**
 
 ---
 
