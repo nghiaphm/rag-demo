@@ -93,10 +93,10 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T2.2.
   - **Nội dung:** Thêm `"run_sql"` vào `ToolName` & `ALLOWED_TOOL_NAMES`, khai báo `RunSqlArguments(sql: str)` với độ dài tối đa 5000 ký tự (tuyệt đối không có `user_id`/`tenant_id`/`s3_path`/`document_id`); thêm cấu hình `S3_QUERY_ACCESS_KEY_ID`, `S3_QUERY_SECRET_ACCESS_KEY`, `DUCKDB_MEMORY_LIMIT=512MB`, `DUCKDB_THREADS=2`, `DUCKDB_QUERY_TIMEOUT_SECONDS=15`, `DUCKDB_MAX_ROWS=200`.
 
-- [ ] **T3.2 — Bộ kiểm duyệt SQL AST (`sql_guard.py`) dùng `sqlglot`**
+- [x] **T3.2 — Bộ kiểm duyệt SQL AST (`sql_guard.py`) dùng `sqlglot`**
   - **File dự kiến tạo:** `backend/app/documents/excel/sql_guard.py`
   - **Phụ thuộc:** T3.1.
-  - **Nội dung:** Parse với dialect `duckdb`; ép đúng 1 statement; chỉ chấp nhận `SELECT`/`UNION`/`INTERSECT`/`EXCEPT` (+ CTE `WITH`), chặn toàn bộ DDL/DML/PRAGMA/COPY/ATTACH/CALL/LOAD/INSTALL/EXPORT; kiểm tra mọi table reference (loại trừ CTE alias) thuộc whitelist view hợp lệ; chặn các hàm đọc file/secret (`read_parquet`, `read_csv`, `read_json`, `glob`, `duckdb_secrets`, `duckdb_settings`, `getenv`, `parquet_scan`); tự chèn/giới hạn `LIMIT <= max_rows` ở mức AST.
+  - **Nội dung:** Parse với dialect `duckdb`; ép đúng 1 statement; chỉ chấp nhận `SELECT`/`UNION`/`INTERSECT`/`EXCEPT` (+ CTE `WITH`), chặn toàn bộ DDL/DML/PRAGMA/COPY/ATTACH/CALL/LOAD/INSTALL/EXPORT/SELECT INTO; whitelist tuyệt đối bảng trong `FROM`/`JOIN` (cấm `schema.table`, cấm đường dẫn chuỗi `FROM 'x.parquet'`, cấm mọi table-valued function và CTE trùng tên che giấu bảng); blocklist bổ sung các hàm đọc file/secret (`getenv`, `current_setting`, `duckdb_*`, `pragma_*`, `read_*`, `parquet_*`); tự chèn/giới hạn `LIMIT <= max_rows` ở mức AST (bọc `SELECT * FROM (...) LIMIT n` cho `UNION`/`INTERSECT`/`EXCEPT`) và trả về SQL viết lại từ AST.
 
 - [ ] **T3.3 — Port `SqlQueryExecutor` & Adapter `DuckDBSqlExecutor`**
   - **File dự kiến sửa:** `backend/app/documents/ports.py`
