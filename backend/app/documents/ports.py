@@ -155,6 +155,38 @@ def build_versioned_storage_key(
     return f"{normalized_tenant}/{canonical_document_id}/v{version}/original{suffix}"
 
 
+def build_version_tables_prefix(
+    tenant_id: str,
+    document_id: str,
+    version: int,
+) -> str:
+    """Sinh prefix thư mục chứa các file Parquet của 1 version: {tenant}/{doc_id}/v{n}/tables/."""
+    normalized_tenant = (tenant_id or "").strip() if isinstance(tenant_id, str) else ""
+    if not _SAFE_TENANT_RE.fullmatch(normalized_tenant):
+        raise InvalidStorageKeyError("tenant_id không hợp lệ")
+    try:
+        canonical_document_id = str(UUID(document_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise InvalidStorageKeyError("document_id phải là UUID hợp lệ") from exc
+    if type(version) is not int or version < 1:
+        raise InvalidStorageKeyError("version phải là số nguyên dương >= 1")
+    return f"{normalized_tenant}/{canonical_document_id}/v{version}/tables/"
+
+
+def build_version_table_parquet_key(
+    tenant_id: str,
+    document_id: str,
+    version: int,
+    table_name: str,
+) -> str:
+    """Sinh storage key cho file Parquet của 1 bảng: {tenant}/{doc_id}/v{n}/tables/{table_name}.parquet."""
+    prefix = build_version_tables_prefix(tenant_id, document_id, version)
+    normalized_table = (table_name or "").strip() if isinstance(table_name, str) else ""
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,62}", normalized_table):
+        raise InvalidStorageKeyError("table_name không hợp lệ")
+    return f"{prefix}{normalized_table}.parquet"
+
+
 class IngestionQueueError(Exception):
     """Raised when enqueuing an async ingestion job fails."""
 

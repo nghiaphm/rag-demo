@@ -136,6 +136,10 @@ class Settings(BaseSettings):
     # ----- Async Ingestion Worker (Phase 5.1) -----
     async_ingestion_enabled: bool = False
 
+    # ----- Excel Parquet & Table Catalog Ingestion -----
+    excel_parquet_ingestion_enabled: bool = False
+    excel_catalog_sample_rows: int = 3
+
     @field_validator("storage_backend")
     @classmethod
     def _validate_storage_backend(cls, value: str) -> str:
@@ -360,6 +364,13 @@ class Settings(BaseSettings):
     def _validate_rewrite_max_chars(cls, value: int) -> int:
         if value <= 0:
             raise ValueError("RAG_REWRITE_MAX_CHARS phải lớn hơn 0")
+        return value
+
+    @field_validator("excel_catalog_sample_rows")
+    @classmethod
+    def _validate_excel_catalog_sample_rows(cls, value: int) -> int:
+        if value < 0 or value > 20:
+            raise ValueError("EXCEL_CATALOG_SAMPLE_ROWS phải từ 0 đến 20")
         return value
 
     @model_validator(mode="after")

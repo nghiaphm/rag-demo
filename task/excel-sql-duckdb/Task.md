@@ -64,10 +64,10 @@ Mọi thay đổi trong lộ trình hỗ trợ truy vấn tính toán SQL trên 
   - **Phụ thuộc:** T2.1.
   - **Nội dung:** Thêm `DocumentTableCatalogRecord` & `TableColumnSchema` (collection `document_table_catalogs`); tạo index unique `(version_id, table_name)` và index `(tenant_id, document_id, version_id)` trong `initialize_document_indexes()`; thêm phương thức repository `replace_version_tables`, `list_tables_for_versions`, `delete_tables_for_version`.
 
-- [ ] **T2.3 — Tích hợp xuất Parquet + Catalog vào `IngestionService._process`**
-  - **File dự kiến sửa:** `backend/app/documents/ingestion.py`, `backend/app/documents/service.py`
+- [x] **T2.3 — Tích hợp xuất Parquet + Catalog vào `IngestionService._process`**
+  - **File dự kiến sửa:** `backend/app/documents/ingestion.py`, `backend/app/documents/ports.py`, `backend/app/shared/config.py`, `.env.example`
   - **Phụ thuộc:** T2.2, T1.3.
-  - **Nội dung:** Với file `.xlsx`, trước khi ghi bảng: gọi `storage.delete_prefix("{tenant}/{doc_id}/v{n}/tables/")` và xóa catalog cũ của `version_id` để đảm bảo **idempotent khi retry**; xuất Parquet lên S3 và lưu catalog vào MongoDB; cleanup cả prefix `tables/` và catalog của `version_id` trong `_fail_before_activation` nếu job lỗi trước khi activate (không chạm version đang active). Giữ nguyên luồng embedding + Qdrant hiện tại trong Giai đoạn 2.
+  - **Nội dung:** Thêm cờ `EXCEL_PARQUET_INGESTION_ENABLED=false` và `EXCEL_CATALOG_SAMPLE_ROWS=3`; với file `.xlsx` khi cờ bật: gọi `storage.delete_prefix("{tenant}/{doc_id}/v{n}/tables/")` và xóa catalog cũ của `version_id` để đảm bảo **idempotent khi retry**; xuất Parquet lên storage → lưu catalog vào MongoDB → verify số Parquet tồn tại == số bảng trong catalog trước khi `complete_and_activate()`; cleanup cả prefix `tables/` và catalog của `version_id` trong `_fail_before_activation` nếu job lỗi trước khi activate (không chạm version đang active); hỗ trợ `reindex` sinh lại Parquet + catalog cho file cũ khi cờ bật.
 
 - [ ] **T2.4 — Unit & Integration tests cho Giai đoạn 2**
   - **File dự kiến tạo:** `backend/tests/unit/test_excel_tabular.py`, `backend/tests/integration/test_excel_parquet_ingestion.py`

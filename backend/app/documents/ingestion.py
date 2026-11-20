@@ -11,11 +11,14 @@ from langchain_core.embeddings import Embeddings
 
 from app.shared.auth import UserContext
 from app.shared.config import settings
+from app.documents.excel.tabular import extract_workbook_tables
 from app.documents.models import (
     DocumentRecord,
     DocumentStatus,
+    DocumentTableCatalogRecord,
     DocumentVersionRecord,
     IngestionJobRecord,
+    TableColumnSchema,
 )
 from app.documents.repository import (
     MongoDocumentRepository,
@@ -29,6 +32,8 @@ from app.documents.ports import (
     FileStorage,
     StorageError,
     build_document_storage_key,
+    build_version_table_parquet_key,
+    build_version_tables_prefix,
     build_versioned_storage_key,
 )
 from app.rag.vector_index import (
@@ -68,6 +73,8 @@ class IngestionService:
         splitter: Callable[[list[Document]], list[Document]] = split_documents,
         embedding_model: str = settings.embedding_model,
         storage_resolver: Callable[[str], FileStorage] | None = None,
+        parquet_ingestion_enabled: bool | None = None,
+        catalog_sample_rows: int | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -78,6 +85,28 @@ class IngestionService:
         self.splitter = splitter
         self.embedding_model = embedding_model
         self.storage_resolver = storage_resolver
+        self.parquet_ingestion_enabled = parquet_ingestion_enabled
+        self.catalog_sample_rows = catalog_sample_rows
+
+    def _is_parquet_ingestion_enabled(self) -> bool:
+        if self.parquet_ingestion_enabled is not None:
+            return bool(self.parquet_ingestion_enabled)
+        return bool(getattr(settings, "excel_parquet_ingestion_enabled", False))
+
+    def _get_catalog_sample_rows(self) -> int:
+        if self.catalog_sample_rows is not None:
+            return max(0, int(self.catalog_sample_rows))
+        return max(0, int(getattr(settings, "excel_catalog_sample_rows", 3)))
+
+    def _resolve_version_tenant_id(self, version: DocumentVersionRecord) -> str:
+        try:
+            document = self.repository.get_document(version.document_id)
+            tenant = getattr(document, "tenant_id", None)
+            if isinstance(tenant, str) and tenant.strip():
+                return tenant.strip()
+        except Exception:
+            pass
+        return settings.default_tenant_id
 
     def resolve_storage(self, backend_name: str | None) -> FileStorage:
         """Trả về storage adapter khớp với storage_backend của version."""
@@ -295,6 +324,148 @@ class IngestionService:
             raise IngestionError("empty_chunks")
         return chunks
 
+    def _cleanup_version_parquet_and_catalog(
+        self,
+        version: DocumentVersionRecord,
+    ) -> None:
+        """Xóa best-effort prefix Parquet và catalog của version đang xử lý (không chạm active version)."""
+        if Path(version.file_name).suffix.lower() != ".xlsx":
+            return
+        try:
+            tenant_id = self._resolve_version_tenant_id(version)
+            tables_prefix = build_version_tables_prefix(
+                tenant_id,
+                version.document_id,
+                version.version,
+            )
+            version_storage = self.resolve_storage(
+                getattr(version, "storage_backend", "local")
+            )
+            version_storage.delete_prefix(tables_prefix)
+        except Exception:
+            pass
+
+        delete_tables_fn = getattr(self.repository, "delete_tables_for_version", None)
+        if callable(delete_tables_fn):
+            try:
+                delete_tables_fn(version.version_id)
+            except Exception:
+                pass
+
+    def _ingest_excel_parquet_and_catalog(
+        self,
+        version: DocumentVersionRecord,
+    ) -> list[DocumentTableCatalogRecord]:
+        """Làm sạch từng sheet -> ghi Parquet -> lưu catalog -> verify số Parquet khớp catalog."""
+        if version.storage_key is None:
+            raise IngestionError("missing_storage_key")
+        version_storage = self.resolve_storage(getattr(version, "storage_backend", "local"))
+        tenant_id = self._resolve_version_tenant_id(version)
+        tables_prefix = build_version_tables_prefix(
+            tenant_id,
+            version.document_id,
+            version.version,
+        )
+
+        # 1. Idempotent cleanup trước khi ghi lại cho version_id hiện tại
+        try:
+            version_storage.delete_prefix(tables_prefix)
+        except StorageError as exc:
+            raise IngestionError("parquet_cleanup_failed") from exc
+
+        delete_tables_fn = getattr(self.repository, "delete_tables_for_version", None)
+        if callable(delete_tables_fn):
+            try:
+                delete_tables_fn(version.version_id)
+            except RepositoryError as exc:
+                raise IngestionError("catalog_cleanup_failed") from exc
+
+        # 2. Đọc raw workbook & chuẩn hóa thành danh sách bảng Parquet
+        try:
+            raw_bytes = version_storage.read(version.storage_key)
+        except (StorageError, OSError) as exc:
+            raise IngestionError("raw_file_read_failed") from exc
+
+        try:
+            normalized_tables = extract_workbook_tables(
+                raw_bytes,
+                sample_rows_limit=self._get_catalog_sample_rows(),
+            )
+        except IngestionError:
+            raise
+        except Exception as exc:
+            raise IngestionError("tabular_parse_failed") from exc
+
+        # 3. Ghi toàn bộ Parquet lên storage trước khi lưu catalog
+        catalog_records: list[DocumentTableCatalogRecord] = []
+        try:
+            for tbl in normalized_tables:
+                parquet_key = build_version_table_parquet_key(
+                    tenant_id,
+                    version.document_id,
+                    version.version,
+                    tbl.table_name,
+                )
+                version_storage.put(
+                    parquet_key,
+                    tbl.parquet_bytes,
+                    content_type="application/vnd.apache.parquet",
+                )
+                catalog_records.append(
+                    DocumentTableCatalogRecord(
+                        tenant_id=tenant_id,
+                        document_id=version.document_id,
+                        version_id=version.version_id,
+                        table_name=tbl.table_name,
+                        sheet_name=tbl.sheet_name,
+                        parquet_key=parquet_key,
+                        row_count=tbl.row_count,
+                        columns=[
+                            TableColumnSchema(
+                                name=col.name,
+                                original_name=col.original_name,
+                                type=col.data_type,
+                                nullable=col.nullable,
+                                description=col.description,
+                                has_formula_values=col.has_formula_values,
+                            )
+                            for col in tbl.columns
+                        ],
+                        sample_rows=[dict(row) for row in tbl.sample_rows],
+                        has_formula_values=tbl.has_formula_values,
+                    )
+                )
+        except StorageError as exc:
+            raise IngestionError("parquet_storage_failed") from exc
+
+        # 4. Lưu catalog vào MongoDB chỉ sau khi mọi Parquet đã ghi thành công
+        replace_tables_fn = getattr(self.repository, "replace_version_tables", None)
+        if callable(replace_tables_fn):
+            try:
+                replace_tables_fn(version.version_id, catalog_records)
+            except RepositoryError as exc:
+                raise IngestionError("catalog_persistence_failed") from exc
+
+        # 5. Verify số lượng Parquet tồn tại trên storage == số bảng trong catalog
+        list_tables_fn = getattr(self.repository, "list_tables_for_versions", None)
+        persisted = (
+            list_tables_fn([version.version_id])
+            if callable(list_tables_fn)
+            else catalog_records
+        )
+        if len(persisted) != len(catalog_records):
+            raise IngestionError("catalog_verification_failed")
+        try:
+            existing_parquet_count = sum(
+                1 for item in persisted if version_storage.exists(item.parquet_key)
+            )
+        except StorageError as exc:
+            raise IngestionError("parquet_verification_failed") from exc
+        if existing_parquet_count != len(persisted):
+            raise IngestionError("parquet_verification_failed")
+
+        return persisted
+
     def _process(
         self,
         version: DocumentVersionRecord,
@@ -302,6 +473,11 @@ class IngestionService:
     ) -> IngestionResult:
         try:
             self.repository.mark_processing(version.document_id, version.version_id, job.job_id)
+            if (
+                self._is_parquet_ingestion_enabled()
+                and Path(version.file_name).suffix.lower() == ".xlsx"
+            ):
+                self._ingest_excel_parquet_and_catalog(version)
             chunks = self._materialize_and_split(version)
             try:
                 vectors = embed_chunks(chunks, self.embeddings)
@@ -375,6 +551,7 @@ class IngestionService:
         job: IngestionJobRecord,
         error_code: str,
     ) -> None:
+        self._cleanup_version_parquet_and_catalog(version)
         try:
             self.vector_index.delete(VectorFilter(version_id=version.version_id))
         except VectorIndexError:
