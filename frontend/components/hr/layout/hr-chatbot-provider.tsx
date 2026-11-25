@@ -149,6 +149,9 @@ export function useHrPageContext(input?: HrRuntimePageContextInput | null): void
       ...(input?.liveFeatures && input.liveFeatures.length > 0
         ? { liveFeatures: [...input.liveFeatures] }
         : {}),
+      ...(input?.dashboardSnapshot
+        ? { dashboardSnapshot: input.dashboardSnapshot }
+        : {}),
     }
   }, [input, resolvedRoute, resolvedTitle])
 

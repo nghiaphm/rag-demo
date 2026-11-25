@@ -169,6 +169,73 @@ class ChatUiContextRouteTests(unittest.TestCase):
         )
         self.assertEqual(bad_resp.status_code, 422)
 
+    def test_chat_routes_forward_dashboard_snapshot_on_json_and_stream(self) -> None:
+        client = TestClient(self._make_app())
+        captured_json: dict[str, object] = {}
+
+        def fake_answer(question, *, database, qdrant_client, session_id=None, ui_context=None):
+            captured_json["question"] = question
+            captured_json["ui_context"] = ui_context
+            return {
+                "answer": "### 1. Tóm tắt điều hành\nTổng nhân sự: 184.",
+                "sources": [],
+                "usage": None,
+            }
+
+        payload = {
+            "question": "Hãy phân tích và thống kê nhân sự",
+            "ui_context": {
+                "portal": "hr",
+                "route": "/hr",
+                "page_title": "Tổng quan nhân sự",
+                "page_purpose": "Dashboard HR",
+                "dashboard_snapshot": {
+                    "as_of_label": "Dữ liệu mô phỏng HR · Quý 4/2026",
+                    "total_employees": 184,
+                    "kpis": [
+                        {
+                            "label": "Tổng nhân sự",
+                            "value": "184",
+                            "delta_label": "+6.4% so với quý trước",
+                            "trend": "up",
+                        }
+                    ],
+                    "departments": [
+                        {"department": "Kỹ thuật & Sản phẩm", "count": 68, "open_roles": 5},
+                        {"department": "Vận hành & CSKH", "count": 38, "open_roles": 2},
+                    ],
+                    "contract_statuses": [
+                        {"label": "HĐ không xác định thời hạn", "count": 132},
+                        {"label": "Đang thử việc", "count": 14},
+                    ],
+                    "knowledge_base": {
+                        "total_documents": 6,
+                        "indexed_documents": 5,
+                        "processing_documents": 1,
+                        "failed_documents": 0,
+                        "total_chunks": 88,
+                    },
+                },
+            },
+        }
+
+        with patch.object(settings, "tool_use_enabled", False), patch(
+            "app.api.routes.chat.answer_question", side_effect=fake_answer
+        ):
+            resp = client.post("/chat", json=payload)
+
+        self.assertEqual(resp.status_code, 200, resp.text)
+        ui = captured_json["ui_context"]
+        self.assertIsInstance(ui, UiPageContext)
+        assert isinstance(ui, UiPageContext)
+        self.assertIsNotNone(ui.dashboard_snapshot)
+        assert ui.dashboard_snapshot is not None
+        self.assertEqual(ui.dashboard_snapshot.total_employees, 184)
+        self.assertEqual(len(ui.dashboard_snapshot.departments), 2)
+        self.assertIsNotNone(ui.dashboard_snapshot.knowledge_base)
+        assert ui.dashboard_snapshot.knowledge_base is not None
+        self.assertEqual(ui.dashboard_snapshot.knowledge_base.total_chunks, 88)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,7 @@ const {
 const {
   ALLOWED_HR_ROUTES,
   HR_ROUTE_MANIFEST,
+  buildHrDashboardSnapshot,
   buildHrUiContext,
   collectVisibleHrDomFeatures,
   deriveRelatedHrPages,
@@ -377,4 +378,38 @@ test("rehypeHrRouteLinks converts whitelisted HR routes in text and inline code 
     ],
   );
   assert.equal(tree.children[1].children[0].tagName, "code");
+});
+
+test("buildHrDashboardSnapshot and buildHrUiContext attach structured HR Dashboard metrics across all HR routes", () => {
+  const withLiveKb = buildHrDashboardSnapshot(HR_ANALYTICS_FIXTURE, {
+    totalDocuments: 5,
+    indexedDocuments: 4,
+    processingDocuments: 1,
+    failedDocuments: 0,
+    totalChunks: 72,
+  });
+  assert.equal(withLiveKb.total_employees, HR_ANALYTICS_FIXTURE.totalEmployees);
+  assert.equal(withLiveKb.kpis.length, 4);
+  assert.equal(withLiveKb.departments.length, 6);
+  assert.equal(withLiveKb.contract_statuses.length, 4);
+  assert.deepEqual(withLiveKb.knowledge_base, {
+    total_documents: 5,
+    indexed_documents: 4,
+    processing_documents: 1,
+    failed_documents: 0,
+    total_chunks: 72,
+  });
+
+  // On /hr with live dashboardSnapshot passed via useHrPageContext
+  const dashboardCtx = buildHrUiContext(
+    { route: "/hr", dashboardSnapshot: withLiveKb },
+    "/hr",
+  );
+  assert.deepEqual(dashboardCtx.dashboard_snapshot, withLiveKb);
+
+  // Even on /hr/documents or /hr/guide, HR Dashboard metrics remain attached so users can ask to analyze HR Dashboard anytime
+  const docsCtx = buildHrUiContext({ route: "/hr/documents" }, "/hr/documents");
+  assert.equal(docsCtx.dashboard_snapshot.total_employees, HR_ANALYTICS_FIXTURE.totalEmployees);
+  assert.equal(docsCtx.dashboard_snapshot.departments[0].department, "Kỹ thuật & Sản phẩm");
+  assert.equal(docsCtx.dashboard_snapshot.departments[0].count, 68);
 });

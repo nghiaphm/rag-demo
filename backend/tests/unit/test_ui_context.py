@@ -19,11 +19,17 @@ from app.chat.context_budget import ContextBudgetBuilder, ContextBudgetConfig  #
 from app.chat.orchestrator import ChatOrchestrator  # noqa: E402
 from app.chat.pipeline import prepare_rag_request_from_components  # noqa: E402
 from app.chat.ui_context import (  # noqa: E402
+    UiDashboardContractStatus,
+    UiDashboardDepartment,
+    UiDashboardKnowledgeBase,
+    UiDashboardKpi,
+    UiDashboardSnapshot,
     UiPageContext,
     UiRelatedPage,
     build_selector_ui_note,
     compose_ui_aware_system_instruction,
     fit_ui_system_instruction,
+    format_dashboard_snapshot_context,
 )
 from app.rag.prompt import SYSTEM_INSTRUCTION  # noqa: E402
 
@@ -229,6 +235,215 @@ class UiContextTests(unittest.TestCase):
         plan = asyncio.run(agent_orchestrator.prepare_plan("Trang này có gì?", ui_context=ui))
         self.assertEqual(plan.route, "AGENTIC")
         self.assertIn("/hr/documents", plan.agent_messages[0].content)
+
+    def test_dashboard_snapshot_validation_deterministic_stats_budget_and_pipeline_injection(self) -> None:
+        # 1. Schema validation: valid snapshot accepted, negative counts rejected
+        valid_req = ChatRequest(
+            question="Hãy phân tích và thống kê nhân sự",
+            ui_context={
+                "portal": "hr",
+                "route": "/hr",
+                "page_title": "Tổng quan nhân sự",
+                "page_purpose": "Dashboard HR",
+                "dashboard_snapshot": {
+                    "as_of_label": "Dữ liệu mô phỏng HR · Quý 4/2026",
+                    "total_employees": 184,
+                    "kpis": [
+                        {
+                            "label": "Tổng nhân sự",
+                            "value": "184",
+                            "delta_label": "+6.4% so với quý trước",
+                            "trend": "up",
+                        }
+                    ],
+                    "departments": [
+                        {"department": "Kỹ thuật & Sản phẩm", "count": 68, "open_roles": 5},
+                        {"department": "Vận hành & CSKH", "count": 38, "open_roles": 2},
+                        {"department": "Kinh doanh", "count": 32, "open_roles": 3},
+                        {"department": "Nhân sự & Hành chính", "count": 16, "open_roles": 1},
+                        {"department": "Tài chính & Kế toán", "count": 16, "open_roles": 0},
+                        {"department": "Marketing & Tăng trưởng", "count": 14, "open_roles": 2},
+                    ],
+                    "contract_statuses": [
+                        {"label": "HĐ không xác định thời hạn", "count": 132},
+                        {"label": "HĐ xác định thời hạn", "count": 31},
+                        {"label": "Đang thử việc", "count": 14},
+                        {"label": "Thực tập / Cộng tác viên", "count": 7},
+                    ],
+                    "knowledge_base": {
+                        "total_documents": 10,
+                        "indexed_documents": 8,
+                        "processing_documents": 1,
+                        "failed_documents": 1,
+                        "total_chunks": 120,
+                    },
+                },
+            },
+        )
+        self.assertIsNotNone(valid_req.ui_context)
+        assert valid_req.ui_context is not None
+        self.assertIsNotNone(valid_req.ui_context.dashboard_snapshot)
+
+        with self.assertRaises(ValidationError):
+            ChatRequest(
+                question="Phân tích nhân sự",
+                ui_context={
+                    "portal": "hr",
+                    "route": "/hr",
+                    "page_title": "Tổng quan nhân sự",
+                    "page_purpose": "Dashboard HR",
+                    "dashboard_snapshot": {
+                        "as_of_label": "Q4/2026",
+                        "total_employees": -5,
+                    },
+                },
+            )
+
+        # 2. Deterministic server-side statistics formatting
+        ui_with_dashboard = UiPageContext(
+            portal="hr",
+            route="/hr",
+            page_title="Tổng quan nhân sự",
+            page_purpose="Dashboard KPI nhân sự và Kho tri thức RAG.",
+            available_features=(
+                "Theo dõi 4 chỉ số KPI nhân sự.",
+                "Phân tích biểu đồ cơ cấu 6 phòng ban và 4 nhóm hợp đồng.",
+            ),
+            related_pages=(
+                UiRelatedPage(route="/hr/documents", title="Tài liệu nhân sự", description="Quản lý tài liệu HR"),
+            ),
+            dashboard_snapshot=UiDashboardSnapshot(
+                as_of_label="Dữ liệu mô phỏng HR · Quý 4/2026",
+                total_employees=184,
+                kpis=(
+                    UiDashboardKpi(
+                        label="Tổng nhân sự",
+                        value="184",
+                        delta_label="+6.4% so với quý trước",
+                        trend="up",
+                    ),
+                    UiDashboardKpi(
+                        label="Tỉ lệ nghỉ việc",
+                        value="2.1%",
+                        delta_label="-0.4% so với cùng kỳ",
+                        trend="down",
+                    ),
+                ),
+                departments=(
+                    UiDashboardDepartment(department="Kỹ thuật & Sản phẩm", count=68, open_roles=5),
+                    UiDashboardDepartment(department="Vận hành & CSKH", count=38, open_roles=2),
+                    UiDashboardDepartment(department="Kinh doanh", count=32, open_roles=3),
+                    UiDashboardDepartment(department="Nhân sự & Hành chính", count=16, open_roles=1),
+                    UiDashboardDepartment(department="Tài chính & Kế toán", count=16, open_roles=0),
+                    UiDashboardDepartment(department="Marketing & Tăng trưởng", count=14, open_roles=2),
+                ),
+                contract_statuses=(
+                    UiDashboardContractStatus(label="HĐ không xác định thời hạn", count=132),
+                    UiDashboardContractStatus(label="HĐ xác định thời hạn", count=31),
+                    UiDashboardContractStatus(label="Đang thử việc", count=14),
+                    UiDashboardContractStatus(label="Thực tập / Cộng tác viên", count=7),
+                ),
+                knowledge_base=UiDashboardKnowledgeBase(
+                    total_documents=10,
+                    indexed_documents=8,
+                    processing_documents=1,
+                    failed_documents=1,
+                    total_chunks=120,
+                ),
+            ),
+        )
+
+        snapshot_block = format_dashboard_snapshot_context(ui_with_dashboard)
+        self.assertIn("Dữ liệu thống kê Dashboard HR hiện tại", snapshot_block)
+        self.assertIn("tổng=184, tổng vị trí đang tuyển=13", snapshot_block)
+        self.assertIn("Kỹ thuật & Sản phẩm: 68 nhân sự (37.0%)", snapshot_block)
+        self.assertIn("Marketing & Tăng trưởng: 14 nhân sự (7.6%)", snapshot_block)
+        self.assertIn("HĐ không xác định thời hạn: 132 nhân sự (71.7%)", snapshot_block)
+        self.assertIn("sẵn sàng (INDEXED)=8 (80.0%)", snapshot_block)
+
+        # 3. Fits strictly inside default RAG_SYSTEM_MAX_TOKENS (1024)
+        budget_builder = ContextBudgetBuilder(
+            ContextBudgetConfig(
+                context_window_tokens=8192,
+                system_max_tokens=1024,
+                history_max_tokens=2048,
+                chunks_max_tokens=3584,
+                query_max_tokens=512,
+                output_reserve_tokens=1024,
+                chars_per_token=3.0,
+            )
+        )
+        fitted_system = fit_ui_system_instruction(
+            SYSTEM_INSTRUCTION,
+            ui_with_dashboard,
+            budget_builder.counter.system,
+            1024,
+        )
+        self.assertLessEqual(budget_builder.counter.system(fitted_system), 1024)
+        self.assertIn("### 1. Tóm tắt điều hành", fitted_system)
+        self.assertIn("### 3. Bảng phân bổ cơ cấu nhân sự", fitted_system)
+
+        # Selector note directs HR Dashboard analytics away from document inventory tools
+        selector_note = build_selector_ui_note(ui_with_dashboard)
+        self.assertIn("HR Dashboard", selector_note)
+
+        # 4. Pipeline injects dashboard block into Context even when Qdrant returns 0 chunks
+        class _EmptyRetriever:
+            def invoke(self, _query: str) -> list[Document]:
+                return []
+
+        prepared_empty_kb = asyncio.run(
+            prepare_rag_request_from_components(
+                "Hãy phân tích và thống kê nhân sự",
+                history_turns=(),
+                active_version_ids=(),
+                retriever=_EmptyRetriever(),
+                query_rewriter=_PassThroughRewriter(),
+                budget_builder=budget_builder,
+                reranker=_PassThroughReranker(),
+                multi_query_expander=_PassThroughExpander(),
+                ui_context=ui_with_dashboard,
+            )
+        )
+        self.assertEqual(prepared_empty_kb.original_query, "Hãy phân tích và thống kê nhân sự")
+        self.assertEqual(prepared_empty_kb.retrieval_query, "Hãy phân tích và thống kê nhân sự")
+        human_content = prepared_empty_kb.prompt_value.to_messages()[-1].content
+        self.assertIn("Kỹ thuật & Sản phẩm: 68 nhân sự (37.0%)", human_content)
+        self.assertNotIn("(không có tài liệu liên quan)", human_content)
+
+        # And preserves [1] citation ordinal when RAG chunks ARE present
+        prepared_with_chunks = asyncio.run(
+            prepare_rag_request_from_components(
+                "Hãy tiến hành phân tích trang Nhân sự",
+                history_turns=(),
+                active_version_ids=("22222222-2222-4222-8222-222222222222",),
+                retriever=_FakeRetriever(),
+                query_rewriter=_PassThroughRewriter(),
+                budget_builder=budget_builder,
+                reranker=_PassThroughReranker(),
+                multi_query_expander=_PassThroughExpander(),
+                ui_context=ui_with_dashboard,
+            )
+        )
+        human_with_chunks = prepared_with_chunks.prompt_value.to_messages()[-1].content
+        self.assertIn("Kỹ thuật & Sản phẩm: 68 nhân sự (37.0%)", human_with_chunks)
+        self.assertIn("[1] (chinh-sach-nghi-phep.pdf", human_with_chunks)
+
+        # 5. Agentic orchestrator injects dashboard snapshot while keeping original_question clean
+        fake_llm = MagicMock()
+        agent_orchestrator = ChatOrchestrator(
+            llm=fake_llm,
+            tools_enabled=True,
+            agentic_mode=True,
+        )
+        plan = asyncio.run(
+            agent_orchestrator.prepare_plan(
+                "Hãy phân tích và thống kê nhân sự",
+                ui_context=ui_with_dashboard,
+            )
+        )
+        self.assertEqual(plan.original_question, "Hãy phân tích và thống kê nhân sự")
+        self.assertIn("Kỹ thuật & Sản phẩm: 68 nhân sự (37.0%)", plan.agent_messages[-1].content)
 
 
 if __name__ == "__main__":

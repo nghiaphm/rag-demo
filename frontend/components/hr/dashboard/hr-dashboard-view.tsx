@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { BookOpen, Compass, Database, Files, MessageSquareText } from "lucide-react"
+import { BarChart3, BookOpen, Compass, Database, Files, MessageSquareText } from "lucide-react"
 
 import { DepartmentChart } from "@/components/hr/dashboard/department-chart"
 import { EmployeeStatusChart } from "@/components/hr/dashboard/employee-status-chart"
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { HR_ANALYTICS_FIXTURE } from "@/fixtures/hr-analytics"
 import { useDocuments } from "@/hooks/use-documents"
 import { summarizeKnowledgeBaseDocuments } from "@/lib/hr/analytics"
+import { buildHrDashboardSnapshot } from "@/lib/hr/page-context"
 
 function LiveKnowledgeBaseStrip({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state } = useDocuments(apiBaseUrl)
@@ -30,6 +31,10 @@ function LiveKnowledgeBaseStrip({ apiBaseUrl }: { apiBaseUrl: string }) {
             `Trạng thái Kho tri thức RAG thực tế đang hiển thị: ${summary.totalDocuments} tài liệu (${summary.indexedDocuments} INDEXED, ${summary.processingDocuments} đang xử lý, ${summary.totalChunks} vector chunks).`,
           ]
         : [],
+    dashboardSnapshot: buildHrDashboardSnapshot(
+      HR_ANALYTICS_FIXTURE,
+      state.status === "ready" ? summary : null,
+    ),
   })
 
   return (
@@ -109,6 +114,7 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
           liveFeatures: [
             "Chưa cấu hình NEXT_PUBLIC_API_BASE_URL nên hiện chỉ hiển thị số liệu nhân sự mô phỏng, chưa tải thống kê Kho tri thức RAG thực.",
           ],
+          dashboardSnapshot: buildHrDashboardSnapshot(HR_ANALYTICS_FIXTURE, null),
         },
   )
 
@@ -131,6 +137,19 @@ export function HrDashboardView({ apiBaseUrl }: { apiBaseUrl: string | null }) {
           <Button
             type="button"
             className="gap-1.5 shadow-2xs transition-transform active:scale-[0.99]"
+            onClick={() =>
+              openWidget({
+                prompt: "Hãy phân tích và thống kê nhân sự trên trang Dashboard hiện tại.",
+              })
+            }
+          >
+            <BarChart3 className="size-4" aria-hidden="true" />
+            <span>Phân tích Dashboard</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-1.5"
             onClick={() =>
               openWidget({
                 prompt: "Tóm tắt các chính sách phúc lợi và nghỉ phép nổi bật hiện nay.",
