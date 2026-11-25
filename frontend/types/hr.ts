@@ -1,5 +1,7 @@
 /** HR Portal demo UI & domain types (strictly separate from Backend OpenAPI DTO files). */
 
+import type { ChatUiDashboardSnapshot } from "./chat";
+
 export type HrPageRoute = "/hr" | "/hr/documents" | "/hr/guide";
 
 export type HrDocumentCategory = "POLICY" | "REGULATION" | "PROCEDURE" | "OTHER";
@@ -28,6 +30,7 @@ export interface HrPageContext {
   selectedCategory?: HrDocumentCategory;
   searchQuery?: string;
   liveFeatures?: readonly string[];
+  dashboardSnapshot?: ChatUiDashboardSnapshot;
 }
 
 export interface HrKpiCard {

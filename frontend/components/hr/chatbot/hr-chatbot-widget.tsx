@@ -432,6 +432,18 @@ function ConfiguredWidgetChat({ apiBaseUrl }: { apiBaseUrl: string }) {
                         onClick={() => {
                           clearDraftPrompt()
                           setQuestion(
+                            "Hãy phân tích và thống kê nhân sự trên trang Dashboard hiện tại",
+                          )
+                        }}
+                      >
+                        Hãy phân tích và thống kê nhân sự trên trang Dashboard hiện tại
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-primary/20 bg-accent/40 px-3 py-2 text-left text-xs leading-5 text-accent-foreground transition-colors hover:bg-accent"
+                        onClick={() => {
+                          clearDraftPrompt()
+                          setQuestion(
                             `Hướng dẫn thao tác chức năng trang ${uiContext.page_title} hiện tại`,
                           )
                         }}

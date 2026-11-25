@@ -15,6 +15,42 @@ export interface ChatUiRelatedPage {
   description?: string | null;
 }
 
+export interface ChatUiDashboardKpi {
+  label: string;
+  value: string;
+  delta_label?: string | null;
+  trend?: "up" | "down" | "neutral" | null;
+  helper_text?: string | null;
+}
+
+export interface ChatUiDashboardDepartment {
+  department: string;
+  count: number;
+  open_roles?: number;
+}
+
+export interface ChatUiDashboardContractStatus {
+  label: string;
+  count: number;
+}
+
+export interface ChatUiDashboardKnowledgeBase {
+  total_documents: number;
+  indexed_documents: number;
+  processing_documents: number;
+  failed_documents: number;
+  total_chunks: number;
+}
+
+export interface ChatUiDashboardSnapshot {
+  as_of_label: string;
+  total_employees: number;
+  kpis?: ChatUiDashboardKpi[];
+  departments?: ChatUiDashboardDepartment[];
+  contract_statuses?: ChatUiDashboardContractStatus[];
+  knowledge_base?: ChatUiDashboardKnowledgeBase | null;
+}
+
 export interface ChatUiContext {
   portal?: "hr";
   route: string;
@@ -24,6 +60,7 @@ export interface ChatUiContext {
   related_pages?: ChatUiRelatedPage[];
   selected_document_name?: string | null;
   selected_category?: string | null;
+  dashboard_snapshot?: ChatUiDashboardSnapshot | null;
 }
 
 /** POST /chat and POST /chat/stream. Omitted/null session_id is stateless. */

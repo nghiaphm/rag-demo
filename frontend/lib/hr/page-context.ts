@@ -2,12 +2,13 @@ import type { Element, Root, RootContent, Text } from "hast";
 
 import { HR_ANALYTICS_FIXTURE } from "@/fixtures/hr-analytics";
 import { HR_GUIDE_SECTIONS, HR_PROMPT_TEMPLATES } from "@/fixtures/hr-guide";
+import type { KnowledgeBaseSummary } from "@/lib/hr/analytics";
 import {
   HR_DOCUMENT_CATEGORIES,
   getHrCategoryLabel,
 } from "@/lib/hr/document-categories";
-import type { ChatUiContext } from "@/types/chat";
-import type { HrPageContext, HrPageRoute } from "@/types/hr";
+import type { ChatUiContext, ChatUiDashboardSnapshot } from "@/types/chat";
+import type { HrAnalyticsSnapshot, HrPageContext, HrPageRoute } from "@/types/hr";
 
 export interface HrNavigationSuggestion {
   route: HrPageRoute;
@@ -230,6 +231,43 @@ function mergeDistinctFeatures(...groups: readonly (readonly string[] | undefine
   return merged;
 }
 
+export function buildHrDashboardSnapshot(
+  analytics: HrAnalyticsSnapshot = HR_ANALYTICS_FIXTURE,
+  knowledgeBase?: KnowledgeBaseSummary | null,
+): ChatUiDashboardSnapshot {
+  return {
+    as_of_label: analytics.asOfLabel,
+    total_employees: analytics.totalEmployees,
+    kpis: analytics.kpis.map((item) => ({
+      label: item.label,
+      value: item.value,
+      delta_label: item.deltaLabel,
+      trend: item.trend,
+      helper_text: item.helperText,
+    })),
+    departments: analytics.departments.map((dept) => ({
+      department: dept.department,
+      count: dept.count,
+      open_roles: dept.openRoles,
+    })),
+    contract_statuses: analytics.contractStatuses.map((status) => ({
+      label: status.label,
+      count: status.count,
+    })),
+    ...(knowledgeBase
+      ? {
+          knowledge_base: {
+            total_documents: knowledgeBase.totalDocuments,
+            indexed_documents: knowledgeBase.indexedDocuments,
+            processing_documents: knowledgeBase.processingDocuments,
+            failed_documents: knowledgeBase.failedDocuments,
+            total_chunks: knowledgeBase.totalChunks,
+          },
+        }
+      : {}),
+  };
+}
+
 export function buildHrUiContext(
   pageContext: HrPageContext | null,
   pathname?: string | null,
@@ -268,6 +306,8 @@ export function buildHrUiContext(
     ...(pageContext?.selectedCategory
       ? { selected_category: getHrCategoryLabel(pageContext.selectedCategory) }
       : {}),
+    dashboard_snapshot:
+      pageContext?.dashboardSnapshot ?? buildHrDashboardSnapshot(HR_ANALYTICS_FIXTURE),
   };
 }
 
