@@ -41,6 +41,7 @@ from app.chat.ui_context import (
     UiPageContext,
     build_selector_ui_note,
     fit_ui_system_instruction,
+    format_dashboard_snapshot_context,
 )
 from app.chat.agent import AGENT_SYSTEM_INSTRUCTION, AgenticRunner
 from app.chat.agent_tools import (
@@ -366,7 +367,9 @@ class ChatOrchestrator:
         self.current_user = current_user
         self.tenant_id = tenant_id
         self.excel_sql_enabled = (
-            settings.excel_sql_enabled if excel_sql_enabled is None else bool(excel_sql_enabled)
+            (False if agentic_mode is False else settings.excel_sql_enabled)
+            if excel_sql_enabled is None
+            else bool(excel_sql_enabled)
         )
         if self.excel_sql_enabled:
             missing_flags: list[str] = []
@@ -518,6 +521,18 @@ class ChatOrchestrator:
                     agent_instruction,
                     tools=schemas,
                 )
+                dashboard_block = format_dashboard_snapshot_context(ui_context)
+                if dashboard_block and agent_messages and isinstance(agent_messages[-1], HumanMessage):
+                    enriched_messages = [
+                        *agent_messages[:-1],
+                        HumanMessage(content=f"{dashboard_block}\n\nCâu hỏi của người dùng: {question}"),
+                    ]
+                    if (
+                        estimate_context_tokens(enriched_messages, self.config, schemas)
+                        + self.config.output_reserve_tokens
+                        <= self.config.context_window_tokens
+                    ):
+                        agent_messages = enriched_messages
                 return PreparedChatAnswer(
                     "AGENTIC",
                     question,

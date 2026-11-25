@@ -38,7 +38,15 @@ from app.chat.pipeline import (
     astream_rag_answer,
     prepare_rag_stream,
 )
-from app.chat.ui_context import UiPageContext, UiRelatedPage
+from app.chat.ui_context import (
+    UiDashboardContractStatus,
+    UiDashboardDepartment,
+    UiDashboardKnowledgeBase,
+    UiDashboardKpi,
+    UiDashboardSnapshot,
+    UiPageContext,
+    UiRelatedPage,
+)
 from app.api.schemas.chat_documents import (
     ChatRequest,
     ChatResponse,
@@ -300,6 +308,50 @@ async def _attachments(payload, database):
 def _to_domain_ui_context(ui_context: ChatUiContext | None) -> UiPageContext | None:
     if ui_context is None:
         return None
+    snapshot = None
+    if ui_context.dashboard_snapshot is not None:
+        raw_snap = ui_context.dashboard_snapshot
+        kb = (
+            UiDashboardKnowledgeBase(
+                total_documents=raw_snap.knowledge_base.total_documents,
+                indexed_documents=raw_snap.knowledge_base.indexed_documents,
+                processing_documents=raw_snap.knowledge_base.processing_documents,
+                failed_documents=raw_snap.knowledge_base.failed_documents,
+                total_chunks=raw_snap.knowledge_base.total_chunks,
+            )
+            if raw_snap.knowledge_base is not None
+            else None
+        )
+        snapshot = UiDashboardSnapshot(
+            as_of_label=raw_snap.as_of_label,
+            total_employees=raw_snap.total_employees,
+            kpis=tuple(
+                UiDashboardKpi(
+                    label=kpi.label,
+                    value=kpi.value,
+                    delta_label=kpi.delta_label,
+                    trend=kpi.trend,
+                    helper_text=kpi.helper_text,
+                )
+                for kpi in raw_snap.kpis
+            ),
+            departments=tuple(
+                UiDashboardDepartment(
+                    department=dept.department,
+                    count=dept.count,
+                    open_roles=dept.open_roles,
+                )
+                for dept in raw_snap.departments
+            ),
+            contract_statuses=tuple(
+                UiDashboardContractStatus(
+                    label=item.label,
+                    count=item.count,
+                )
+                for item in raw_snap.contract_statuses
+            ),
+            knowledge_base=kb,
+        )
     return UiPageContext(
         portal=ui_context.portal,
         route=ui_context.route,
@@ -316,6 +368,7 @@ def _to_domain_ui_context(ui_context: ChatUiContext | None) -> UiPageContext | N
         ),
         selected_document_name=ui_context.selected_document_name,
         selected_category=ui_context.selected_category,
+        dashboard_snapshot=snapshot,
     )
 
 

@@ -125,6 +125,84 @@ class ChatUiRelatedPage(BaseModel):
         return cleaned
 
 
+class ChatUiDashboardKpi(BaseModel):
+    """Chỉ số KPI đang hiển thị trên trang Dashboard HR."""
+
+    label: str = Field(..., min_length=1, max_length=120)
+    value: str = Field(..., min_length=1, max_length=64)
+    delta_label: str | None = Field(default=None, max_length=160)
+    trend: Literal["up", "down", "neutral"] | None = None
+    helper_text: str | None = Field(default=None, max_length=200)
+
+    @field_validator("label", "value")
+    @classmethod
+    def _check_required_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Trường KPI không được để trống")
+        return cleaned
+
+
+class ChatUiDashboardDepartment(BaseModel):
+    """Số liệu phân bổ nhân sự theo phòng ban trên Dashboard HR."""
+
+    department: str = Field(..., min_length=1, max_length=120)
+    count: int = Field(..., ge=0, le=1_000_000)
+    open_roles: int = Field(default=0, ge=0, le=100_000)
+
+    @field_validator("department")
+    @classmethod
+    def _check_department(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Tên phòng ban không được để trống")
+        return cleaned
+
+
+class ChatUiDashboardContractStatus(BaseModel):
+    """Số liệu phân bổ trạng thái/loại hợp đồng trên Dashboard HR."""
+
+    label: str = Field(..., min_length=1, max_length=120)
+    count: int = Field(..., ge=0, le=1_000_000)
+
+    @field_validator("label")
+    @classmethod
+    def _check_label(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Nhãn loại hợp đồng không được để trống")
+        return cleaned
+
+
+class ChatUiDashboardKnowledgeBase(BaseModel):
+    """Thống kê Kho tri thức RAG thực tế đang hiển thị trên Dashboard HR."""
+
+    total_documents: int = Field(..., ge=0, le=1_000_000)
+    indexed_documents: int = Field(..., ge=0, le=1_000_000)
+    processing_documents: int = Field(..., ge=0, le=1_000_000)
+    failed_documents: int = Field(..., ge=0, le=1_000_000)
+    total_chunks: int = Field(..., ge=0, le=100_000_000)
+
+
+class ChatUiDashboardSnapshot(BaseModel):
+    """Ảnh chụp số liệu có cấu trúc của trang Dashboard HR phục vụ phân tích thống kê."""
+
+    as_of_label: str = Field(..., min_length=1, max_length=160)
+    total_employees: int = Field(..., ge=0, le=1_000_000)
+    kpis: list[ChatUiDashboardKpi] = Field(default_factory=list, max_length=12)
+    departments: list[ChatUiDashboardDepartment] = Field(default_factory=list, max_length=30)
+    contract_statuses: list[ChatUiDashboardContractStatus] = Field(default_factory=list, max_length=12)
+    knowledge_base: ChatUiDashboardKnowledgeBase | None = None
+
+    @field_validator("as_of_label")
+    @classmethod
+    def _check_as_of_label(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("as_of_label không được để trống")
+        return cleaned
+
+
 class ChatUiContext(BaseModel):
     """Ngữ cảnh giao diện HR tùy chọn truyền từ Frontend."""
 
@@ -136,6 +214,7 @@ class ChatUiContext(BaseModel):
     related_pages: list[ChatUiRelatedPage] = Field(default_factory=list, max_length=6)
     selected_document_name: str | None = Field(default=None, max_length=255)
     selected_category: str | None = Field(default=None, max_length=64)
+    dashboard_snapshot: ChatUiDashboardSnapshot | None = None
 
     @field_validator("route")
     @classmethod

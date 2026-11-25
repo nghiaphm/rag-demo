@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from langchain_core.documents import Document
@@ -42,7 +42,11 @@ from app.rag.retriever import get_retriever
 from app.rag.reranker import get_reranker
 from app.chat.multi_query import create_multi_query_expander
 from app.chat.corrective import CorrectiveOutcome, CorrectiveRagRunner
-from app.chat.ui_context import UiPageContext, fit_ui_system_instruction
+from app.chat.ui_context import (
+    UiPageContext,
+    fit_ui_system_instruction,
+    format_dashboard_snapshot_context,
+)
 
 
 @dataclass(frozen=True)
@@ -219,8 +223,25 @@ async def prepare_rag_request_from_components(
         documents = corrective_outcome.documents
         final_retrieval_query = corrective_outcome.final_query
 
+    dashboard_block = format_dashboard_snapshot_context(ui_context)
+    effective_dashboard_block = ""
+    chunk_budget_builder = resolved_budget_builder
+    if dashboard_block:
+        dashboard_tokens = resolved_budget_builder.counter.human(dashboard_block)
+        if dashboard_tokens < resolved_budget_builder.config.chunks_max_tokens:
+            effective_dashboard_block = dashboard_block
+            chunk_budget_builder = ContextBudgetBuilder(
+                replace(
+                    resolved_budget_builder.config,
+                    chunks_max_tokens=max(
+                        1,
+                        resolved_budget_builder.config.chunks_max_tokens - dashboard_tokens,
+                    ),
+                )
+            )
+
     with active_trace.span("context_budget", input={"candidate_count": len(documents)}) as span:
-        budget = resolved_budget_builder.build(
+        budget = chunk_budget_builder.build(
             system=effective_system_instruction,
             history_turns=history_turns,
             chunks=format_context_blocks(documents),
@@ -228,11 +249,14 @@ async def prepare_rag_request_from_components(
         )
         span.set_output({"budgeted_chunks": len(budget.chunks)})
     selected_documents = documents[: len(budget.chunks)]
-    context = (
-        "\n\n".join(budget.chunks)
-        if budget.chunks
-        else "(không có tài liệu liên quan)"
-    )
+    if effective_dashboard_block and budget.chunks:
+        context = effective_dashboard_block + "\n\n" + "\n\n".join(budget.chunks)
+    elif effective_dashboard_block:
+        context = effective_dashboard_block
+    elif budget.chunks:
+        context = "\n\n".join(budget.chunks)
+    else:
+        context = "(không có tài liệu liên quan)"
     prompt_value = get_history_aware_rag_prompt(
         system_instruction=effective_system_instruction,
     ).invoke(
