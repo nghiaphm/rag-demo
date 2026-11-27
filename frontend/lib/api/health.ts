@@ -32,9 +32,17 @@ export async function checkHealth(api: ReturnType<typeof createApiClient>, signa
   const data = readiness.data;
   if (![200, 503].includes(readiness.status) || !record(data) || !record(data.dependencies)
     || !["ok", "degraded"].includes(String(data.status))) throw new TypeError("Invalid readiness contract.");
-  const mongodb = dependency("mongodb", data.dependencies.mongodb);
-  const qdrant = dependency("qdrant", data.dependencies.qdrant);
-  const healthy = mongodb.ok && qdrant.ok;
-  if (healthy !== (data.status === "ok") || healthy !== (readiness.status === 200)) throw new TypeError("Inconsistent readiness contract.");
-  return { api: "ok", status: healthy ? "ok" : "degraded", httpStatus: readiness.status as 200 | 503, mongodb, qdrant };
+  const deps = data.dependencies;
+  const mongodb = dependency("mongodb", deps.mongodb);
+  const qdrant = dependency("qdrant", deps.qdrant);
+  const optionalEntries = ["redis", "s3"]
+    .filter(name => deps[name] !== undefined)
+    .map(name => dependency(name, deps[name]));
+  const isOkStatus = data.status === "ok";
+  if (isOkStatus !== (readiness.status === 200)) throw new TypeError("Inconsistent readiness contract.");
+  if (isOkStatus && (!mongodb.ok || !qdrant.ok)) throw new TypeError("Inconsistent readiness contract.");
+  if (!isOkStatus && mongodb.ok && qdrant.ok && optionalEntries.every(entry => entry.ok)) {
+    throw new TypeError("Inconsistent readiness contract.");
+  }
+  return { api: "ok", status: isOkStatus ? "ok" : "degraded", httpStatus: readiness.status as 200 | 503, mongodb, qdrant };
 }

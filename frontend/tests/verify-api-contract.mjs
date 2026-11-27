@@ -58,7 +58,7 @@ for healthy in (True, False):
     assert body['status'] == ('ok' if healthy else 'degraded')
     assert set(body) == {'status', 'dependencies'}
     assert body['dependencies'] == {name: value.to_dict() for name, value in statuses.items()}
-schemas['DependencyHealthResponse'] = {'type': 'object', 'required': ['status', 'dependencies'], 'properties': {'status': {'enum': ['ok', 'degraded']}, 'dependencies': {'type': 'object', 'required': ['mongodb', 'qdrant'], 'properties': {name: {'$ref': '#/$defs/ConnectionStatus'} for name in ('mongodb', 'qdrant')}}}}
+schemas['DependencyHealthResponse'] = {'type': 'object', 'required': ['status', 'dependencies'], 'properties': {'status': {'enum': ['ok', 'degraded']}, 'dependencies': {'type': 'object', 'required': ['mongodb', 'qdrant'], 'properties': {name: {'$ref': '#/$defs/ConnectionStatus'} for name in ('mongodb', 'qdrant', 'redis', 's3')}}}}
 print(json.dumps({'schemas': schemas, 'paths': spec['paths']}))
 `], { cwd: root, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 });
 assert.equal(exported.status, 0, "Offline Python schema export failed (no provider requests permitted)");

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr
     openai_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
+    llm_request_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2
 
     # JSON /chat only; SSE remains legacy until its separately approved integration.
     tool_use_enabled: bool = False
@@ -32,8 +34,9 @@ class Settings(BaseSettings):
     # ----- Embedding provider (độc lập với LLM) -----
     # Baseline: Google Gemini embedding (free tier, gọi qua API — không self-host).
     embedding_provider: str = "google"
-    embedding_api_key: str
+    embedding_api_key: SecretStr
     embedding_model: str = "gemini-embedding-001"
+    embedding_timeout_seconds: float = 30.0
 
     # ----- Chunking -----
     chunk_size: int = 500
@@ -85,6 +88,7 @@ class Settings(BaseSettings):
     # ----- Storage -----
     documents_dir: str = "./data/documents"
     storage_backend: str = "local"
+    max_upload_bytes: int = 25 * 1024 * 1024
     default_tenant_id: str = "default"
     s3_bucket: str | None = None
     s3_region: str = "us-east-1"
@@ -131,6 +135,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     rate_limit_enabled: bool = False
     rate_limit_requests_per_minute: int = 60
+    trusted_proxy_ips: tuple[str, ...] | str = ()
+    cors_origins: tuple[str, ...] | str = (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    )
     max_tokens_per_turn: int = 8192
 
     # ----- Async Ingestion Worker (Phase 5.1) -----
@@ -226,6 +235,59 @@ class Settings(BaseSettings):
         if not secret:
             raise ValueError("GROQ_API_KEY không được rỗng")
         return SecretStr(secret)
+
+    @field_validator("embedding_api_key")
+    @classmethod
+    def _validate_embedding_api_key(cls, value: SecretStr) -> SecretStr:
+        secret = value.get_secret_value().strip()
+        if not secret:
+            raise ValueError("EMBEDDING_API_KEY không được rỗng")
+        return SecretStr(secret)
+
+    @field_validator("llm_request_timeout_seconds", "embedding_timeout_seconds")
+    @classmethod
+    def _validate_provider_timeouts(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("Provider timeout phải lớn hơn 0")
+        return value
+
+    @field_validator("llm_max_retries")
+    @classmethod
+    def _validate_llm_max_retries(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("LLM_MAX_RETRIES không được âm")
+        return value
+
+    @field_validator("max_upload_bytes")
+    @classmethod
+    def _validate_max_upload_bytes(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("MAX_UPLOAD_BYTES phải lớn hơn 0")
+        return value
+
+    @field_validator("trusted_proxy_ips", mode="before")
+    @classmethod
+    def _validate_trusted_proxy_ips(cls, value: object) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            return tuple(part.strip() for part in value.split(",") if part.strip())
+        if isinstance(value, (list, tuple, set)):
+            return tuple(str(part).strip() for part in value if str(part).strip())
+        raise ValueError("TRUSTED_PROXY_IPS phải là chuỗi phân tách bằng dấu phẩy hoặc danh sách")
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _validate_cors_origins(cls, value: object) -> tuple[str, ...]:
+        if isinstance(value, str):
+            items = tuple(part.strip().rstrip("/") for part in value.split(",") if part.strip())
+        elif isinstance(value, (list, tuple, set)):
+            items = tuple(str(part).strip().rstrip("/") for part in value if str(part).strip())
+        else:
+            raise ValueError("CORS_ORIGINS phải là chuỗi phân tách bằng dấu phẩy hoặc danh sách")
+        if not items:
+            raise ValueError("CORS_ORIGINS không được rỗng")
+        return items
 
     @field_validator("openai_base_url")
     @classmethod
@@ -473,6 +535,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Khi EXCEL_TEXT_ONLY_EMBEDDING_ENABLED=true, bắt buộc phải bật EXCEL_PARQUET_INGESTION_ENABLED=true"
             )
+        if self.auth_enabled:
+            jwt_secret = self.jwt_secret_key.get_secret_value().strip()
+            weak_defaults = {
+                "dev-insecure-secret-change-in-production",
+                "replace-with-strong-random-secret",
+                "changeme",
+                "secret",
+            }
+            if len(jwt_secret) < 32 or jwt_secret.lower() in weak_defaults:
+                raise ValueError(
+                    "JWT_SECRET_KEY không an toàn khi AUTH_ENABLED=true; cần cấu hình khóa ngẫu nhiên tối thiểu 32 ký tự"
+                )
         return self
 
     # Đọc từ file .env, không phân biệt hoa/thường tên biến.

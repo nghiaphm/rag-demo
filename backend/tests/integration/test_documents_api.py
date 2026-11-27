@@ -146,6 +146,71 @@ class DocumentApiTests(unittest.TestCase):
         self.assertTrue(response.json()["cleanup_pending"])
         self.assertFalse(response.json()["retrieval_eligible"])
 
+    def test_upload_and_update_return_413_for_oversized_files_and_keep_400_for_invalid_files(self):
+        from tests._test_env import override_settings
+
+        app = self.make_app()
+        fake = FakeDocumentService()
+        client = TestClient(app)
+
+        with (
+            patch("app.api.routes.documents.create_document_service", return_value=fake),
+            override_settings(max_upload_bytes=16),
+        ):
+            oversized_upload = client.post(
+                "/documents/upload",
+                files={"file": ("large.pdf", b"x" * 17, "application/pdf")},
+            )
+            oversized_update = client.put(
+                f"/documents/{DOCUMENT_ID}",
+                files={"file": ("large.txt", b"y" * 17, "text/plain")},
+            )
+            empty_upload = client.post(
+                "/documents/upload",
+                files={"file": ("empty.txt", b"", "text/plain")},
+            )
+            bad_ext_upload = client.post(
+                "/documents/upload",
+                files={"file": ("malware.exe", b"abc", "application/octet-stream")},
+            )
+
+        self.assertEqual(oversized_upload.status_code, 413)
+        self.assertEqual(oversized_update.status_code, 413)
+        self.assertEqual(empty_upload.status_code, 400)
+        self.assertEqual(bad_ext_upload.status_code, 400)
+
+        with (
+            patch("app.api.routes.documents.create_document_service", return_value=fake),
+            patch("app.api.routes.documents.MAX_XLSX_BYTES", 16),
+        ):
+            oversized_xlsx = client.post(
+                "/documents/upload",
+                files={
+                    "file": (
+                        "huge.xlsx",
+                        b"z" * 17,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+            corrupt_small_xlsx = client.post(
+                "/documents/upload",
+                files={
+                    "file": (
+                        "corrupt.xlsx",
+                        b"not-a-zip",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+            )
+
+        self.assertEqual(oversized_xlsx.status_code, 413)
+        self.assertEqual(corrupt_small_xlsx.status_code, 400)
+
+        schema = app.openapi()
+        self.assertIn("413", schema["paths"]["/documents/upload"]["post"]["responses"])
+        self.assertIn("413", schema["paths"]["/documents/{document_id}"]["put"]["responses"])
+
 
 if __name__ == "__main__":
     unittest.main()

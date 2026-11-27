@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Res
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.client_ip import resolve_client_ip
 from app.shared.auth import UserContext, can_access_resource
 from app.shared.config import settings
 
@@ -28,6 +29,7 @@ from app.api.schemas.chat_documents import (
     DocumentIndexInfo,
     DocumentInfo,
     DocumentVersionInfo,
+    HTTPErrorResponse,
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -164,12 +166,56 @@ def _handle_error(exc: Exception) -> None:
     raise exc
 
 
+_DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+async def _enforce_upload_rate_limit(request: Request, current_user: UserContext | None) -> None:
+    if not getattr(settings, "rate_limit_enabled", False):
+        return
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if limiter is None:
+        return
+    trusted_proxies = getattr(settings, "trusted_proxy_ips", ())
+    key = (
+        current_user.user_id
+        if current_user is not None
+        else resolve_client_ip(request, trusted_proxies)
+    )
+    allowed = await limiter.allow(
+        key,
+        limit=int(getattr(settings, "rate_limit_requests_per_minute", 60)),
+        window_seconds=60,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Quá giới hạn số lượt yêu cầu. Vui lòng thử lại sau.",
+        )
+
+
+def _format_mib(num_bytes: int) -> str:
+    mib = num_bytes / (1024 * 1024)
+    return f"{int(mib)} MiB" if mib.is_integer() else f"{mib:.2f} MiB"
+
+
 async def _read_upload(file: UploadFile) -> tuple[str, bytes]:
     file_name = _validated_file_name(file)
-    content = await file.read(MAX_XLSX_BYTES + 1) if Path(file_name).suffix.lower() == ".xlsx" else await file.read()
+    is_xlsx = Path(file_name).suffix.lower() == ".xlsx"
+    configured_max = int(getattr(settings, "max_upload_bytes", _DEFAULT_MAX_UPLOAD_BYTES))
+    max_bytes = (
+        min(MAX_XLSX_BYTES, configured_max)
+        if is_xlsx
+        else configured_max
+    )
+    content = await file.read(max_bytes + 1)
     if not content:
         raise HTTPException(status_code=400, detail="File rỗng.")
-    if Path(file_name).suffix.lower() == ".xlsx":
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Kích thước file vượt giới hạn cho phép ({_format_mib(max_bytes)}).",
+        )
+    if is_xlsx:
         try:
             await run_in_threadpool(read_workbook, content, content_type=file.content_type)
         except WorkbookError as exc:
@@ -205,7 +251,10 @@ async def document_preview(document_id: UUID, version_id: UUID, request: Request
     "/upload",
     response_model=DocumentIndexInfo,
     status_code=201,
-    responses={202: {"model": DocumentIndexInfo, "description": "Async ingestion accepted"}},
+    responses={
+        202: {"model": DocumentIndexInfo, "description": "Async ingestion accepted"},
+        413: {"model": HTTPErrorResponse, "description": "Content Too Large"},
+    },
 )
 async def upload_document(
     request: Request,
@@ -214,6 +263,7 @@ async def upload_document(
     current_user: UserContext | None = Depends(get_current_user),
 ) -> DocumentIndexInfo:
     """Tạo document identity mới và index version đầu tiên (hoặc enqueue nếu async)."""
+    await _enforce_upload_rate_limit(request, current_user)
     file_name, content = await _read_upload(file)
     service = await _service(request)
     kwargs = (
@@ -300,7 +350,10 @@ async def get_document(
     "/{document_id}",
     response_model=DocumentIndexInfo,
     status_code=201,
-    responses={202: {"model": DocumentIndexInfo, "description": "Async ingestion accepted"}},
+    responses={
+        202: {"model": DocumentIndexInfo, "description": "Async ingestion accepted"},
+        413: {"model": HTTPErrorResponse, "description": "Content Too Large"},
+    },
 )
 async def update_document(
     request: Request,
@@ -309,6 +362,7 @@ async def update_document(
     file: UploadFile = File(...),
 ) -> DocumentIndexInfo:
     """Tạo immutable version mới từ raw file mới; active cũ được giữ nếu fail."""
+    await _enforce_upload_rate_limit(request, None)
     file_name, content = await _read_upload(file)
     service = await _service(request)
     if settings.async_ingestion_enabled:

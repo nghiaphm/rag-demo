@@ -39,8 +39,8 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 
 | Phase | Phạm vi Tasks | Trạng thái | Commits | Tóm tắt Kiểm chứng |
 | :--- | :--- | :--- | :--- | :--- |
-| **Phase 0** — Pre-Stage Stabilization | `T0.1` – `T0.4` | **Hoàn thành** (`Tested` & `Verified` offline) | `78c400c`, `76689e4`, `23cd072`, `911ac10`, `841b1dd`, `113ea17`, `0e7ab32` | Arch `9/9`, Unit `338/338`, Integration `183/183`, Smoke `3/3`, OpenAPI `63` schemas PASS |
-| **Phase 1** — Reliability *(No Auth/Cache)* | `T1.1` – `T1.3` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
+| **Phase 0** — Pre-Stage Stabilization | `T0.1` – `T0.4` | **Hoàn thành & Merged** (`3166c27`) | `78c400c`..`fa404fd` | Arch `9/9`, Unit `338/338`, Integration `183/183`, Smoke `3/3`, OpenAPI `63` schemas PASS |
+| **Phase 1** — Reliability *(No Auth/Cache)* | `T1.1` – `T1.3` | **Hoàn thành** (`Tested` & `Verified` offline) | `2dd3002`, `ceb0f41`, `08fa055`, `a0adae0` | Arch `9/9`, Unit `344/344`, Integration `185/185`, FE `238/238`, OpenAPI `64` schemas PASS |
 | **Phase 2** — Observability | `T2.1` – `T2.4` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
 | **Phase 3** — RAG & Agent Evaluation | `T3.1` – `T3.4` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
 | **Phase 4** — Deployment & Testing | `T4.1` – `T4.4` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
@@ -121,20 +121,76 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 1 — Reliability (Tạm hoãn Authentication/RBAC & Semantic Cache)
-> **Trạng thái:** Chưa bắt đầu  
-> **Phạm vi:** `T1.1 Non-destructive Health (Required vs Optional)` · `T1.2 Upload Size Cap, Redis Failure Policy & Trusted Proxy IP` · `T1.3 Provider Timeouts, SecretStr, Dynamic CORS, Security Headers & Startup Guard`
+> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-27)** trên nhánh `fix/reliability-hardening` (tách từ `master` `3166c27`)  
+> **Phạm vi:** `T1.1 Non-destructive Health (Required vs Optional)` · `T1.2 Upload Size Cap (413), Redis Failure Policy & Trusted Proxy IP` · `T1.3 Provider Timeouts, SecretStr, Dynamic CORS, Security Headers & Startup Guard`
+
+### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
+1. `2dd3002` — `fix(health): avoid closing active pools and separate optional checks`
+2. `ceb0f41` — `feat(security): harden provider timeouts, SecretStr, CORS, and headers`
+3. `08fa055` — `fix(rate-limit): add atomic Redis Lua script, fallback, and proxy IP`
+4. `a0adae0` — `feat(documents): enforce 413 upload size caps across API and frontend`
+5. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 1 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
 
 ### Quyết định thiết kế & Thay đổi thực hiện
-- **T1.1:** *(chờ cập nhật)*
-- **T1.2:** *(chờ cập nhật)*
-- **T1.3:** *(chờ cập nhật)*
+- **T1.1 (Non-destructive `/health/dependencies` & Required vs Optional Dependencies):**
+  - Bổ sung `threading.RLock()` và tách phương thức `check_health()` khỏi `connect()` trên `MongoDBConnection` (`backend/app/infrastructure/mongo.py`) và `QdrantConnection` (`backend/app/infrastructure/qdrant.py`): kiểm tra trực tiếp trên client đang sống (`admin.command("ping")` / `get_collections()`), tuyệt đối **không gọi `self.close()`** kể cả khi ping gặp lỗi mạng tạm thời.
+  - Bổ sung `check_redis_health`, `check_s3_health`, `is_readiness_ok` và `CloudConnections.check_health_all()` (`backend/app/infrastructure/connections.py`):
+    - **Required (`mongodb`, `qdrant`):** Luôn kiểm tra; lỗi → HTTP `503` (`status="degraded"`).
+    - **Conditional Blocking (`s3` khi `STORAGE_BACKEND=s3`, `redis` khi `ASYNC_INGESTION_ENABLED=true`):** Lỗi → HTTP `503` (`status="degraded"`).
+    - **Optional Non-blocking (`redis` khi chỉ bật `RATE_LIMIT_ENABLED=true`):** Báo trạng thái lỗi trong `dependencies.redis` để giám sát nhưng tổng thể vẫn giữ HTTP `200` (`status="ok"`), khớp với cơ chế fallback bộ nhớ ở `T1.2`.
+  - Đồng bộ kiểu `DependencyHealthResponse` (`redis?`, `s3?`) tại `frontend/types/api.ts`, `frontend/lib/api/health.ts` và `frontend/tests/verify-api-contract.mjs`.
+- **T1.2 (HTTP `413 Content Too Large`, Atomic Redis Lua Rate Limiter & Trusted Proxy IP):**
+  - Thêm `max_upload_bytes: int = 25 * 1024 * 1024` (`25 MiB`) và `trusted_proxy_ips: tuple[str, ...] = ()` vào `Settings` (`backend/app/shared/config.py`) + `.env.example`.
+  - Thống nhất trả **HTTP `413 Content Too Large`** trong `_read_upload()` (`backend/app/api/routes/documents.py`) khi vượt `MAX_UPLOAD_BYTES` (`25 MiB`) đối với `.pdf`/`.txt`/`.md`/`.markdown` hoặc vượt `min(MAX_XLSX_BYTES, MAX_UPLOAD_BYTES)` (`10 MiB`) đối với `.xlsx` (chỉ đọc tối đa `max_bytes + 1` bytes vào RAM); giữ nguyên HTTP `400` cho file rỗng, sai phần mở rộng, sai MIME hoặc hỏng cấu trúc workbook.
+  - Khai báo `413: {"model": HTTPErrorResponse, "description": "Content Too Large"}` trên `POST /documents/upload` và `PUT /documents/{document_id}` (`backend/app/api/schemas/chat_documents.py`), đồng thời bổ sung thông báo lỗi `413` an toàn vào `safeApiErrorMessage` (`frontend/lib/api/error-ux.ts`).
+  - Nâng cấp `RedisRateLimiter` (`backend/app/infrastructure/semantic_cache.py`): dùng Lua script atomic (`INCR` + `EXPIRE` khi `count == 1` hoặc `TTL < 0`); khi Redis gặp sự cố kết nối, ghi log `WARNING` có tiết lưu (`30s`, không lộ thông tin nhạy cảm) và chuyển sang bộ đếm in-memory cục bộ có giới hạn kích thước (`max_memory_keys=10_000`).
+  - Tạo `resolve_client_ip(request, trusted_proxy_ips)` (`backend/app/api/dependencies/client_ip.py`): chỉ tin cậy IP hợp lệ đầu tiên trong `X-Forwarded-For` khi `request.client.host` thuộc `trusted_proxy_ips` (hỗ trợ cả IP đơn và dải CIDR), áp dụng cho cả `/chat`, `/chat/stream` và upload/update tài liệu.
+- **T1.3 (Provider Timeouts/Retries, `SecretStr`, Dynamic CORS, Security Headers & Startup Guard):**
+  - Chuyển `embedding_api_key` sang `SecretStr` trong `Settings` và cập nhật `backend/app/rag/embeddings.py` + `backend/scripts/controlled_live_e2e.py` dùng `.get_secret_value()`.
+  - Bổ sung `llm_request_timeout_seconds: float = 60.0`, `llm_max_retries: int = 2`, `embedding_timeout_seconds: float = 30.0` và nối vào `get_llm()`, `get_grader_llm()` (`backend/app/rag/llm.py`) và `get_embeddings()` (`request_options={"timeout": ...}`).
+  - Bổ sung cấu hình động `cors_origins`, middleware thuần ASGI `SecurityHeadersMiddleware` (không buffer luồng SSE, tự động gắn `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`) qua hàm `configure_middlewares()` tại `backend/app/main.py`.
+  - Bổ sung startup guard trong `Settings`: từ chối khởi động ngay lập tức (`ValidationError`) nếu `auth_enabled=True` nhưng `jwt_secret_key` ngắn dưới 32 ký tự hoặc dùng giá trị mặc định yếu.
 
 ### Files thêm mới / chỉnh sửa
-- **Thêm mới:** *(chờ cập nhật)*
-- **Chỉnh sửa:** *(chờ cập nhật)*
+- **Thêm mới:**
+  - `backend/app/api/dependencies/client_ip.py`
+- **Chỉnh sửa:**
+  - `.env.example`
+  - `backend/app/shared/config.py`
+  - `backend/app/infrastructure/mongo.py`
+  - `backend/app/infrastructure/qdrant.py`
+  - `backend/app/infrastructure/connections.py`
+  - `backend/app/infrastructure/semantic_cache.py`
+  - `backend/app/api/schemas/chat_documents.py`
+  - `backend/app/api/routes/documents.py`
+  - `backend/app/api/routes/chat.py`
+  - `backend/app/rag/llm.py`
+  - `backend/app/rag/embeddings.py`
+  - `backend/app/main.py`
+  - `backend/scripts/controlled_live_e2e.py`
+  - `backend/tests/unit/test_cloud_connections.py`
+  - `backend/tests/unit/test_rbac_and_cache.py`
+  - `backend/tests/unit/test_llm.py`
+  - `backend/tests/integration/test_documents_api.py`
+  - `backend/tests/integration/test_cors.py`
+  - `frontend/types/api.ts`
+  - `frontend/lib/api/health.ts`
+  - `frontend/lib/api/error-ux.ts`
+  - `frontend/tests/verify-api-contract.mjs`
+  - `frontend/tests/error-health.test.mjs`
+  - `frontend/tests/document-upload.test.mjs`
 
 ### Kết quả kiểm thử & Phân loại trạng thái
-- *(chờ cập nhật)*
+- **`Verified` (Kiến trúc, hợp đồng OpenAPI, cấu hình bảo mật & hành vi HTTP middleware thực tế):**
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/architecture -t backend -v` → **`9/9 PASS` (`0.222s`)**.
+  - `.\.venv\Scripts\python.exe -m compileall -q backend/app backend/tests backend/scripts` → **`PASS` (0 lỗi cú pháp)**.
+  - `npm.cmd --prefix frontend run test:contract` → **`PASS: 64 REST/SSE/health schemas`** *(bao gồm `HTTPErrorResponse` cho mã `413` và `DependencyHealthResponse` mở rộng)*.
+  - `npm.cmd --prefix frontend run typecheck` → **`PASS` (`tsc --noEmit`)**.
+  - `npm.cmd --prefix frontend run lint` → **`PASS` (`eslint`)**.
+  - `npm.cmd --prefix frontend test` → **`238/238 PASS` (`11.46s`)**.
+- **`Tested` (Toàn bộ bộ kiểm thử Backend Unit & Integration không phụ thuộc cloud/provider thật):**
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/unit -t backend -v` → **`344/344 PASS` (`4.186s`)** *(tăng +6 unit tests mới so với Phase 0)*.
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/integration -t backend -v` → **`185/185 PASS` (`5.908s`)** *(tăng +2 integration tests mới so với Phase 0)*.
 
 ---
 

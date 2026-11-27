@@ -416,3 +416,9 @@ class DeleteDocumentResponse(BaseModel):
     retained_files: int
     cleanup_pending: bool
     retrieval_eligible: bool = False
+
+
+class HTTPErrorResponse(BaseModel):
+    """Standard FastAPI HTTPException payload with string detail."""
+
+    detail: str

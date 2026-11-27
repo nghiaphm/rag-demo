@@ -7,6 +7,7 @@ export function safeApiErrorMessage(error: unknown, fallback = "Không thể ho�
     404: "Không tìm thấy dữ liệu. Hãy tải lại danh sách hoặc chọn mục khác.",
     409: "Dữ liệu đang có xung đột trạng thái. Chờ yêu cầu hiện tại hoàn tất rồi kiểm tra lại.",
     410: "Dữ liệu đã bị xóa. Hãy chọn mục khác.",
+    413: "Kích thước file vượt giới hạn cho phép. Hãy chọn file nhỏ hơn trước khi gửi lại.",
     422: "Dữ liệu gửi lên không hợp lệ. Kiểm tra nội dung hoặc file trước khi gửi lại.",
     429: "Quá nhiều yêu cầu. Hãy chờ rồi thử lại chủ động.",
     502: "Dịch vụ chưa thể hoàn tất xử lý. Kiểm tra trạng thái đã lưu trước khi gửi lại.",

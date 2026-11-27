@@ -177,6 +177,80 @@ class TestSemanticCacheAndRateLimiter(unittest.IsolatedAsyncioTestCase):
         # Different user still has independent quota
         self.assertTrue(await limiter.allow("u-2", limit=2, window_seconds=60))
 
+    async def test_redis_rate_limiter_atomic_lua_and_bounded_fallback_when_redis_fails(self) -> None:
+        class _EvalThenDownRedis:
+            def __init__(self) -> None:
+                self.eval_calls: list[tuple[str, int, str, int]] = []
+                self.fail = False
+                self._counts: dict[str, int] = {}
+
+            async def eval(self, script: str, numkeys: int, key: str, window: int) -> int:
+                if self.fail:
+                    raise ConnectionError("redis://:secret-pass@10.0.0.9:6379 connection reset")
+                self.eval_calls.append((script, numkeys, key, window))
+                self._counts[key] = self._counts.get(key, 0) + 1
+                return self._counts[key]
+
+        fake_redis = _EvalThenDownRedis()
+        limiter = RedisRateLimiter(redis_client=fake_redis, max_memory_keys=3)
+
+        # Normal path uses atomic Lua script with EXPIRE/TTL guard
+        self.assertTrue(await limiter.allow("u-lua", limit=2, window_seconds=60))
+        self.assertEqual(len(fake_redis.eval_calls), 1)
+        self.assertIn("EXPIRE", fake_redis.eval_calls[0][0])
+        self.assertIn("TTL", fake_redis.eval_calls[0][0])
+
+        # Redis crashes mid-flight -> must NOT fail-open unconditionally or raise 500;
+        # must enforce limit via bounded local memory and never leak Redis secret in logs!
+        fake_redis.fail = True
+        with self.assertLogs("app.infrastructure.semantic_cache", level="WARNING") as captured:
+            self.assertTrue(await limiter.allow("u-down", limit=2, window_seconds=60))
+            self.assertTrue(await limiter.allow("u-down", limit=2, window_seconds=60))
+            self.assertFalse(await limiter.allow("u-down", limit=2, window_seconds=60))
+
+        joined_logs = "\n".join(captured.output)
+        self.assertNotIn("secret-pass", joined_logs)
+
+        # Memory fallback stays strictly bounded at max_memory_keys=3
+        for idx in range(10):
+            await limiter.allow(f"flood-{idx}", limit=5, window_seconds=60)
+        self.assertLessEqual(len(limiter._memory), 3)
+
+    def test_resolve_client_ip_ignores_spoofed_xff_unless_from_trusted_proxy(self) -> None:
+        from types import SimpleNamespace
+        from app.api.dependencies.client_ip import resolve_client_ip
+
+        def _req(direct_host: str | None, xff: str | None = None):
+            headers = {"x-forwarded-for": xff} if xff is not None else {}
+            client = SimpleNamespace(host=direct_host) if direct_host is not None else None
+            return SimpleNamespace(client=client, headers=headers)
+
+        # Untrusted direct client trying to spoof X-Forwarded-For -> ignored
+        self.assertEqual(
+            resolve_client_ip(_req("203.0.113.50", "198.51.100.77"), trusted_proxy_ips=()),
+            "203.0.113.50",
+        )
+        self.assertEqual(
+            resolve_client_ip(_req("203.0.113.50", "198.51.100.77"), trusted_proxy_ips=("10.0.0.1",)),
+            "203.0.113.50",
+        )
+
+        # Trusted reverse proxy (exact IP or CIDR) -> extracts first valid client IP
+        self.assertEqual(
+            resolve_client_ip(_req("10.0.0.5", "198.51.100.88, 10.0.0.5"), trusted_proxy_ips=("10.0.0.0/8",)),
+            "198.51.100.88",
+        )
+        self.assertEqual(
+            resolve_client_ip(_req("127.0.0.1", "203.0.113.9"), trusted_proxy_ips=("127.0.0.1",)),
+            "203.0.113.9",
+        )
+
+        # Malformed X-Forwarded-For from trusted proxy -> safely falls back to direct host
+        self.assertEqual(
+            resolve_client_ip(_req("127.0.0.1", "not-an-ip\r\ninjected"), trusted_proxy_ips=("127.0.0.1",)),
+            "127.0.0.1",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
