@@ -612,6 +612,127 @@ class ChatSqlRoutingIntegrationTests(unittest.TestCase):
         )
         self.assertIn("bang_du_lieu_17", str(system_msg.content))
 
+    def test_chat_stream_persistent_initializes_excel_sql_service_lazily_without_502(
+        self,
+    ) -> None:
+        from types import SimpleNamespace
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from app.api.routes.chat import router as chat_router
+        from app.conversations.models import (
+            MessageRecord,
+            MessageRole,
+            MessageStatus,
+            SessionRecord,
+        )
+        from app.conversations.service import StreamingTurn
+
+        session_id = new_uuid()
+        session_record = SessionRecord(session_id=session_id, title="Phiên HR")
+
+        class _Cursor(list):
+            def sort(self, *_args, **_kwargs):
+                return self
+
+            def skip(self, n: int):
+                return _Cursor(self[n:])
+
+            def limit(self, n: int):
+                return _Cursor(self[:n])
+
+        class _Collection:
+            def __init__(self, items: list[dict] | None = None) -> None:
+                self._items = list(items or [])
+
+            def find(self, *_args, **_kwargs):
+                return _Cursor(self._items)
+
+            def find_one(self, query: dict, *_args, **_kwargs):
+                for item in self._items:
+                    if item.get("_id") == query.get("_id"):
+                        return item
+                return None
+
+            def count_documents(self, *_args, **_kwargs) -> int:
+                return len(self._items)
+
+        fake_db = {
+            "documents": _Collection([self.doc_record.to_mongo()]),
+            "document_versions": _Collection([]),
+            "ingestion_jobs": _Collection([]),
+            "document_table_catalogs": _Collection([self.catalog_record.to_mongo()]),
+            "sessions": _Collection([session_record.to_mongo()]),
+            "messages": _Collection([]),
+        }
+
+        class _FakeConversationService:
+            def begin_streaming_turn(self, *, session_id, question, model, attachments=()):
+                req_id = new_uuid()
+                user_msg = MessageRecord(
+                    session_id=session_id,
+                    sequence=1,
+                    role=MessageRole.USER,
+                    content=question,
+                    status=MessageStatus.COMPLETED,
+                    request_id=req_id,
+                )
+                assistant_msg = MessageRecord(
+                    session_id=session_id,
+                    sequence=2,
+                    role=MessageRole.ASSISTANT,
+                    status=MessageStatus.STREAMING,
+                    model=model,
+                    request_id=req_id,
+                )
+                return StreamingTurn(
+                    request_id=req_id,
+                    user_message=user_msg,
+                    assistant_message=assistant_msg,
+                )
+
+            def finalize_streaming_turn(self, *_args, **_kwargs) -> None:
+                return None
+
+        app = FastAPI()
+        app.include_router(chat_router)
+        app.state.cloud_connections = SimpleNamespace(
+            mongodb=SimpleNamespace(database=fake_db),
+            qdrant=SimpleNamespace(client=object()),
+        )
+        client = TestClient(app)
+        scripted_model = ScriptedToolModel(
+            [_final_ai_message("Đã khởi tạo luồng trả lời thành công.")]
+        )
+
+        with (
+            patch.object(settings, "tool_use_enabled", True),
+            patch.object(settings, "agentic_mode_enabled", True),
+            patch.object(settings, "excel_sql_enabled", True),
+            patch.object(settings, "excel_parquet_ingestion_enabled", True),
+            patch.object(settings, "storage_backend", "s3"),
+            patch("app.chat.orchestrator.get_llm", return_value=scripted_model),
+            patch(
+                "app.infrastructure.duckdb_executor.create_duckdb_sql_executor",
+                return_value=self.executor,
+            ),
+            patch(
+                "app.api.routes.chat.create_conversation_service",
+                return_value=_FakeConversationService(),
+            ),
+        ):
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "question": "Hãy phân tích và thống kê nhân sự",
+                    "session_id": session_id,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("event: start", response.text)
+        self.assertIn("event: done", response.text)
+
 
 if __name__ == "__main__":
     unittest.main()
