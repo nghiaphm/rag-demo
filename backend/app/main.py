@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import auth, chat, documents, sessions
-from app.infrastructure.connections import CloudConnections
+from app.infrastructure.connections import CloudConnections, is_readiness_ok
 from app.infrastructure.ingestion_queue import get_ingestion_queue
 from app.infrastructure.observability import get_tracer
 from app.infrastructure.semantic_cache import get_rate_limiter, get_semantic_cache
@@ -75,9 +75,14 @@ def health() -> dict[str, str]:
 @app.get("/health/dependencies", tags=["system"])
 async def dependency_health() -> JSONResponse:
     """Readiness cloud an toàn; không trả endpoint, database name hay credentials."""
-    statuses = await run_in_threadpool(app.state.cloud_connections.connect_all)
+    checker = (
+        getattr(app.state.cloud_connections, "check_health_all", None)
+        or app.state.cloud_connections.connect_all
+    )
+    statuses = await run_in_threadpool(checker)
+    healthy = is_readiness_ok(statuses, settings)
     content = {
-        "status": "ok" if all(item.ok for item in statuses.values()) else "degraded",
+        "status": "ok" if healthy else "degraded",
         "dependencies": {name: item.to_dict() for name, item in statuses.items()},
     }
-    return JSONResponse(status_code=200 if content["status"] == "ok" else 503, content=content)
+    return JSONResponse(status_code=200 if healthy else 503, content=content)

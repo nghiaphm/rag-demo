@@ -24,6 +24,8 @@ export interface DependencyHealthResponse {
   dependencies: {
     mongodb: ConnectionStatus;
     qdrant: ConnectionStatus;
+    redis?: ConnectionStatus;
+    s3?: ConnectionStatus;
   };
 }
 
