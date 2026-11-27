@@ -500,6 +500,56 @@ class ChatStreamApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
 
+    def test_app_x_request_id_validation_and_prometheus_metrics_404_cardinality_guard(self):
+        from uuid import UUID
+        from prometheus_client import CollectorRegistry
+        import app.main as main_mod
+        from app.infrastructure.metrics import PrometheusMetricsRecorder
+        from app.shared.observability import NoOpMetricsRecorder, set_metrics_recorder
+        from tests._test_env import override_settings
+
+        registry = CollectorRegistry()
+        recorder = PrometheusMetricsRecorder(registry=registry)
+        set_metrics_recorder(recorder)
+        try:
+            with (
+                patch.object(
+                    main_mod.app.state,
+                    "cloud_connections",
+                    SimpleNamespace(
+                        mongodb=SimpleNamespace(database=object()),
+                        qdrant=SimpleNamespace(client=object()),
+                    ),
+                    create=True,
+                ),
+                override_settings(metrics_enabled=True),
+            ):
+                client = TestClient(main_mod.app)
+
+                # 1. Valid ASCII X-Request-ID is echoed safely
+                ok_resp = client.get("/health", headers={"X-Request-ID": "trace-id_2026.01"})
+                self.assertEqual(ok_resp.status_code, 200)
+                self.assertEqual(ok_resp.headers.get("X-Request-ID"), "trace-id_2026.01")
+
+                # 2. Malicious / overlong X-Request-ID is discarded and replaced with clean UUIDv4
+                for bad_id in ("evil\r\nSet-Cookie: a=1", "x" * 80, "bad space"):
+                    bad_resp = client.get("/health", headers={"X-Request-ID": bad_id})
+                    returned_id = bad_resp.headers.get("X-Request-ID", "")
+                    self.assertEqual(str(UUID(returned_id)), returned_id)
+
+                # 3. 50 random 404 paths collapse into a single route="unmatched" series
+                for idx in range(50):
+                    r404 = client.get(f"/nonexistent-random-path-{idx}-{uuid4().hex}")
+                    self.assertEqual(r404.status_code, 404)
+
+                metrics_resp = client.get("/metrics")
+                self.assertEqual(metrics_resp.status_code, 200)
+                self.assertIn("rag_http_requests_total", metrics_resp.text)
+                self.assertIn('route="unmatched",status_code="404"} 50.0', metrics_resp.text)
+                self.assertNotIn("nonexistent-random-path", metrics_resp.text)
+        finally:
+            set_metrics_recorder(NoOpMetricsRecorder())
+
 
 if __name__ == "__main__":
     unittest.main()
