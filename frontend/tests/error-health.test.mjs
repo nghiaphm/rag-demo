@@ -40,18 +40,19 @@ const delta = { event: "delta", data: { sequence: 3, content: "Partial  text\n "
 const done = { event: "done", data: { sequence: 4, status: "COMPLETED", usage: null } };
 const services = overrides => ({ createSession: async () => ({ session_id: id(1) }), stream: async () => ({}), ...overrides });
 
-test("HTTP 422/404/409/429/503 and network copy is safe and status-specific, never raw detail", () => {
+test("HTTP 413/422/404/409/429/503 and network copy is safe and status-specific, never raw detail", () => {
   const messages = [];
-  for (const status of [422, 404, 409, 429, 503]) {
+  for (const status of [413, 422, 404, 409, 429, 503]) {
     const message = safeApiErrorMessage({ status, kind: "http", message: privateText, detail: privateText, input: privateText });
     assert(!message.includes(privateText));
     messages.push(message);
   }
-  assert.equal(new Set(messages).size, 5);
-  assert.match(messages[0], /không hợp lệ/);
-  assert.match(messages[2], /xung đột/);
-  assert.match(messages[3], /Hãy chờ/);
-  assert.match(messages[4], /chưa sẵn sàng/);
+  assert.equal(new Set(messages).size, 6);
+  assert.match(messages[0], /vượt giới hạn/);
+  assert.match(messages[1], /không hợp lệ/);
+  assert.match(messages[3], /xung đột/);
+  assert.match(messages[4], /Hãy chờ/);
+  assert.match(messages[5], /chưa sẵn sàng/);
   assert.match(safeApiErrorMessage({ kind: "network", message: privateText }), /Kết nối bị gián đoạn/);
   assert.equal(typeof safeStreamErrorMessage("__proto__"), "string");
 });

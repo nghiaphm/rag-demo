@@ -228,3 +228,19 @@ test("async 202 Accepted upload preserves UPLOADED status and displays queued jo
   assert(html.includes(result.job_id));
   assert(!html.includes("được index và kích hoạt"));
 });
+
+test("HTTP 413 Content Too Large surfaces size-limit error without uncertain retry warning or raw server detail", async () => {
+  assert.match(validateUploadFile({ name: "huge.xlsx", size: 10 * 1024 * 1024 + 1, type: "" }), /10 MiB/);
+
+  const controller = new UploadController({
+    upload: async () => {
+      throw new ApiClientError("http", "raw server detail", 413);
+    },
+  });
+  controller.choose(file());
+  await controller.submit();
+  assert.equal(controller.getSnapshot().phase, "error");
+  assert.match(controller.getSnapshot().error, /vượt giới hạn cho phép/);
+  assert(!controller.getSnapshot().error.includes("raw server detail"));
+  assert.match(render(controller.getSnapshot()), /vượt giới hạn cho phép/);
+});
