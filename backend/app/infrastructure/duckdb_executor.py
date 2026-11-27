@@ -80,12 +80,13 @@ class DuckDBSqlExecutor(SqlQueryExecutor):
         self,
         *,
         storage_backend: str,
-        s3_bucket: str | None,
+        s3_bucket: str | None = None,
         s3_region: str = "us-east-1",
         s3_endpoint_url: str | None = None,
-        query_access_key_id: str | None,
-        query_secret_access_key: str | None,
+        query_access_key_id: str | None = None,
+        query_secret_access_key: str | None = None,
         ingest_access_key_id: str | None = None,
+        local_parquet_loader: Callable[[str], bytes] | None = None,
         memory_limit: str = "512MB",
         threads: int = 2,
         timeout_seconds: float = 15.0,
@@ -94,26 +95,30 @@ class DuckDBSqlExecutor(SqlQueryExecutor):
         _test_before_query_hook: Callable[[duckdb.DuckDBPyConnection], None] | None = None,
     ) -> None:
         normalized_backend = (storage_backend or "").strip().lower()
-        if normalized_backend != "s3":
+        if normalized_backend not in ("local", "s3"):
             raise SqlConfigurationError(
-                "Tool run_sql chỉ hoạt động khi STORAGE_BACKEND='s3'."
+                "Tool run_sql chỉ hỗ trợ STORAGE_BACKEND là 'local' hoặc 's3'."
             )
 
         normalized_bucket = (s3_bucket or "").strip()
-        if not normalized_bucket:
-            raise SqlConfigurationError("Thiếu cấu hình S3_BUCKET cho DuckDB SQL executor.")
-
         q_key = (query_access_key_id or "").strip()
         q_secret = (query_secret_access_key or "").strip()
-        if not q_key or not q_secret:
-            raise SqlConfigurationError(
-                "Thiếu credential chỉ đọc S3_QUERY_ACCESS_KEY_ID / S3_QUERY_SECRET_ACCESS_KEY."
-            )
-
         i_key = (ingest_access_key_id or "").strip()
-        if i_key and q_key == i_key:
+
+        if normalized_backend == "s3":
+            if not normalized_bucket:
+                raise SqlConfigurationError("Thiếu cấu hình S3_BUCKET cho DuckDB SQL executor.")
+            if not q_key or not q_secret:
+                raise SqlConfigurationError(
+                    "Thiếu credential chỉ đọc S3_QUERY_ACCESS_KEY_ID / S3_QUERY_SECRET_ACCESS_KEY."
+                )
+            if i_key and q_key == i_key:
+                raise SqlConfigurationError(
+                    "Credential S3_QUERY_ACCESS_KEY_ID bắt buộc phải khác S3_INGEST_ACCESS_KEY_ID."
+                )
+        elif local_parquet_loader is None and _test_parquet_bytes_by_key is None:
             raise SqlConfigurationError(
-                "Credential S3_QUERY_ACCESS_KEY_ID bắt buộc phải khác S3_INGEST_ACCESS_KEY_ID."
+                "Thiếu local_parquet_loader cho DuckDB SQL executor ở chế độ STORAGE_BACKEND='local'."
             )
 
         normalized_mem = (memory_limit or "512MB").strip().upper()
@@ -126,11 +131,13 @@ class DuckDBSqlExecutor(SqlQueryExecutor):
         if type(max_rows) is not int or max_rows < 1:
             raise SqlConfigurationError("DUCKDB_MAX_ROWS phải >= 1.")
 
+        self._storage_backend = normalized_backend
         self._bucket = normalized_bucket
         self._region = (s3_region or "us-east-1").strip() or "us-east-1"
         self._endpoint_url = s3_endpoint_url.strip() if s3_endpoint_url else None
         self._query_access_key_id = q_key
         self._query_secret_access_key = q_secret
+        self._local_parquet_loader = local_parquet_loader
         self._memory_limit = normalized_mem
         self._threads = threads
         self._timeout_seconds = float(timeout_seconds)
@@ -183,6 +190,23 @@ class DuckDBSqlExecutor(SqlQueryExecutor):
                 raw_parquet = self._test_parquet_bytes_by_key.get(tbl.parquet_key)
                 if raw_parquet is None:
                     raise SqlQueryExecutionError("Không tìm thấy dữ liệu bảng Parquet để truy vấn.")
+                arrow_table = pq.read_table(io.BytesIO(raw_parquet))
+                internal_rel = f"__inmem_parquet_{idx}"
+                conn.register(internal_rel, arrow_table)
+                conn.execute(
+                    f'CREATE TEMP VIEW "{tbl.view_name}" AS SELECT * FROM "{internal_rel}"'
+                )
+            elif self._storage_backend == "local":
+                if self._local_parquet_loader is None:
+                    raise SqlConfigurationError(
+                        "Thiếu local_parquet_loader khi thực thi SQL ở chế độ local."
+                    )
+                try:
+                    raw_parquet = self._local_parquet_loader(tbl.parquet_key)
+                except Exception:
+                    raise SqlQueryExecutionError(
+                        "Không tìm thấy hoặc không thể đọc dữ liệu bảng Parquet để truy vấn."
+                    ) from None
                 arrow_table = pq.read_table(io.BytesIO(raw_parquet))
                 internal_rel = f"__inmem_parquet_{idx}"
                 conn.register(internal_rel, arrow_table)
@@ -279,7 +303,7 @@ class DuckDBSqlExecutor(SqlQueryExecutor):
 
         try:
             # 1. LOAD httpfs & tạo SECRET S3 chỉ đọc với SCOPE theo tenant (khi chạy S3 thật)
-            if self._test_parquet_bytes_by_key is None:
+            if self._storage_backend == "s3" and self._test_parquet_bytes_by_key is None:
                 try:
                     conn.execute("LOAD httpfs")
                 except Exception:
@@ -337,9 +361,15 @@ class DuckDBSqlExecutor(SqlQueryExecutor):
 
 
 def create_duckdb_sql_executor(config: Settings | Any = settings) -> DuckDBSqlExecutor:
-    """Factory chính thức khởi tạo DuckDBSqlExecutor từ Settings (không có cờ mở đĩa cục bộ)."""
+    """Factory chính thức khởi tạo DuckDBSqlExecutor từ Settings cho cả Local và S3 (luôn khóa đĩa cục bộ trong DuckDB)."""
+    backend = str(getattr(config, "storage_backend", "local") or "local").strip().lower()
+    local_loader: Callable[[str], bytes] | None = None
+    if backend == "local":
+        from app.infrastructure.storage import create_file_storage
+
+        local_loader = create_file_storage(config, backend="local").get
     return DuckDBSqlExecutor(
-        storage_backend=str(getattr(config, "storage_backend", "local") or "local"),
+        storage_backend=backend,
         s3_bucket=getattr(config, "s3_bucket", None),
         s3_region=str(getattr(config, "s3_region", "us-east-1") or "us-east-1"),
         s3_endpoint_url=getattr(config, "s3_endpoint_url", None),
@@ -350,6 +380,7 @@ def create_duckdb_sql_executor(config: Settings | Any = settings) -> DuckDBSqlEx
         ingest_access_key_id=_unwrap_secret(
             getattr(config, "s3_ingest_access_key_id", None)
         ),
+        local_parquet_loader=local_loader,
         memory_limit=str(getattr(config, "duckdb_memory_limit", "512MB") or "512MB"),
         threads=int(getattr(config, "duckdb_threads", 2)),
         timeout_seconds=float(getattr(config, "duckdb_query_timeout_seconds", 15.0)),
