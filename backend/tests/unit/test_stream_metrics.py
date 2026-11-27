@@ -68,6 +68,32 @@ class StreamMetricTests(unittest.TestCase):
         for forbidden in ("question=", "answer=", "sources=", "api_key=", "credentials="):
             self.assertNotIn(forbidden, line)
 
+    def test_record_stream_metric_forwards_ttft_seconds_to_metrics_recorder(self):
+        from app.shared.observability import NoOpMetricsRecorder, set_metrics_recorder
+
+        observed_ttft: list[float] = []
+
+        class _SpyMetrics(NoOpMetricsRecorder):
+            def record_chat_ttft(self, *, duration_seconds: float) -> None:
+                observed_ttft.append(duration_seconds)
+
+        set_metrics_recorder(_SpyMetrics())
+        try:
+            metric = StreamMetric(
+                request_id="req-1",
+                mode="STATELESS",
+                outcome="COMPLETED",
+                first_event_ms=10.0,
+                first_content_ms=250.0,
+                total_latency_ms=600.0,
+                delta_count=3,
+            )
+            record_stream_metric(metric)
+        finally:
+            set_metrics_recorder(NoOpMetricsRecorder())
+
+        self.assertEqual(observed_ttft, [0.25])
+
 
 if __name__ == "__main__":
     unittest.main()

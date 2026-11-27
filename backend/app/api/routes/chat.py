@@ -13,6 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.client_ip import resolve_client_ip
 from app.shared.auth import UserContext
+from app.shared.observability import get_metrics_recorder, get_request_id
 from app.documents.attachments import AttachmentUnavailableError, resolve_attachments
 from app.documents.repository import MongoDocumentRepository, RepositoryError
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -83,12 +84,32 @@ async def _enforce_rate_limit(request: Request, current_user: UserContext | None
         raise HTTPException(status_code=429, detail="Quá giới hạn số lượt yêu cầu. Vui lòng thử lại sau.")
 
 
+def _resolve_turn_uuid() -> str:
+    """Reuse context request_id when it is a valid UUID; otherwise mint a turn UUID."""
+    ctx_req_id = get_request_id()
+    if ctx_req_id:
+        try:
+            return str(UUID(ctx_req_id))
+        except ValueError:
+            pass
+    return new_uuid()
+
+
+def _route_type_label(*, tools_enabled: bool, agentic_enabled: bool = False) -> str:
+    if tools_enabled and agentic_enabled:
+        return "agentic"
+    if tools_enabled:
+        return "document_tools"
+    return "rag"
+
+
 def _finish_stream_metric(
     tracker: StreamMetricTracker,
     *,
     request_id: str,
     persistent: bool,
     outcome: str,
+    route_type: str = "rag",
 ) -> None:
     metric = tracker.finish(
         request_id=request_id,
@@ -99,6 +120,12 @@ def _finish_stream_metric(
         return
     try:
         record_stream_metric(metric)
+        get_metrics_recorder().record_chat_turn(
+            transport="sse",
+            mode="persistent" if persistent else "stateless",
+            route_type=route_type,
+            outcome=outcome,
+        )
     except Exception:  # noqa: BLE001 - observability must never break the response
         pass
 
@@ -437,8 +464,13 @@ async def chat(
     """Trả lời câu hỏi bằng RAG pipeline (retrieve top-k -> prompt -> LLM)."""
     await _enforce_rate_limit(request, current_user)
     persistent = payload.session_id is not None
-    request_id = new_uuid()
+    request_id = _resolve_turn_uuid()
     tools_enabled = settings.tool_use_enabled
+    route_type = _route_type_label(
+        tools_enabled=tools_enabled,
+        agentic_enabled=bool(getattr(settings, "agentic_mode_enabled", False)),
+    )
+    tracer = getattr(request.app.state, "tracer", None)
     domain_ui_context = _to_domain_ui_context(payload.ui_context)
     try:
         cloud = request.app.state.cloud_connections
@@ -451,6 +483,7 @@ async def chat(
                     payload.question,
                     cloud.mongodb.database,
                     cloud.qdrant.client,
+                    **({"tracer": tracer} if tracer is not None else {}),
                     **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
                     **(
                         {"request": request, "current_user": current_user}
@@ -465,6 +498,7 @@ async def chat(
                     database=cloud.mongodb.database,
                     qdrant_client=cloud.qdrant.client,
                     **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
+                    **({"tracer": tracer} if tracer is not None else {}),
                 )
         else:
             service = await run_in_threadpool(
@@ -484,7 +518,7 @@ async def chat(
                         return from_thread.run(
                             _answer_with_tools, payload.question, cloud.mongodb.database,
                             cloud.qdrant.client, str(payload.session_id),
-                            getattr(request.app.state, "tracer", None),
+                            tracer,
                             domain_ui_context,
                             *extra_args,
                         )
@@ -498,6 +532,7 @@ async def chat(
                     qdrant_client=cloud.qdrant.client,
                     session_id=str(payload.session_id),
                     **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
+                    **({"tracer": tracer} if tracer is not None else {}),
                 )
 
             result = await run_in_threadpool(
@@ -541,6 +576,12 @@ async def chat(
             ) from exc
         return failed_generation_response(request_id=request_id, persistent=False)
 
+    get_metrics_recorder().record_chat_turn(
+        transport="json",
+        mode="persistent" if persistent else "stateless",
+        route_type=route_type,
+        outcome="COMPLETED",
+    )
     return completed_chat_response(
         result=result,
         request_id=request_id,
@@ -572,12 +613,13 @@ async def chat_stream(
     """P4-04 SSE endpoint with bounded provider execution and safe termination."""
     await _enforce_rate_limit(request, current_user)
     persistent = payload.session_id is not None
-    request_id = new_uuid()
+    request_id = _resolve_turn_uuid()
     tracker = StreamMetricTracker()
     service = None
     turn = None
     tools_enabled = settings.tool_use_enabled
     orchestrator = None
+    tracer = getattr(request.app.state, "tracer", None)
     domain_ui_context = _to_domain_ui_context(payload.ui_context)
     try:
         cloud = request.app.state.cloud_connections
@@ -585,7 +627,6 @@ async def chat_stream(
         if cloud.mongodb.database is None or (not tools_enabled and cloud.qdrant.client is None):
             raise HTTPException(status_code=503, detail="Cloud dependencies chưa sẵn sàng.")
         if tools_enabled:
-            tracer = getattr(request.app.state, "tracer", None)
             queries = DocumentQueries(MongoDocumentRepository(cloud.mongodb.database))
             orchestrator = ChatOrchestrator(
                 queries=queries,
@@ -609,6 +650,7 @@ async def chat_stream(
                 qdrant_client=cloud.qdrant.client,
                 session_id=(None if payload.session_id is None else str(payload.session_id)),
                 **({"ui_context": domain_ui_context} if domain_ui_context is not None else {}),
+                **({"tracer": tracer} if tracer is not None else {}),
             )
         if persistent:
             service = await run_in_threadpool(

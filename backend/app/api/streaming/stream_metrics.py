@@ -7,6 +7,8 @@ import logging
 import time
 from collections.abc import Callable
 
+from app.shared.observability import get_metrics_recorder
+
 
 logger = logging.getLogger("app.chat_stream.metrics")
 
@@ -82,3 +84,7 @@ def record_stream_metric(metric: StreamMetric) -> None:
         metric.total_latency_ms,
         metric.delta_count,
     )
+    if metric.first_content_ms is not None:
+        get_metrics_recorder().record_chat_ttft(
+            duration_seconds=metric.first_content_ms / 1000.0
+        )

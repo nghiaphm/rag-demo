@@ -166,7 +166,7 @@ flowchart LR
 
 ### Danh sách Task
 
-- [ ] **T2.1 — Structured JSON Logging, Validate `X-Request-ID` & Chính sách Cấm Log Dữ liệu Nhạy cảm**
+- [x] **T2.1 — Structured JSON Logging, Validate `X-Request-ID` & Chính sách Cấm Log Dữ liệu Nhạy cảm**
   - **Phụ thuộc:** Phase 1.
   - **Files tạo/sửa:** `backend/app/shared/observability.py` (`request_id_var`), `backend/app/infrastructure/logging_config.py` (tạo mới), `backend/app/main.py`, `backend/app/api/routes/chat.py`.
   - **Files test:** `backend/tests/unit/test_observability.py`, `backend/tests/integration/test_chat_stream.py`.
@@ -180,7 +180,7 @@ flowchart LR
     - Test gửi header `X-Request-ID` độc hại (chứa `\n`, ký tự lạ hoặc dài > 64 ký tự) xác nhận server tự thay thế bằng UUIDv4 sạch và trả về trong response header.
     - Test xác nhận JSON log xuất 1 dòng hợp lệ, có `request_id` và tự động che các chuỗi khớp định dạng API key/URI nếu vô tình xuất hiện trong exception message.
 
-- [ ] **T2.2 — Kiểm chứng Tương thích Langfuse SDK, Nối Đủ Luồng Chat & Kiểm soát Dữ liệu Tracing (Redaction)**
+- [x] **T2.2 — Kiểm chứng Tương thích Langfuse SDK, Nối Đủ Luồng Chat & Kiểm soát Dữ liệu Tracing (Redaction)**
   - **Phụ thuộc:** T2.1.
   - **Files sửa:** `backend/requirements.txt`, `backend/app/shared/config.py`, `.env.example`, `backend/app/infrastructure/observability.py`, `backend/app/chat/pipeline.py`, `backend/app/api/routes/chat.py`.
   - **Files test:** `backend/tests/unit/test_observability.py`, `backend/tests/integration/test_rag_integration.py`.
@@ -194,7 +194,7 @@ flowchart LR
     - `pip check` PASS; test khởi tạo `LangfuseTracer` với gói `langfuse` thực tế đã cài trong `.venv` (với HTTP transport bị chặn/mock) xác nhận đúng chữ ký hàm SDK.
     - Unit test xác nhận khi `LANGFUSE_TRACE_CONTENT_ENABLED=false`, không có chuỗi câu hỏi hay câu trả lời thô nào lọt xuống `sdk_client.trace` / `sdk_span.end`.
 
-- [ ] **T2.3 — Operational Metrics qua `prometheus-client` với Low-Cardinality Labels**
+- [x] **T2.3 — Operational Metrics qua `prometheus-client` với Low-Cardinality Labels**
   - **Phụ thuộc:** T2.1.
   - **Files sửa/tạo:** `backend/requirements.txt` (thêm `prometheus-client>=0.21.0,<1.0.0`), `backend/app/infrastructure/metrics.py` (tạo mới mỏng bọc `prometheus_client`), `backend/app/main.py`, `backend/app/api/streaming/stream_metrics.py`, `backend/app/chat/pipeline.py`.
   - **Files test:** `backend/tests/unit/test_observability.py`, `backend/tests/unit/test_stream_metrics.py`.
@@ -210,7 +210,7 @@ flowchart LR
   - **Acceptance Criteria:**
     - Gọi `GET /metrics` trả đúng chuẩn exposition của `prometheus_client`; gọi thử 50 URL 404 ngẫu nhiên chỉ gom vào đúng 1 chuỗi label `route="unmatched"`; `npm.cmd run test:contract` PASS.
 
-- [ ] **T2.4 — Tích hợp Có Điều Kiện SSE `status` Events (Zero Contract Breakage Gate)**
+- [-] **T2.4 — Tích hợp Có Điều Kiện SSE `status` Events (Zero Contract Breakage Gate — Chuyển Deferred theo Cổng Quyết Định)**
   - **Phụ thuộc:** T0.3, T0.4, T2.1.
   - **Files dự kiến kiểm tra/sửa:** `backend/app/api/routes/chat.py`, `backend/app/chat/orchestrator.py`, `frontend/types/chat.ts`, `frontend/lib/sse/parser.ts`, `frontend/lib/api/chat.ts`, `frontend/tests/verify-api-contract.mjs`.
   - **Nội dung triển khai & Cổng Quyết Định (Decision Gate):**
@@ -383,6 +383,8 @@ Các hạng mục dưới đây được thống nhất đưa vào **Deferred / 
    - Gồm: Endpoint stream binary PDF gốc và tích hợp `pdf.js`/`react-pdf` trên Frontend (hiện dùng Source Drawer hiển thị tên file, số trang `page + 1` và metadata chunk xác thực).
 6. `[-]` **Production-scale Multi-node / Reverse-Proxy Stack (`docker-compose.prod.yml`):**
    - Không xây dựng cụm hạ tầng production phức tạp trong đợt này; chỉ hoàn thiện 1 bộ `docker-compose.yml` chuẩn cho Local & Demo và ghi chú yêu cầu cấu hình Reverse Proxy cho SSE trong tài liệu.
+7. `[-]` **SSE `status` Events (`T2.4` — Chuyển Deferred sau đánh giá Cổng Quyết Định ở Phase 2):**
+   - Trong kiến trúc `/chat/stream` hiện tại (`chat.py:585-625`, quyết định `C05`), bước `prepare_rag_stream` (bao gồm Query Rewriting, Retrieval, Reranking và Corrective RAG) bắt buộc thực thi **trước** `service.begin_streaming_turn` và **trước** khi mở `StreamingResponse` (`HTTP 200 text/event-stream`) để bảo toàn hợp đồng trả mã HTTP pre-header (`404`/`409`/`410`/`502`/`503`). Đồng thời, bộ kiểm tra hợp đồng ở `verify-api-contract.mjs`, `sse-parser.test.mjs` và `ChatController` khóa chặt union `start | metadata | citation | delta | done | error`. Việc phát frame `status` thời gian thực đòi hỏi đảo ngược vòng đời pre-header và sửa đổi state machine recovery của `ChatController`, chạm đúng ngưỡng dừng của `T2.4`; do đó chuyển sang Deferred để bảo vệ tuyệt đối hợp đồng SSE hiện hữu.
 
 ---
 

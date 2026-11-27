@@ -106,8 +106,12 @@ class Settings(BaseSettings):
     qdrant_collection: str = "rag_documents"
     qdrant_timeout_seconds: float = 5.0
 
-    # ----- Observability (Langfuse) -----
+    # ----- Observability (Logging, Langfuse & Prometheus Metrics) -----
+    log_level: str = "INFO"
+    log_format: str = "json"
+    metrics_enabled: bool = True
     langfuse_enabled: bool = False
+    langfuse_trace_content_enabled: bool = False
     langfuse_public_key: SecretStr | None = None
     langfuse_secret_key: SecretStr | None = None
     langfuse_host: str = "https://cloud.langfuse.com"
@@ -288,6 +292,22 @@ class Settings(BaseSettings):
         if not items:
             raise ValueError("CORS_ORIGINS không được rỗng")
         return items
+
+    @field_validator("log_level")
+    @classmethod
+    def _validate_log_level(cls, value: str) -> str:
+        level = value.strip().upper()
+        if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            raise ValueError("LOG_LEVEL phải là DEBUG, INFO, WARNING, ERROR hoặc CRITICAL")
+        return level
+
+    @field_validator("log_format")
+    @classmethod
+    def _validate_log_format(cls, value: str) -> str:
+        fmt = value.strip().lower()
+        if fmt not in ("json", "text"):
+            raise ValueError("LOG_FORMAT chỉ hỗ trợ 'json' hoặc 'text'")
+        return fmt
 
     @field_validator("openai_base_url")
     @classmethod

@@ -41,6 +41,7 @@ from app.documents.ports import (
 )
 from app.shared.auth import UserContext, can_access_resource
 from app.shared.config import settings
+from app.shared.observability import get_metrics_recorder
 from app.tool_use.contracts import (
     RunSqlArguments,
     ToolContractError,
@@ -786,12 +787,19 @@ def create_run_sql_handler(
             validated = validate_arguments("run_sql", arguments)
         except ToolContractError as exc:
             return failure_result("run_sql", exc.code)
-        envelope = service.execute_query(
-            sql=str(validated["sql"]),
-            user=user,
-            tenant_id=tenant_id,
-            session_scope=session_scope,
-        )
+        sql_t0 = monotonic()
+        try:
+            envelope = service.execute_query(
+                sql=str(validated["sql"]),
+                user=user,
+                tenant_id=tenant_id,
+                session_scope=session_scope,
+            )
+        finally:
+            get_metrics_recorder().record_stage_duration(
+                stage="sql",
+                duration_seconds=max(0.0, monotonic() - sql_t0),
+            )
         if envelope.get("ok") and collected_sources is not None:
             data = envelope.get("data") or {}
             normalized_sql = str(data.get("sql") or "")
