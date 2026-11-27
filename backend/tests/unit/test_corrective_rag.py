@@ -274,6 +274,55 @@ class TestCorrectiveRag(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(transcript.reconstructed_answer, "Answer")
 
+    def test_get_grader_llm_uses_configured_corrective_grader_model(self) -> None:
+        from app.rag.llm import get_grader_llm
+        from tests._test_env import override_settings
+
+        with override_settings(corrective_grader_model="llama-3.1-8b-instant"):
+            grader_llm = get_grader_llm()
+            model_name = getattr(grader_llm, "model_name", None) or getattr(grader_llm, "model", None)
+            self.assertEqual(model_name, "llama-3.1-8b-instant")
+
+    async def test_create_corrective_runner_wires_llm_into_grader_and_corrector_without_web_search(self) -> None:
+        from app.chat.corrective import create_corrective_runner
+
+        calls: list[str] = []
+
+        class _ScriptedGraderLLM:
+            async def ainvoke(self, messages):
+                prompt_text = "\n".join(str(getattr(m, "content", "")) for m in messages)
+                if "Rewrite the user query" in prompt_text:
+                    calls.append("corrector")
+                    return SimpleNamespace(content="qdrant rag_documents collection")
+                calls.append("grader")
+                if "rag_documents" in prompt_text:
+                    return SimpleNamespace(
+                        content='{"grade":"RELEVANT","relevant_indices":[0],"reason":"exact match"}'
+                    )
+                return SimpleNamespace(
+                    content='{"grade":"IRRELEVANT","relevant_indices":[],"reason":"off-topic"}'
+                )
+
+        runner = create_corrective_runner(llm=_ScriptedGraderLLM(), max_retries=1)
+        self.assertIsNone(runner.web_search_provider)
+
+        async def _retry(q: str) -> list[Document]:
+            if "rag_documents" in q:
+                return [_doc("Default collection is rag_documents.", file_name="qdrant.md")]
+            return []
+
+        outcome = await runner.run(
+            question="Tên collection mặc định?",
+            initial_query="collection",
+            initial_documents=[_doc("Unrelated cooking recipe.")],
+            retrieve_and_rerank=_retry,
+        )
+        self.assertEqual(outcome.grade, RelevanceGrade.RELEVANT)
+        self.assertEqual(outcome.retries_used, 1)
+        self.assertEqual(calls, ["grader", "corrector", "grader"])
+        self.assertFalse(outcome.used_web_fallback)
+        self.assertFalse(outcome.strict_fallback_triggered)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -31,7 +31,7 @@ from app.chat.query_rewriting import (
     QueryRewriteResult,
     create_query_rewriter,
 )
-from app.rag.llm import get_llm
+from app.rag.llm import get_grader_llm, get_llm
 from app.rag.prompt import (
     SYSTEM_INSTRUCTION,
     format_context_blocks,
@@ -41,7 +41,11 @@ from app.rag.prompt import (
 from app.rag.retriever import get_retriever
 from app.rag.reranker import get_reranker
 from app.chat.multi_query import create_multi_query_expander
-from app.chat.corrective import CorrectiveOutcome, CorrectiveRagRunner
+from app.chat.corrective import (
+    CorrectiveOutcome,
+    CorrectiveRagRunner,
+    create_corrective_runner,
+)
 from app.chat.ui_context import (
     UiPageContext,
     fit_ui_system_instruction,
@@ -200,7 +204,10 @@ async def prepare_rag_request_from_components(
     final_retrieval_query = rewrite.retrieval_query
     corrective_outcome: CorrectiveOutcome | None = None
     if corrective_runner is not None or settings.corrective_rag_enabled:
-        runner = corrective_runner or CorrectiveRagRunner(max_retries=settings.corrective_max_retries)
+        runner = corrective_runner or create_corrective_runner(
+            llm=get_grader_llm(),
+            max_retries=settings.corrective_max_retries,
+        )
 
         async def _retrieve_and_rerank(retry_query: str) -> list[Document]:
             retry_queries = await expander.expand(retry_query)
