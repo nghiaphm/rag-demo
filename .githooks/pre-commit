@@ -1,0 +1,349 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit hook for RAG Workspace
+# - Inspects ONLY git-staged files for fast feedback
+# - Blocks .env files, private key files, and hardcoded API keys / credentials
+# - Validates staged JSON, Python syntax + optional Ruff + hexagonal architecture rules
+# - Runs ESLint on staged frontend JS/TS files + incremental tsc --noEmit (SKIP_TYPECHECK=1 to skip)
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Collect staged files (Added, Copied, Modified, Renamed) safely using NUL delimiter
+STAGED_FILES=()
+while IFS= read -r -d '' file; do
+  STAGED_FILES+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [ "${#STAGED_FILES[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+echo "[pre-commit] Checking ${#STAGED_FILES[@]} staged file(s)..."
+
+FAILED=0
+
+# Warn if any staged file also has unstaged working-tree edits (partial staging)
+PARTIAL_FILES=()
+for file in "${STAGED_FILES[@]}"; do
+  if ! git diff --quiet -- "$file" 2>/dev/null; then
+    PARTIAL_FILES+=("$file")
+  fi
+done
+if [ "${#PARTIAL_FILES[@]}" -gt 0 ]; then
+  echo "[pre-commit] Note: partial staging detected on ${#PARTIAL_FILES[@]} file(s); linters check working-tree copies while secret/JSON checks inspect staged content."
+fi
+
+# ---------------------------------------------------------------------------
+# Gate 1: Block .env files and private key / certificate files
+# ---------------------------------------------------------------------------
+ENV_BLOCKED=0
+for file in "${STAGED_FILES[@]}"; do
+  base="${file##*/}"
+  lower_base="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+  case "$lower_base" in
+    .env.example|.env.sample|.env.template|*.env.example|*.env.sample|*.env.template)
+      ;;
+    .env|.env.*|*.env)
+      echo "  [BLOCKED] Sensitive environment file cannot be committed: $file"
+      ENV_BLOCKED=1
+      ;;
+    *.pem|*.key|*.p12|*.pfx|id_rsa|id_ed25519|id_dsa)
+      echo "  [BLOCKED] Private key or certificate file cannot be committed: $file"
+      ENV_BLOCKED=1
+      ;;
+  esac
+done
+
+if [ "$ENV_BLOCKED" -ne 0 ]; then
+  echo "  -> Unstage with: git reset HEAD <file>"
+  FAILED=1
+fi
+
+# ---------------------------------------------------------------------------
+# Gate 2: Scan staged added lines for API keys, tokens, and credentials
+# ---------------------------------------------------------------------------
+SECRET_BLOCKED=0
+
+check_secret_rule() {
+  local target_file="$1"
+  local rule_name="$2"
+  local pattern="$3"
+  local exclude_pattern="$4"
+  local content="$5"
+  local matches
+
+  matches="$(printf '%s\n' "$content" | grep -E -- "$pattern" || true)"
+  if [ -n "$matches" ] && [ -n "$exclude_pattern" ]; then
+    matches="$(printf '%s\n' "$matches" | grep -Eiv -- "$exclude_pattern" || true)"
+  fi
+
+  if [ -n "$matches" ]; then
+    echo "  [BLOCKED] Potential secret detected ($rule_name) in staged diff: $target_file"
+    SECRET_BLOCKED=1
+  fi
+}
+
+is_binary_staged() {
+  local target_file="$1"
+  local numstat
+  numstat="$(git diff --cached --numstat -- "$target_file" 2>/dev/null || true)"
+  case "$numstat" in
+    -$'\t'-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+for file in "${STAGED_FILES[@]}"; do
+  # Skip binary files
+  if is_binary_staged "$file"; then
+    continue
+  fi
+
+  # Inspect ONLY staged added lines (excluding diff header +++ and inline allowlist marker)
+  added_lines="$(
+    git diff --cached --unified=0 --no-color -- "$file" \
+      | grep -E '^\+' \
+      | grep -Ev '^\+\+\+[[:space:]]' \
+      | sed 's/^+//' \
+      | grep -Eiv 'pragma:[[:space:]]*allowlist[[:space:]]*secret|allow-secret' \
+      || true
+  )"
+
+  if [ -z "$added_lines" ]; then
+    continue
+  fi
+
+  check_secret_rule "$file" "Groq API Key" \
+    'gsk_[A-Za-z0-9]{20,}' \
+    'gsk_([xX*_-]{8,}|example|dummy|test|fake|placeholder)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Google / Gemini API Key" \
+    'AIza[0-9A-Za-z_-]{35}' \
+    'AIza[-_]?([xX*]{8,}|example|dummy|test|fake|placeholder)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "OpenAI API Key" \
+    'sk-(proj-|svcacct-)?[A-Za-z0-9_-]{20,}' \
+    'sk-(proj-|svcacct-)?([xX*]{8,}|lf-|ant-|example|dummy|test|fake|placeholder)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Anthropic API Key" \
+    'sk-ant-[A-Za-z0-9_-]{20,}' \
+    'sk-ant-([xX*]{8,}|example|dummy|test|fake|placeholder)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Langfuse Key" \
+    '(pk|sk)-lf-[0-9a-fA-F-]{16,}' \
+    '(pk|sk)-lf-([xX*]{8,}|0{8,}|example|dummy|test|fake)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Tavily API Key" \
+    'tvly-[A-Za-z0-9_-]{16,}' \
+    'tvly-([xX*]{8,}|example|dummy|test|fake|placeholder)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "AWS Access Key ID" \
+    '(AKIA|ASIA)[0-9A-Z]{16}' \
+    '(AKIA|ASIA)(IOSFODNN7EXAMPLE|EXAMPLE)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "GitHub Personal Access Token" \
+    '(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}' \
+    '([xX]{10,}|example|dummy|test|fake)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Slack Token" \
+    'xox[baprs]-[0-9A-Za-z-]{10,}' \
+    '([xX]{8,}|example|dummy|test|fake)' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Private Key Block" \
+    '-----BEGIN[[:space:]]((RSA|EC|DSA|OPENSSH|PGP)[[:space:]])?PRIVATE[[:space:]]KEY-----' \
+    '' \
+    "$added_lines"
+
+  check_secret_rule "$file" "MongoDB URI with credentials" \
+    'mongodb(\+srv)?://[^[:space:]:/@"'\'']+:[^[:space:]@"'\'']+@[^[:space:]/"'\'']+' \
+    'username:password|user:pass|cluster\.example\.mongodb\.net|example\.com|localhost|127\.0\.0\.1|replace-with|<password>|<user>' \
+    "$added_lines"
+
+  check_secret_rule "$file" "Hardcoded Project Secret Assignment" \
+    '(GROQ_API_KEY|EMBEDDING_API_KEY|COHERE_API_KEY|QDRANT_API_KEY|TAVILY_API_KEY|LANGFUSE_SECRET_KEY|S3_INGEST_SECRET_ACCESS_KEY|S3_QUERY_SECRET_ACCESS_KEY|AWS_SECRET_ACCESS_KEY|JWT_SECRET_KEY)[[:space:]]*[:=][[:space:]]*["'\'']?[A-Za-z0-9_./+=-]{16,}["'\'']?' \
+    'replace-with|your-|xxxx|example|dummy|fake|test|changeme|placeholder|dev-insecure|\$\{|\$[A-Za-z_]|SecretStr|os\.environ|os\.getenv|settings\.' \
+    "$added_lines"
+done
+
+if [ "$SECRET_BLOCKED" -ne 0 ]; then
+  echo "  -> Remove real credentials (move them to .env) or add 'pragma: allowlist secret' for synthetic test fixtures."
+  FAILED=1
+fi
+
+# Stop early if secrets or .env files were detected
+if [ "$FAILED" -ne 0 ]; then
+  echo "[pre-commit] FAILED: Fix security violations above before committing."
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Helper: Resolve working Python interpreter (prefer repo .venv)
+# ---------------------------------------------------------------------------
+PYTHON_BIN=""
+resolve_python() {
+  if [ -n "$PYTHON_BIN" ]; then
+    return 0
+  fi
+  local candidates=(
+    "$REPO_ROOT/.venv/Scripts/python.exe"
+    "$REPO_ROOT/.venv/bin/python"
+    "python3"
+    "python"
+  )
+  local cand
+  for cand in "${candidates[@]}"; do
+    if [ -x "$cand" ] || command -v "$cand" >/dev/null 2>&1; then
+      if "$cand" -c "import sys" >/dev/null 2>&1; then
+        PYTHON_BIN="$cand"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+# Partition staged files by stack
+STAGED_JSON_FILES=()
+STAGED_PY_FILES=()
+TOUCHED_BACKEND_APP=0
+STAGED_FE_LINT_FILES=()
+STAGED_FE_TS_FILES=()
+
+for file in "${STAGED_FILES[@]}"; do
+  case "$file" in
+    *.json)
+      STAGED_JSON_FILES+=("$file")
+      ;;
+  esac
+
+  case "$file" in
+    *.py)
+      STAGED_PY_FILES+=("$file")
+      case "$file" in
+        backend/app/*)
+          TOUCHED_BACKEND_APP=1
+          ;;
+      esac
+      ;;
+  esac
+
+  case "$file" in
+    frontend/*.js|frontend/*.jsx|frontend/*.ts|frontend/*.tsx|frontend/*.mjs|frontend/*.cjs)
+      STAGED_FE_LINT_FILES+=("${file#frontend/}")
+      ;;
+  esac
+
+  case "$file" in
+    frontend/*.ts|frontend/*.tsx|frontend/*.mts)
+      STAGED_FE_TS_FILES+=("${file#frontend/}")
+      ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Gate 3: Validate staged JSON files (from staged blob)
+# ---------------------------------------------------------------------------
+if [ "${#STAGED_JSON_FILES[@]}" -gt 0 ]; then
+  echo "[pre-commit] Validating ${#STAGED_JSON_FILES[@]} staged JSON file(s)..."
+  for file in "${STAGED_JSON_FILES[@]}"; do
+    if command -v node >/dev/null 2>&1; then
+      if ! git show ":$file" | node -e "JSON.parse(require('fs').readFileSync(0, 'utf8'))" >/dev/null 2>&1; then
+        echo "  [FAILED] Invalid JSON syntax: $file"
+        FAILED=1
+      fi
+    elif resolve_python; then
+      if ! git show ":$file" | "$PYTHON_BIN" -m json.tool >/dev/null 2>&1; then
+        echo "  [FAILED] Invalid JSON syntax: $file"
+        FAILED=1
+      fi
+    fi
+  done
+fi
+
+# ---------------------------------------------------------------------------
+# Gate 4: Backend Python syntax, optional Ruff, and Hexagonal Architecture AST
+# ---------------------------------------------------------------------------
+if [ "${#STAGED_PY_FILES[@]}" -gt 0 ]; then
+  if resolve_python; then
+    echo "[pre-commit] Checking Python syntax on ${#STAGED_PY_FILES[@]} staged file(s)..."
+    if ! "$PYTHON_BIN" -m py_compile "${STAGED_PY_FILES[@]}"; then
+      echo "  [FAILED] Python syntax check (py_compile) failed."
+      FAILED=1
+    fi
+
+    # Optional Ruff check if installed in .venv or PATH
+    RUFF_BIN=""
+    for cand in "$REPO_ROOT/.venv/Scripts/ruff.exe" "$REPO_ROOT/.venv/bin/ruff" "ruff"; do
+      if [ -x "$cand" ] || command -v "$cand" >/dev/null 2>&1; then
+        RUFF_BIN="$cand"
+        break
+      fi
+    done
+    if [ -n "$RUFF_BIN" ]; then
+      echo "[pre-commit] Running Ruff on ${#STAGED_PY_FILES[@]} staged Python file(s)..."
+      if ! "$RUFF_BIN" check "${STAGED_PY_FILES[@]}"; then
+        echo "  [FAILED] Ruff lint failed."
+        FAILED=1
+      fi
+    fi
+
+    # Run fast AST architecture boundary tests when backend/app/* is modified
+    if [ "$TOUCHED_BACKEND_APP" -eq 1 ] && [ -d "$REPO_ROOT/backend/tests/architecture" ]; then
+      echo "[pre-commit] Running backend hexagonal architecture AST tests..."
+      if ! PYTHONPATH="$REPO_ROOT/backend" "$PYTHON_BIN" -m unittest discover -s "$REPO_ROOT/backend/tests/architecture" -q; then
+        echo "  [FAILED] Backend architecture dependency rules violated."
+        FAILED=1
+      fi
+    fi
+  else
+    echo "  [WARN] No working Python interpreter found; skipping Python checks."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Gate 5: Frontend ESLint (staged files only) + incremental TypeScript check
+# ---------------------------------------------------------------------------
+if [ "${#STAGED_FE_LINT_FILES[@]}" -gt 0 ]; then
+  if [ -x "$REPO_ROOT/frontend/node_modules/.bin/eslint" ]; then
+    echo "[pre-commit] Running ESLint on ${#STAGED_FE_LINT_FILES[@]} staged frontend file(s)..."
+    if ! (cd "$REPO_ROOT/frontend" && ./node_modules/.bin/eslint --no-warn-ignored "${STAGED_FE_LINT_FILES[@]}"); then
+      echo "  [FAILED] Frontend ESLint failed."
+      FAILED=1
+    fi
+  else
+    echo "  [WARN] frontend/node_modules/.bin/eslint not found (run 'npm ci' in frontend/). Skipping ESLint."
+  fi
+fi
+
+if [ "${#STAGED_FE_TS_FILES[@]}" -gt 0 ]; then
+  if [ "${SKIP_TYPECHECK:-0}" = "1" ]; then
+    echo "[pre-commit] Skipping TypeScript check (SKIP_TYPECHECK=1)."
+  elif [ -x "$REPO_ROOT/frontend/node_modules/.bin/tsc" ]; then
+    echo "[pre-commit] Running incremental TypeScript check (tsc --noEmit)..."
+    if ! (cd "$REPO_ROOT/frontend" && ./node_modules/.bin/tsc --noEmit); then
+      echo "  [FAILED] TypeScript typecheck failed. (Tip: set SKIP_TYPECHECK=1 to bypass temporarily.)"
+      FAILED=1
+    fi
+  else
+    echo "  [WARN] frontend/node_modules/.bin/tsc not found. Skipping typecheck."
+  fi
+fi
+
+if [ "$FAILED" -ne 0 ]; then
+  echo "[pre-commit] FAILED: Please fix the issues above and try committing again."
+  exit 1
+fi
+
+echo "[pre-commit] All checks passed."
+exit 0

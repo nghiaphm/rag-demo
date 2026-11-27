@@ -208,6 +208,115 @@ class RagIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["sources"], prepared.sources)
         self.assertEqual(result["usage"]["total_tokens"], 12)
 
+    async def test_corrective_rag_enabled_wires_grader_llm_retries_and_safe_fallback(self):
+        from app.chat.pipeline import prepare_rag_request_from_components
+        from app.rag.reranker import PassThroughReranker
+        from tests._test_env import override_settings
+
+        rewriter = FakeRewriter(
+            QueryRewriteResult(
+                original_query="Bảo hành bao lâu?",
+                retrieval_query="bảo hành",
+                rewritten=False,
+                status=RewriteStatus.SKIPPED_NO_HISTORY,
+                dependency_reason=None,
+                metrics=RewriteMetrics(0, 0.0, 0, 0, 0, "none"),
+            )
+        )
+
+        class _RoutingRetriever:
+            def __init__(self, recovered_docs):
+                self.recovered_docs = recovered_docs
+                self.queries = []
+
+            def invoke(self, query):
+                self.queries.append(query)
+                if "chính sách bảo hành" in query.lower():
+                    return self.recovered_docs
+                return [
+                    Document(
+                        page_content="Nội dung không liên quan về thời tiết.",
+                        metadata={
+                            "file_name": "noise.md",
+                            "document_id": str(uuid4()),
+                            "version_id": str(uuid4()),
+                            "chunk_id": str(uuid4()),
+                            "chunk_index": 0,
+                        },
+                    )
+                ]
+
+        class _FakeGraderLLM:
+            def __init__(self, *, allow_recovery: bool):
+                self.allow_recovery = allow_recovery
+                self.calls = 0
+
+            async def ainvoke(self, messages):
+                self.calls += 1
+                text = "\n".join(str(getattr(m, "content", "")) for m in messages)
+                if "Rewrite the user query" in text:
+                    return AIMessage(content="chính sách bảo hành sản phẩm")
+                if self.allow_recovery and "24 tháng" in text:
+                    return AIMessage(
+                        content='{"grade":"RELEVANT","relevant_indices":[0],"reason":"matched warranty"}'
+                    )
+                return AIMessage(
+                    content='{"grade":"IRRELEVANT","relevant_indices":[],"reason":"irrelevant"}'
+                )
+
+        valid_doc = Document(
+            page_content="Sản phẩm được bảo hành chính thức 24 tháng.",
+            metadata={
+                "file_name": "policy.md",
+                "document_id": self.document_id,
+                "version_id": self.version_id,
+                "chunk_id": self.chunk_id,
+                "chunk_index": 0,
+            },
+        )
+
+        # Case 1: Recovery after 1 LLM-guided query correction
+        grader_ok = _FakeGraderLLM(allow_recovery=True)
+        retriever_ok = _RoutingRetriever([valid_doc])
+        with (
+            override_settings(corrective_rag_enabled=True, corrective_max_retries=1),
+            patch("app.chat.pipeline.get_grader_llm", return_value=grader_ok),
+        ):
+            prepared_ok = await prepare_rag_request_from_components(
+                "Bảo hành bao lâu?",
+                history_turns=(),
+                active_version_ids=(self.version_id,),
+                retriever=retriever_ok,
+                query_rewriter=rewriter,
+                reranker=PassThroughReranker(),
+            )
+        self.assertEqual(len(retriever_ok.queries), 2)
+        self.assertEqual(grader_ok.calls, 3)
+        self.assertFalse(prepared_ok.corrective_outcome.strict_fallback_triggered)
+        self.assertEqual(len(prepared_ok.sources), 1)
+        self.assertEqual(prepared_ok.sources[0]["file_name"], "policy.md")
+
+        # Case 2: Retries exhausted -> Strict Safe Fallback (empty sources & safe context)
+        grader_fail = _FakeGraderLLM(allow_recovery=False)
+        retriever_fail = _RoutingRetriever([])
+        with (
+            override_settings(corrective_rag_enabled=True, corrective_max_retries=1),
+            patch("app.chat.pipeline.get_grader_llm", return_value=grader_fail),
+        ):
+            prepared_fallback = await prepare_rag_request_from_components(
+                "Giá vàng hôm nay?",
+                history_turns=(),
+                active_version_ids=(self.version_id,),
+                retriever=retriever_fail,
+                query_rewriter=rewriter,
+                reranker=PassThroughReranker(),
+            )
+        self.assertTrue(prepared_fallback.corrective_outcome.strict_fallback_triggered)
+        self.assertFalse(prepared_fallback.corrective_outcome.used_web_fallback)
+        self.assertEqual(prepared_fallback.sources, [])
+        fallback_prompt = "\n".join(str(m.content) for m in prepared_fallback.prompt_value.to_messages())
+        self.assertIn("(không có tài liệu liên quan)", fallback_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

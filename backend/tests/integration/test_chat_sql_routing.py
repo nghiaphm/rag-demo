@@ -612,6 +612,287 @@ class ChatSqlRoutingIntegrationTests(unittest.TestCase):
         )
         self.assertIn("bang_du_lieu_17", str(system_msg.content))
 
+    def test_chat_stream_persistent_initializes_excel_sql_service_lazily_without_502(
+        self,
+    ) -> None:
+        from types import SimpleNamespace
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from app.api.routes.chat import router as chat_router
+        from app.conversations.models import (
+            MessageRecord,
+            MessageRole,
+            MessageStatus,
+            SessionRecord,
+        )
+        from app.conversations.service import StreamingTurn
+
+        session_id = new_uuid()
+        session_record = SessionRecord(session_id=session_id, title="Phiên HR")
+
+        class _Cursor(list):
+            def sort(self, *_args, **_kwargs):
+                return self
+
+            def skip(self, n: int):
+                return _Cursor(self[n:])
+
+            def limit(self, n: int):
+                return _Cursor(self[:n])
+
+        class _Collection:
+            def __init__(self, items: list[dict] | None = None) -> None:
+                self._items = list(items or [])
+
+            def find(self, *_args, **_kwargs):
+                return _Cursor(self._items)
+
+            def find_one(self, query: dict, *_args, **_kwargs):
+                for item in self._items:
+                    if item.get("_id") == query.get("_id"):
+                        return item
+                return None
+
+            def count_documents(self, *_args, **_kwargs) -> int:
+                return len(self._items)
+
+        fake_db = {
+            "documents": _Collection([self.doc_record.to_mongo()]),
+            "document_versions": _Collection([]),
+            "ingestion_jobs": _Collection([]),
+            "document_table_catalogs": _Collection([self.catalog_record.to_mongo()]),
+            "sessions": _Collection([session_record.to_mongo()]),
+            "messages": _Collection([]),
+        }
+
+        class _FakeConversationService:
+            def begin_streaming_turn(self, *, session_id, question, model, attachments=()):
+                req_id = new_uuid()
+                user_msg = MessageRecord(
+                    session_id=session_id,
+                    sequence=1,
+                    role=MessageRole.USER,
+                    content=question,
+                    status=MessageStatus.COMPLETED,
+                    request_id=req_id,
+                )
+                assistant_msg = MessageRecord(
+                    session_id=session_id,
+                    sequence=2,
+                    role=MessageRole.ASSISTANT,
+                    status=MessageStatus.STREAMING,
+                    model=model,
+                    request_id=req_id,
+                )
+                return StreamingTurn(
+                    request_id=req_id,
+                    user_message=user_msg,
+                    assistant_message=assistant_msg,
+                )
+
+            def finalize_streaming_turn(self, *_args, **_kwargs) -> None:
+                return None
+
+        app = FastAPI()
+        app.include_router(chat_router)
+        app.state.cloud_connections = SimpleNamespace(
+            mongodb=SimpleNamespace(database=fake_db),
+            qdrant=SimpleNamespace(client=object()),
+        )
+        client = TestClient(app)
+        scripted_model = ScriptedToolModel(
+            [_final_ai_message("Đã khởi tạo luồng trả lời thành công.")]
+        )
+
+        with (
+            patch.object(settings, "tool_use_enabled", True),
+            patch.object(settings, "agentic_mode_enabled", True),
+            patch.object(settings, "excel_sql_enabled", True),
+            patch.object(settings, "excel_parquet_ingestion_enabled", True),
+            patch.object(settings, "storage_backend", "s3"),
+            patch("app.chat.orchestrator.get_llm", return_value=scripted_model),
+            patch(
+                "app.infrastructure.duckdb_executor.create_duckdb_sql_executor",
+                return_value=self.executor,
+            ),
+            patch(
+                "app.api.routes.chat.create_conversation_service",
+                return_value=_FakeConversationService(),
+            ),
+        ):
+            response = client.post(
+                "/chat/stream",
+                json={
+                    "question": "Hãy phân tích và thống kê nhân sự",
+                    "session_id": session_id,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("event: start", response.text)
+        self.assertIn("event: done", response.text)
+
+    def test_agentic_rag_search_and_run_sql_respect_selected_documents_session_scope(
+        self,
+    ) -> None:
+        from app.conversations.history import LoadedHistory
+        from app.conversations.models import SessionRecord, SessionScope, SessionScopeMode
+        from app.infrastructure.storage import LocalFileStorage
+
+        doc2_id = new_uuid()
+        ver2_id = new_uuid()
+        parquet2_key = f"default/{doc2_id}/v1/tables/luong_bi_mat.parquet"
+        table2 = pa.table({"ma_nv": ["NV99"], "luong_co_ban": [99999]})
+        buf2 = io.BytesIO() if "io" in globals() else __import__("io").BytesIO()
+        pq.write_table(table2, buf2)
+
+        doc2_record = DocumentRecord(
+            document_id=doc2_id,
+            file_name="luong_bi_mat.xlsx",
+            status=DocumentStatus.INDEXED,
+            active_version_id=ver2_id,
+            tenant_id="default",
+        )
+        cat2_record = DocumentTableCatalogRecord(
+            tenant_id="default",
+            document_id=doc2_id,
+            version_id=ver2_id,
+            table_name="luong_bi_mat",
+            sheet_name="BiMat",
+            parquet_key=parquet2_key,
+            row_count=1,
+            columns=[TableColumnSchema(name="ma_nv", original_name="ma_nv", type="VARCHAR")],
+        )
+
+        # Fake Mongo database supporting MongoDocumentRepository(database) for active_version_ids
+        class _DocCollection:
+            def __init__(self, docs: list[dict]) -> None:
+                self._docs = docs
+
+            def find_one(self, query: dict, *_args, **_kwargs):
+                for item in self._docs:
+                    if item.get("_id") == query.get("_id"):
+                        return item
+                return None
+
+            def find(self, *_args, **_kwargs):
+                return list(self._docs)
+
+        fake_database = {
+            "documents": _DocCollection([self.doc_record.to_mongo(), doc2_record.to_mongo()]),
+            "document_versions": _DocCollection([]),
+            "ingestion_jobs": _DocCollection([]),
+        }
+
+        scoped_session = SessionRecord(
+            session_id=new_uuid(),
+            title="Scoped Session",
+            scope=SessionScope(
+                mode=SessionScopeMode.SELECTED_DOCUMENTS,
+                document_ids=[self.doc_id],
+            ),
+        )
+
+        class _ScopedHistoryLoader:
+            def load(self, session_id: str) -> LoadedHistory:
+                return LoadedHistory(session=scoped_session, turns=())
+
+        observed_version_ids: list[tuple[str, ...]] = []
+
+        class _FakeRetriever:
+            def invoke(self, query: str) -> list[Document]:
+                return [
+                    Document(
+                        page_content=f"Chính sách nhân sự áp dụng cho {query}",
+                        metadata={
+                            "chunk_id": new_uuid(),
+                            "document_id": self_outer.doc_id,
+                            "version_id": self_outer.ver_id,
+                            "file_name": "nhan_su.xlsx",
+                            "chunk_index": 0,
+                        },
+                    )
+                ]
+
+        self_outer = self
+
+        def _fake_get_retriever(*, qdrant_client=None, active_version_ids=None, **_kwargs):
+            observed_version_ids.append(tuple(active_version_ids or ()))
+            if not active_version_ids:
+                class _EmptyRetriever:
+                    def invoke(self, _q: str) -> list[Document]:
+                        return []
+                return _EmptyRetriever()
+            return _FakeRetriever()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            storage = LocalFileStorage(Path(tmp_dir))
+            storage.put(self.parquet_key, self.parquet_bytes_map[self.parquet_key])
+            storage.put(parquet2_key, buf2.getvalue())
+
+            local_executor = DuckDBSqlExecutor(
+                storage_backend="local",
+                s3_bucket=None,
+                query_access_key_id=None,
+                query_secret_access_key=None,
+                local_parquet_loader=storage.get,
+            )
+            multi_repo = FakeCatalogRepo(
+                [self.doc_record, doc2_record],
+                [self.catalog_record, cat2_record],
+            )
+            sql_service = ExcelSqlService(repository=multi_repo, executor=local_executor)
+
+            model = ScriptedToolModel(
+                [
+                    _tool_call_ai_message(
+                        [
+                            ("call_sql", "run_sql", {"sql": "SELECT COUNT(*) AS c FROM nhan_su"}),
+                            ("call_rag", "rag_search", {"query": "chính sách nhân sự", "top_k": 2}),
+                        ]
+                    ),
+                    _final_ai_message("Có 3 nhân viên và chính sách nhân sự hợp lệ [1]."),
+                ]
+            )
+
+            from tests._test_env import override_settings
+
+            with (
+                override_settings(
+                    storage_backend="local",
+                    excel_parquet_ingestion_enabled=True,
+                ),
+                patch("app.chat.agent_tools.get_retriever", side_effect=_fake_get_retriever),
+            ):
+                orchestrator = ChatOrchestrator(
+                    llm=model,
+                    history_loader=_ScopedHistoryLoader(),
+                    tools_enabled=True,
+                    agentic_mode=True,
+                    excel_sql_enabled=True,
+                    sql_service=sql_service,
+                )
+                plan = asyncio.run(
+                    orchestrator.prepare_plan(
+                        "Thống kê số nhân viên và tóm tắt chính sách",
+                        database=fake_database,
+                        qdrant_client=object(),
+                        session_id=scoped_session.session_id,
+                    )
+                )
+                # Prompt catalog must ONLY expose nhan_su (doc1), NOT luong_bi_mat (doc2)
+                sys_prompt = str(plan.agent_messages[0].content)
+                self.assertIn("nhan_su", sys_prompt)
+                self.assertNotIn("luong_bi_mat", sys_prompt)
+                self.assertEqual(plan.active_version_ids, (self.ver_id,))
+
+                result = asyncio.run(orchestrator.generate_json(plan))
+
+            self.assertEqual(observed_version_ids, [(self.ver_id,)])
+            self.assertIn("3 nhân viên", result["answer"])
+            self.assertEqual(len(result["sources"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,9 +84,17 @@ class DuckDBSqlExecutorUnitTests(unittest.TestCase):
         params.update(overrides)
         return DuckDBSqlExecutor(**params)
 
-    def test_rejects_non_s3_storage_backend_or_duplicate_ingest_credentials(self) -> None:
+    def test_rejects_invalid_storage_or_missing_s3_or_duplicate_ingest_credentials(self) -> None:
         with self.assertRaises(SqlConfigurationError):
-            self._make_executor(storage_backend="local")
+            self._make_executor(storage_backend="gcs")
+
+        # Chế độ local bắt buộc phải có local_parquet_loader (nếu không dùng _test_parquet_bytes_by_key)
+        with self.assertRaises(SqlConfigurationError):
+            self._make_executor(
+                storage_backend="local",
+                local_parquet_loader=None,
+                _test_parquet_bytes_by_key=None,
+            )
 
         with self.assertRaises(SqlConfigurationError):
             self._make_executor(s3_bucket="")
@@ -94,22 +102,59 @@ class DuckDBSqlExecutorUnitTests(unittest.TestCase):
         with self.assertRaises(SqlConfigurationError):
             self._make_executor(query_access_key_id="", query_secret_access_key="")
 
-        # Bắt buộc credential query phải khác credential ingestion
+        # Bắt buộc credential query phải khác credential ingestion khi dùng S3
         with self.assertRaises(SqlConfigurationError):
             self._make_executor(
                 query_access_key_id="AKIA_SAME_KEY",
                 ingest_access_key_id="AKIA_SAME_KEY",
             )
 
-        class LocalSettings:
-            storage_backend = "local"
-            s3_bucket = "rag-bucket"
-            s3_query_access_key_id = "AKIA_Q"
-            s3_query_secret_access_key = "SECRET_Q"
-            s3_ingest_access_key_id = "AKIA_I"
+    def test_local_storage_backend_executes_sql_while_keeping_duckdb_local_fs_disabled(self) -> None:
+        from app.infrastructure.storage import LocalFileStorage
 
-        with self.assertRaises(SqlConfigurationError):
-            create_duckdb_sql_executor(LocalSettings())
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            storage = LocalFileStorage(Path(tmp_dir))
+            storage.put(self.ns_key, self.ns_parquet)
+            storage.put(self.pb_key, self.pb_parquet)
+
+            rogue_parquet = Path(tmp_dir) / "rogue.parquet"
+            rogue_parquet.write_bytes(self.ns_parquet)
+            rogue_posix = rogue_parquet.as_posix()
+
+            def _verify_locked(conn: duckdb.DuckDBPyConnection) -> None:
+                with self.assertRaises(duckdb.Error):
+                    conn.execute(f"SELECT * FROM read_parquet('{rogue_posix}')").fetchall()
+
+            class LocalSettings:
+                storage_backend = "local"
+                documents_dir = tmp_dir
+                duckdb_memory_limit = "256MB"
+                duckdb_threads = 2
+                duckdb_query_timeout_seconds = 5.0
+                duckdb_max_rows = 200
+
+            created = create_duckdb_sql_executor(LocalSettings())
+            res_factory = created.execute(
+                tables=self.tables,
+                sql="SELECT SUM(luong) AS tong_luong FROM nhansu",
+                tenant_id="default",
+            )
+            self.assertEqual(res_factory.rows, ((90,),))
+
+            executor = DuckDBSqlExecutor(
+                storage_backend="local",
+                s3_bucket=None,
+                query_access_key_id=None,
+                query_secret_access_key=None,
+                local_parquet_loader=storage.get,
+                _test_before_query_hook=_verify_locked,
+            )
+            res = executor.execute(
+                tables=self.tables,
+                sql="SELECT COUNT(*) FROM nhansu WHERE phongban = 'Kỹ thuật'",
+                tenant_id="default",
+            )
+            self.assertEqual(res.rows, ((2,),))
 
     def test_security_lockdown_blocks_setting_mutation_local_files_and_secrets_on_real_duckdb(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

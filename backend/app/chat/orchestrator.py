@@ -21,13 +21,16 @@ from langchain_core.messages.utils import convert_to_openai_messages, count_toke
 from app.shared.config import settings
 from app.shared.observability import NoOpTracer, TraceContext, Tracer
 from app.chat.context_budget import ApproximateTokenCounter, ContextBudgetConfig
+from app.conversations.models import SessionScope
 from app.conversations.repository import ConversationRepositoryError, MongoConversationRepository
 from app.documents.queries import DocumentQueries
+from app.documents.repository import MongoDocumentRepository
 from app.conversations.history import ConversationHistoryLoader, HistoryTurn
 from app.rag.llm import get_llm
 from app.chat.events import ProviderStreamChunk
 from app.chat.pipeline import (
     PreparedRagStream,
+    _resolve_active_version_ids,
     astream_rag_answer,
     generate_prepared_answer,
     prepare_rag_request,
@@ -46,6 +49,7 @@ from app.chat.ui_context import (
 from app.chat.agent import AGENT_SYSTEM_INSTRUCTION, AgenticRunner
 from app.chat.agent_tools import (
     agent_tool_schemas,
+    agent_tool_schemas_for_registry,
     create_agent_tool_registry,
     create_query_excel_handler,
     create_rag_search_handler,
@@ -375,8 +379,8 @@ class ChatOrchestrator:
             missing_flags: list[str] = []
             if not self.agentic_mode:
                 missing_flags.append("AGENTIC_MODE_ENABLED=true")
-            if getattr(settings, "storage_backend", "local") != "s3":
-                missing_flags.append("STORAGE_BACKEND=s3")
+            if getattr(settings, "storage_backend", "local") not in ("local", "s3"):
+                missing_flags.append("STORAGE_BACKEND=local|s3")
             if not getattr(settings, "excel_parquet_ingestion_enabled", False):
                 missing_flags.append("EXCEL_PARQUET_INGESTION_ENABLED=true")
             if missing_flags:
@@ -484,7 +488,23 @@ class ChatOrchestrator:
                     loader = self.history_loader or ConversationHistoryLoader(MongoConversationRepository(database))
                     loaded = await _wait(lambda: asyncio.to_thread(loader.load, session_id), deadline)
                     turns = loaded.turns
-                    session_scope = getattr(loaded, "retrieval_scope", None)
+                    session_scope = getattr(loaded, "scope", None)
+                active_version_ids: tuple[str, ...] = ()
+                if (
+                    self.rag_search_fn is None
+                    and qdrant_client is not None
+                    and database is not None
+                    and hasattr(database, "__getitem__")
+                ):
+                    effective_scope = session_scope if session_scope is not None else SessionScope()
+                    active_version_ids = await _wait(
+                        lambda: asyncio.to_thread(
+                            _resolve_active_version_ids,
+                            MongoDocumentRepository(database),
+                            effective_scope,
+                        ),
+                        deadline,
+                    )
                 agent_instruction = fit_ui_system_instruction(
                     AGENT_SYSTEM_INSTRUCTION,
                     ui_context,
@@ -514,7 +534,12 @@ class ChatOrchestrator:
                                 count_system_tokens=counter.system,
                                 max_system_tokens=self.config.system_max_tokens,
                             )
-                schemas = agent_tool_schemas(include_run_sql=include_run_sql)
+                schemas = agent_tool_schemas(
+                    include_document_tools=self.queries is not None,
+                    include_rag_search=True,
+                    include_excel_query=self.excel_loader_fn is not None,
+                    include_run_sql=include_run_sql,
+                )
                 agent_messages, turns = self._fit(
                     question,
                     turns,
@@ -544,6 +569,7 @@ class ChatOrchestrator:
                     model=model,
                     agent_messages=agent_messages,
                     qdrant_client=qdrant_client,
+                    active_version_ids=active_version_ids,
                     include_run_sql=include_run_sql,
                     session_scope=session_scope,
                     _owner=self,
@@ -702,7 +728,7 @@ class ChatOrchestrator:
         )
         runner = AgenticRunner(
             model=plan.model,
-            schemas=agent_tool_schemas(include_run_sql=plan.include_run_sql),
+            schemas=agent_tool_schemas_for_registry(registry),
             registry=registry,
             parse_calls=self._calls,
             extract_text=_text,

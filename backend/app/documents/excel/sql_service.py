@@ -841,7 +841,7 @@ def create_excel_sql_service(
     executor: SqlQueryExecutor | None = None,
 ) -> ExcelSqlService:
     """Factory khởi tạo `ExcelSqlService` với repository MongoDB và `DuckDBSqlExecutor`."""
-    from app.documents.repository import DocumentRepository
+    from app.documents.repository import MongoDocumentRepository
 
     effective_executor = executor
     if effective_executor is None:
@@ -849,6 +849,6 @@ def create_excel_sql_service(
 
         effective_executor = create_duckdb_sql_executor()
     return ExcelSqlService(
-        repository=DocumentRepository(database),
+        repository=MongoDocumentRepository(database),
         executor=effective_executor,
     )

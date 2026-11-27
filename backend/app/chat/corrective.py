@@ -479,3 +479,18 @@ class CorrectiveRagRunner:
             strict_fallback_triggered=strict_fallback_triggered,
             tried_queries=tuple(tried_queries),
         )
+
+
+def create_corrective_runner(
+    *,
+    llm: Any = None,
+    max_retries: int = 1,
+    timeout_seconds: float = 8.0,
+) -> CorrectiveRagRunner:
+    """Factory wiring lightweight LLM into RetrievalGrader and QueryCorrector without web search."""
+    return CorrectiveRagRunner(
+        grader=RetrievalGrader(llm=llm, timeout_seconds=timeout_seconds),
+        corrector=QueryCorrector(llm=llm, timeout_seconds=timeout_seconds),
+        web_search_provider=None,
+        max_retries=max_retries,
+    )

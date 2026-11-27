@@ -122,9 +122,29 @@ class TestAgenticOrchestrator(unittest.IsolatedAsyncioTestCase):
             result["usage"],
             {"input_tokens": 85, "output_tokens": 29, "total_tokens": 114},
         )
-        # Verify tool schemas exposed all 4 agentic tools
+        # Verify tool schemas match registered handlers 1-to-1 (no orphan query_excel_table without loader)
         tool_names = {t["function"]["name"] for t in model.bound_calls[0][0]}
-        self.assertEqual(tool_names, {"count_documents", "list_documents", "rag_search", "query_excel_table"})
+        self.assertEqual(tool_names, {"count_documents", "list_documents", "rag_search"})
+
+    async def test_agentic_tool_schemas_match_registered_handlers_one_to_one(self) -> None:
+        model_without_queries = _ScriptedAgentModel(
+            [
+                AIMessage(
+                    content="Không có tài liệu phù hợp.",
+                    usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+                )
+            ]
+        )
+        orchestrator_no_queries = ChatOrchestrator(
+            llm=model_without_queries,
+            queries=None,
+            tools_enabled=True,
+            agentic_mode=True,
+        )
+        plan = await orchestrator_no_queries.prepare_plan("Kiểm tra công cụ")
+        await orchestrator_no_queries.generate_json(plan)
+        bound_names = {t["function"]["name"] for t in model_without_queries.bound_calls[0][0]}
+        self.assertEqual(bound_names, {"rag_search"})
 
     async def test_agentic_max_steps_guard_forces_bounded_final_synthesis(self) -> None:
         model = _ScriptedAgentModel(

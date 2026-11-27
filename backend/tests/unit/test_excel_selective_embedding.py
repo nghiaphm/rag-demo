@@ -553,8 +553,20 @@ class ExcelSelectiveEmbeddingUnitTests(unittest.TestCase):
             )
         msg = str(sql_ctx.exception)
         self.assertIn("AGENTIC_MODE_ENABLED=true", msg)
-        self.assertIn("STORAGE_BACKEND=s3", msg)
         self.assertIn("EXCEL_PARQUET_INGESTION_ENABLED=true", msg)
+
+        # Cả local và s3 đều được chấp nhận khi đủ AGENTIC_MODE_ENABLED và EXCEL_PARQUET_INGESTION_ENABLED
+        valid_local = Settings(
+            _env_file=None,
+            groq_api_key="gsk_test",
+            embedding_api_key="AIza_test",
+            excel_sql_enabled=True,
+            agentic_mode_enabled=True,
+            storage_backend="local",
+            excel_parquet_ingestion_enabled=True,
+        )
+        self.assertTrue(valid_local.excel_sql_enabled)
+        self.assertEqual(valid_local.storage_backend, "local")
 
         with self.assertRaises(ValidationError) as embed_ctx:
             Settings(

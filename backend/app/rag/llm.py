@@ -22,3 +22,17 @@ def get_llm() -> BaseChatModel:
         api_key=settings.groq_api_key.get_secret_value(),
         base_url=settings.openai_base_url,
     )
+
+
+@lru_cache
+def get_grader_llm() -> BaseChatModel:
+    """Khởi tạo lightweight LLM cho Corrective RAG grading/query correction.
+
+    Dùng `settings.corrective_grader_model` với `temperature=0.0` để đảm bảo tính tất định.
+    """
+    return ChatOpenAI(
+        model=settings.corrective_grader_model,
+        api_key=settings.groq_api_key.get_secret_value(),
+        base_url=settings.openai_base_url,
+        temperature=0.0,
+    )

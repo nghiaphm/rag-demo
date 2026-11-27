@@ -462,8 +462,6 @@ class Settings(BaseSettings):
             missing_flags: list[str] = []
             if not self.agentic_mode_enabled:
                 missing_flags.append("AGENTIC_MODE_ENABLED=true")
-            if self.storage_backend != "s3":
-                missing_flags.append("STORAGE_BACKEND=s3")
             if not self.excel_parquet_ingestion_enabled:
                 missing_flags.append("EXCEL_PARQUET_INGESTION_ENABLED=true")
             if missing_flags:
