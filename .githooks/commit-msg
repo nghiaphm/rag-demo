@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Commit-msg hook for RAG Workspace
+# - Validates commit subjects against Conventional Commits OR Project Milestone format (T4.3 — ..., H1.1 — ..., F6 — ...)
+# - Enforces GEMINI.md rule forbidding generic phase-N scopes (e.g. feat(phase-1): ...)
+# - Skips automatic Git commits (Merge, Revert, fixup!, squash!, amend!, Initial commit)
+# - Checks minimum description length (>= 5 chars) and subject length (warn > 100, block > 120)
+
+if [ "$#" -lt 1 ] || [ ! -f "$1" ]; then
+  echo "[commit-msg] FAILED: Missing commit message file argument."
+  exit 1
+fi
+
+MSG_FILE="$1"
+
+# Extract first non-empty, non-comment line (CRLF-safe, no SIGPIPE on large git commit -v diffs)
+SUBJECT=""
+while IFS= read -r line || [ -n "$line" ]; do
+  line="${line%$'\r'}"
+  trimmed="${line#"${line%%[![:space:]]*}"}"
+  if [ -z "$trimmed" ] || [ "${trimmed#\#}" != "$trimmed" ]; then
+    continue
+  fi
+  SUBJECT="$line"
+  break
+done < "$MSG_FILE"
+
+print_usage_examples() {
+  cat <<'EOF'
+
+Accepted formats:
+  1) Conventional Commits:
+     <type>[(<scope>)][!]: <description>
+     Allowed types: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+     Scope format : lowercase letters, digits, '.', '_', '/', '-' (e.g. excel-sql, hr-copilot, api)
+
+  2) Project Milestone / Task Prefix (per GEMINI.md & AGENTS.md):
+     <ID> — <description>   (delimiters: '—', '--', or '-')
+
+Valid examples from this repository:
+  feat(excel-sql): add RBAC catalog scoping and audit logging
+  fix(frontend): sync package-lock.json with next 16.4.6
+  docs: add root GEMINI.md project instructions
+  test(storage): add unit and integration tests for S3 backend
+  T4.3 — Add unit, integration, and regression tests for Excel SQL routing
+  H1.1 — Initialize HR portal shell and route isolation
+EOF
+}
+
+if [ -z "$SUBJECT" ]; then
+  echo "[commit-msg] FAILED: Commit message subject cannot be empty."
+  print_usage_examples
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 1. Bypass automatic / special Git commits
+# ---------------------------------------------------------------------------
+if printf '%s\n' "$SUBJECT" | grep -Eq '^(Merge[[:space:]]|Revert[[:space:]]|(fixup|squash|amend)![[:space:]]|Initial commit$)'; then
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Enforce GEMINI.md rule: never lump an entire phase into generic phase-N
+# ---------------------------------------------------------------------------
+if printf '%s\n' "$SUBJECT" | grep -Eiq '^[a-z]+\(phase[-_ ]?[0-9]+(\.[0-9]+)?\)!?[[:space:]]*:'; then
+  echo "[commit-msg] FAILED: Generic 'phase-N' scope is forbidden by GEMINI.md."
+  echo "  Received: $SUBJECT"
+  echo "  Reason  : Group commits by discrete functional scope instead of lumping an entire phase."
+  print_usage_examples
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Validate Conventional Commits OR Project Milestone format
+# ---------------------------------------------------------------------------
+CONVENTIONAL_RE='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9][a-z0-9._/-]*\))?!?:[[:space:]]+.+$'
+MILESTONE_RE='^[A-Z][0-9]+(\.[0-9]+)*[[:space:]]+(—|--|-)[[:space:]]+.+$'
+
+DESC=""
+if printf '%s\n' "$SUBJECT" | grep -Eq "$CONVENTIONAL_RE"; then
+  DESC="${SUBJECT#*:}"
+elif printf '%s\n' "$SUBJECT" | grep -Eq "$MILESTONE_RE"; then
+  DESC="$(printf '%s\n' "$SUBJECT" | sed -E 's/^[A-Z][0-9]+(\.[0-9]+)*[[:space:]]+(—|--|-)[[:space:]]+//')"
+else
+  echo "[commit-msg] FAILED: Commit subject does not follow project conventions."
+  echo "  Received: $SUBJECT"
+  print_usage_examples
+  exit 1
+fi
+
+# Trim leading and trailing whitespace from description
+DESC="${DESC#"${DESC%%[![:space:]]*}"}"
+DESC="${DESC%"${DESC##*[![:space:]]}"}"
+
+# ---------------------------------------------------------------------------
+# 4. Validate description & subject length
+# ---------------------------------------------------------------------------
+MIN_DESC_LEN=5
+WARN_SUBJECT_LEN=100
+MAX_SUBJECT_LEN=120
+
+if [ "${#DESC}" -lt "$MIN_DESC_LEN" ]; then
+  echo "[commit-msg] FAILED: Commit description is too short (${#DESC} chars; minimum is $MIN_DESC_LEN)."
+  echo "  Received: $SUBJECT"
+  print_usage_examples
+  exit 1
+fi
+
+if [ "${#SUBJECT}" -gt "$MAX_SUBJECT_LEN" ]; then
+  echo "[commit-msg] FAILED: Commit subject is too long (${#SUBJECT} chars; maximum is $MAX_SUBJECT_LEN)."
+  echo "  Received: $SUBJECT"
+  echo "  Tip     : Keep the subject concise and move extra details into the commit body (after a blank line)."
+  exit 1
+fi
+
+if [ "${#SUBJECT}" -gt "$WARN_SUBJECT_LEN" ]; then
+  echo "[commit-msg] WARN: Subject length is ${#SUBJECT} chars (recommended <= $WARN_SUBJECT_LEN)."
+fi
+
+exit 0
