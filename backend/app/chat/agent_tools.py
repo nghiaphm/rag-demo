@@ -53,12 +53,15 @@ def query_excel_table_tool_definition() -> ToolDefinition:
 
 def agent_tool_definitions(
     *,
+    include_document_tools: bool = True,
     include_rag_search: bool = True,
-    include_excel_query: bool = True,
+    include_excel_query: bool = False,
     include_run_sql: bool = False,
 ) -> tuple[ToolDefinition, ...]:
     """Return tool definitions exposed to the Agentic Orchestrator."""
-    tools: list[ToolDefinition] = list(document_tool_definitions())
+    tools: list[ToolDefinition] = (
+        list(document_tool_definitions()) if include_document_tools else []
+    )
     if include_rag_search:
         tools.append(rag_search_tool_definition())
     if include_excel_query:
@@ -70,8 +73,9 @@ def agent_tool_definitions(
 
 def agent_tool_schemas(
     *,
+    include_document_tools: bool = True,
     include_rag_search: bool = True,
-    include_excel_query: bool = True,
+    include_excel_query: bool = False,
     include_run_sql: bool = False,
 ) -> list[dict[str, Any]]:
     """OpenAI-compatible function tool schemas for model.bind_tools()."""
@@ -85,10 +89,36 @@ def agent_tool_schemas(
             },
         }
         for definition in agent_tool_definitions(
+            include_document_tools=include_document_tools,
             include_rag_search=include_rag_search,
             include_excel_query=include_excel_query,
             include_run_sql=include_run_sql,
         )
+    ]
+
+
+def agent_tool_schemas_for_registry(registry: dict[str, ToolHandler]) -> list[dict[str, Any]]:
+    """Build OpenAI tool schemas matching 1-to-1 with registered handler names."""
+    all_defs = {
+        definition.name: definition
+        for definition in agent_tool_definitions(
+            include_document_tools=True,
+            include_rag_search=True,
+            include_excel_query=True,
+            include_run_sql=True,
+        )
+    }
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": all_defs[name].description,
+                "parameters": all_defs[name].input_schema(),
+            },
+        }
+        for name in registry
+        if name in all_defs
     ]
 
 
