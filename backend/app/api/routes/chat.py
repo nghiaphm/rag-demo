@@ -11,6 +11,7 @@ from anyio import from_thread
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.client_ip import resolve_client_ip
 from app.shared.auth import UserContext
 from app.documents.attachments import AttachmentUnavailableError, resolve_attachments
 from app.documents.repository import MongoDocumentRepository, RepositoryError
@@ -75,7 +76,7 @@ async def _enforce_rate_limit(request: Request, current_user: UserContext | None
     limiter = getattr(request.app.state, "rate_limiter", None)
     if limiter is None:
         return
-    client_host = getattr(getattr(request, "client", None), "host", None) or "anonymous"
+    client_host = resolve_client_ip(request, settings.trusted_proxy_ips)
     key = current_user.user_id if current_user is not None else client_host
     allowed = await limiter.allow(key, limit=settings.rate_limit_requests_per_minute, window_seconds=60)
     if not allowed:

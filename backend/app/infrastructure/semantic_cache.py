@@ -124,30 +124,48 @@ class RedisSemanticCache:
 
 
 class RedisRateLimiter:
-    """Fixed-window per-user rate limiter backed by Redis or in-memory counters."""
+    """Fixed-window per-user rate limiter backed by atomic Redis Lua or bounded in-memory counters."""
 
     _KEY_PREFIX = "rag:rl:"
+    _WARN_INTERVAL_SECONDS = 30.0
+    _LUA_ALLOW_SCRIPT = """
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then
+    redis.call("EXPIRE", KEYS[1], tonumber(ARGV[1]))
+else
+    local ttl = redis.call("TTL", KEYS[1])
+    if ttl < 0 then
+        redis.call("EXPIRE", KEYS[1], tonumber(ARGV[1]))
+    end
+end
+return current
+""".strip()
 
-    def __init__(self, *, redis_client: Any = None) -> None:
+    def __init__(self, *, redis_client: Any = None, max_memory_keys: int = 10_000) -> None:
         self._redis = redis_client
+        self._max_memory_keys = max(1, max_memory_keys)
         self._memory: dict[str, tuple[int, float]] = {}
+        self._last_warn_at: float = 0.0
 
-    async def allow(self, key: str, *, limit: int, window_seconds: int = 60) -> bool:
-        if limit <= 0:
-            return False
-        full_key = f"{self._KEY_PREFIX}{key}"
-
-        if self._redis is not None:
-            try:
-                count = await self._redis.incr(full_key)
-                if count == 1:
-                    await self._redis.expire(full_key, max(1, window_seconds))
-                return int(count) <= limit
-            except Exception as exc:
-                logger.debug("Redis rate limiter failed open: %s", exc)
-                return True
-
+    def _warn_redis_fallback(self, exc: Exception) -> None:
         now = time.monotonic()
+        if self._last_warn_at == 0.0 or (now - self._last_warn_at) >= self._WARN_INTERVAL_SECONDS:
+            self._last_warn_at = now
+            logger.warning(
+                "Redis rate limiter unavailable (%s); falling back to bounded local counter.",
+                type(exc).__name__,
+            )
+
+    def _allow_in_memory(self, full_key: str, *, limit: int, window_seconds: int) -> bool:
+        now = time.monotonic()
+        if full_key not in self._memory and len(self._memory) >= self._max_memory_keys:
+            expired_keys = [k for k, (_, exp) in self._memory.items() if now >= exp]
+            for k in expired_keys:
+                self._memory.pop(k, None)
+            while len(self._memory) >= self._max_memory_keys and self._memory:
+                oldest_key = next(iter(self._memory))
+                self._memory.pop(oldest_key, None)
+
         current_count, reset_at = self._memory.get(full_key, (0, now + window_seconds))
         if now >= reset_at:
             current_count = 0
@@ -155,6 +173,28 @@ class RedisRateLimiter:
         current_count += 1
         self._memory[full_key] = (current_count, reset_at)
         return current_count <= limit
+
+    async def allow(self, key: str, *, limit: int, window_seconds: int = 60) -> bool:
+        if limit <= 0:
+            return False
+        window = max(1, int(window_seconds))
+        full_key = f"{self._KEY_PREFIX}{key}"
+
+        if self._redis is not None:
+            try:
+                eval_fn = getattr(self._redis, "eval", None)
+                if callable(eval_fn):
+                    count = await eval_fn(self._LUA_ALLOW_SCRIPT, 1, full_key, window)
+                else:
+                    count = await self._redis.incr(full_key)
+                    if count == 1:
+                        await self._redis.expire(full_key, window)
+                return int(count) <= limit
+            except Exception as exc:
+                self._warn_redis_fallback(exc)
+                return self._allow_in_memory(full_key, limit=limit, window_seconds=window)
+
+        return self._allow_in_memory(full_key, limit=limit, window_seconds=window)
 
 
 def _try_create_redis_client(redis_url: str) -> Any:
