@@ -40,8 +40,8 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 | Phase | Phạm vi Tasks | Trạng thái | Commits | Tóm tắt Kiểm chứng |
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 0** — Pre-Stage Stabilization | `T0.1` – `T0.4` | **Hoàn thành & Merged** (`3166c27`) | `78c400c`..`fa404fd` | Arch `9/9`, Unit `338/338`, Integration `183/183`, Smoke `3/3`, OpenAPI `63` schemas PASS |
-| **Phase 1** — Reliability *(No Auth/Cache)* | `T1.1` – `T1.3` | **Hoàn thành** (`Tested` & `Verified` offline) | `2dd3002`, `ceb0f41`, `08fa055`, `a0adae0` | Arch `9/9`, Unit `344/344`, Integration `185/185`, FE `238/238`, OpenAPI `64` schemas PASS |
-| **Phase 2** — Observability | `T2.1` – `T2.4` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
+| **Phase 1** — Reliability *(No Auth/Cache)* | `T1.1` – `T1.3` | **Hoàn thành & Merged** (`6c3a512`) | `2dd3002`..`af74ed9` | Arch `9/9`, Unit `344/344`, Integration `185/185`, FE `238/238`, OpenAPI `64` schemas PASS |
+| **Phase 2** — Observability | `T2.1` – `T2.4` | **Hoàn thành** (`T2.1`–`T2.3` `Verified`, `T2.4` `Deferred`) | `f32243e`, `e0ea92f`, `01a874a` | `pip check` OK, Arch `9/9`, Unit `350/350`, Integration `186/186`, OpenAPI `64` schemas PASS |
 | **Phase 3** — RAG & Agent Evaluation | `T3.1` – `T3.4` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
 | **Phase 4** — Deployment & Testing | `T4.1` – `T4.4` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
 | **Phase 5** — Documentation & Demo | `T5.1` – `T5.2` | Chưa bắt đầu | *(chờ thực thi)* | *(chờ cập nhật)* |
@@ -195,21 +195,66 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 2 — Observability
-> **Trạng thái:** Chưa bắt đầu  
-> **Phạm vi:** `T2.1 JSON Logging & Validated X-Request-ID` · `T2.2 Langfuse SDK Compatibility & Redaction` · `T2.3 prometheus-client Low-Cardinality /metrics` · `T2.4 Conditional SSE Status Events Gate`
+> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-27)** trên nhánh `feat/observability-hardening` (tách từ `master` `6c3a512`)  
+> **Phạm vi:** `T2.1 JSON Logging & Validated X-Request-ID` · `T2.2 Langfuse SDK v2 Compatibility & Redaction` · `T2.3 prometheus-client Low-Cardinality /metrics` · `T2.4 Conditional SSE Status Events Gate (Deferred)`
+
+### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
+1. `f32243e` — `feat(logging): add JSON formatter, secret redaction, and request ID`
+2. `e0ea92f` — `feat(tracing): pin Langfuse v2 SDK, redact payloads, and wire chat`
+3. `01a874a` — `feat(metrics): add Prometheus low-cardinality metrics and HTTP wiring`
+4. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 2 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
 
 ### Quyết định thiết kế & Thay đổi thực hiện
-- **T2.1:** *(chờ cập nhật)*
-- **T2.2:** *(chờ cập nhật)*
-- **T2.3:** *(chờ cập nhật)*
-- **T2.4:** *(Ghi rõ kết quả Decision Gate: đã tích hợp additive hay chuyển sang Deferred kèm lý do)*
+- **T2.1 (Structured JSON Logging, Validate `X-Request-ID` & Secret Redaction):**
+  - Thêm cấu hình `log_level: str = "INFO"` và `log_format: str = "json"` (`json` | `text`) vào `Settings` (`backend/app/shared/config.py`) và `.env.example`.
+  - Bổ sung `request_id_var` (`ContextVar`), `validate_or_generate_request_id` (regex nghiêm ngặt `\A[A-Za-z0-9._-]{1,64}\Z`, từ chối ký tự điều khiển `\r`/`\n`/khoảng trắng/chuỗi > 64 ký tự và thay bằng UUIDv4 sạch) cùng hàm `redact_secrets` che các mẫu khóa bí mật (`gsk_`, `AIza`, `pk-lf-`/`sk-lf-`, `tvly-`, `sk-`, `mongodb(+srv)://user:pass@`, `redis(s)://:pass@`, `Bearer ...`) trong `backend/app/shared/observability.py`.
+  - Tạo `backend/app/infrastructure/logging_config.py` (`RequestIdLogFilter`, `RedactingJsonFormatter`, `RedactingTextFormatter`, `configure_logging`) đảm bảo xuất 1 dòng JSON hợp lệ kèm `request_id` và tự động che khóa bí mật cả trong nội dung log lẫn stack trace ngoại lệ.
+  - Bổ sung middleware thuần ASGI `RequestObservabilityMiddleware` trong `backend/app/main.py` (không buffer luồng SSE) gắn `request_id` vào `contextvars` và trả lại header `X-Request-ID` trên mọi HTTP response; trong `backend/app/api/routes/chat.py`, hàm `_resolve_turn_uuid()` tái sử dụng `request_id` nếu là UUID hợp lệ và tự sinh UUID riêng cho `SSEStartData`/`ChatResponse` nếu gateway gửi `X-Request-ID` dạng chuỗi ASCII phi-UUID.
+- **T2.2 (Tương thích Langfuse v2 SDK, Nối Đủ Luồng Chat & Redaction Mặc định):**
+  - Pin `langfuse>=2.50.0,<3.0.0` (đã cài và xác nhận `langfuse==2.60.10`, `pip check` PASS 0 xung đột với toàn bộ `backend/requirements.txt`).
+  - Thêm `langfuse_trace_content_enabled: bool = False` (`LANGFUSE_TRACE_CONTENT_ENABLED=false` mặc định): khi ở mức mặc định `false`, `_sanitize_trace_payload` trong `backend/app/infrastructure/observability.py` tự động chuyển các trường văn bản nhạy cảm (`question`, `query`, `retrieval_query`, `answer`, `prompt`, `sql`, `queries`, `chunks`...) sang chỉ số định lượng an toàn (`*_chars`, `*_count`) và quét `redact_secrets` trước khi gửi tới `sdk_client.trace` / `sdk_trace.span` / `sdk_span.end`.
+  - Sửa `prepare_rag_request_from_components` trong `backend/app/chat/pipeline.py` quản lý đúng context manager `with active_trace:` khi sở hữu trace, đồng thời truyền `request.app.state.tracer` đầy đủ vào tất cả các nhánh stateless/persistent của `/chat` và `/chat/stream` trong `backend/app/api/routes/chat.py`.
+- **T2.3 (`prometheus-client` Operational Metrics với Low-Cardinality Labels):**
+  - Thêm `prometheus-client>=0.21.0,<1.0.0` (`prometheus-client==0.26.0`) và cờ `metrics_enabled: bool = True` (`METRICS_ENABLED=true`).
+  - Định nghĩa port `MetricsRecorder` trong `backend/app/shared/observability.py` (giữ sạch ranh giới Hexagonal `api`/`chat`/`documents` -> `shared`) và triển khai adapter `PrometheusMetricsRecorder` trong `backend/app/infrastructure/metrics.py` với 6 metrics chuẩn low-cardinality:
+    - `rag_http_requests_total` & `rag_http_request_duration_seconds` (`method`, `route` lấy từ `scope["route"].path` hoặc `"unmatched"` cho 404, `status_code`).
+    - `rag_chat_turns_total` (`transport`, `mode`, `route_type`, `outcome`).
+    - `rag_chat_ttft_seconds` (nối từ `record_stream_metric` trong `stream_metrics.py`).
+    - `rag_stage_duration_seconds` (`stage`: `rewrite`, `multi_query`, `retrieval`, `rerank`, `corrective`, `sql`, `generation`).
+    - `rag_llm_tokens_total` (`direction`: `input`, `output`).
+  - Mở `GET /metrics` (`include_in_schema=False`) trong `backend/app/main.py`, giữ nguyên 64 OpenAPI schemas cho Frontend.
+- **T2.4 (Kết quả Cổng Quyết Định SSE `status` Events → Chuyển sang `[-]` Deferred):**
+  - Qua kiểm tra mã nguồn thực tế tại `backend/app/api/routes/chat.py:585-625` (quyết định kiến trúc `C05`) và bộ test Frontend (`verify-api-contract.mjs:126-150`, `sse-parser.test.mjs:156-162`, `chat-stream-client.test.mjs`), toàn bộ bước `prepare_rag_stream` (bao gồm Corrective RAG) bắt buộc hoàn tất **trước** khi mở `StreamingResponse` để đảm bảo lỗi phiên/hạ tầng trả đúng mã HTTP `404`/`409`/`410`/`502`/`503` pre-header thay vì mở stream `200` trước. Việc chèn `event: status` thời gian thực đòi hỏi đảo ngược vòng đời pre-header và sửa đổi union/exhaustive switch trên Frontend; theo đúng quy tắc chống phức tạp hóa của `T2.4`, hạng mục này được chuyển sang **Deferred**, bảo toàn 100% hợp đồng SSE hiện hữu.
 
 ### Files thêm mới / chỉnh sửa
-- **Thêm mới:** *(chờ cập nhật)*
-- **Chỉnh sửa:** *(chờ cập nhật)*
+- **Thêm mới:**
+  - `backend/app/infrastructure/logging_config.py`
+  - `backend/app/infrastructure/metrics.py`
+- **Chỉnh sửa:**
+  - `.env.example`
+  - `backend/requirements.txt`
+  - `backend/app/shared/config.py`
+  - `backend/app/shared/observability.py`
+  - `backend/app/infrastructure/observability.py`
+  - `backend/app/api/streaming/stream_metrics.py`
+  - `backend/app/api/routes/chat.py`
+  - `backend/app/chat/pipeline.py`
+  - `backend/app/documents/excel/sql_service.py`
+  - `backend/app/main.py`
+  - `backend/tests/unit/test_observability.py`
+  - `backend/tests/unit/test_stream_metrics.py`
+  - `backend/tests/integration/test_chat_stream.py`
 
 ### Kết quả kiểm thử & Phân loại trạng thái
-- *(chờ cập nhật)*
+- **`Verified` (Kiểm chứng trực tiếp với gói `langfuse==2.60.10` & `prometheus-client==0.26.0` thật trong `.venv`):**
+  - `.\.venv\Scripts\python.exe -m pip check` → **`No broken requirements found.`**
+  - `.\.venv\Scripts\python.exe -m compileall -q backend/app backend/tests` → **`PASS` (0 lỗi cú pháp)**.
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/architecture -t backend -v` → **`9/9 PASS` (`0.244s`)**.
+  - `$env:PYTHONPATH = "backend"; .\.venv\Scripts\python.exe backend/tests/smoke/smoke_sse_schema.py` → **`PASS`**.
+  - `npm.cmd --prefix frontend run test:contract` → **`PASS: 64 REST/SSE/health schemas`**.
+- **`Tested` (Toàn bộ bộ kiểm thử Backend Unit & Integration):**
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/unit -t backend -v` → **`350/350 PASS` (`5.822s`)** *(tăng +6 unit tests mới so với Phase 1)*.
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/integration -t backend -v` → **`186/186 PASS` (`6.241s`)** *(tăng +1 integration test đa kịch bản `X-Request-ID` & `/metrics` 404 cardinality so với Phase 1)*.
 
 ---
 
