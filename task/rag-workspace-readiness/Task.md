@@ -111,7 +111,7 @@ flowchart LR
 
 ### Danh sách Task
 
-- [ ] **T1.1 — Sửa `/health/dependencies` Không Phá Hủy & Phân Tách Dependencies Bắt buộc / Tùy chọn**
+- [x] **T1.1 — Sửa `/health/dependencies` Không Phá Hủy & Phân Tách Dependencies Bắt buộc / Tùy chọn**
   - **Phụ thuộc:** Phase 0.
   - **Files sửa:** `backend/app/infrastructure/mongo.py`, `backend/app/infrastructure/qdrant.py`, `backend/app/infrastructure/connections.py`, `backend/app/main.py:75-83`.
   - **Files test:** `backend/tests/unit/test_cloud_connections.py`, `backend/tests/integration/test_controlled_live_guards.py`.
@@ -125,12 +125,12 @@ flowchart LR
     - Test đa luồng chứng minh gọi `/health/dependencies` liên tục không đóng instance `MongoClient`/`QdrantClient` đang phục vụ request.
     - Test xác nhận đúng mã HTTP `200`/`503` cho từng tổ hợp lỗi của Required vs Optional dependencies; `npm.cmd run test:contract` PASS.
 
-- [ ] **T1.2 — Giới hạn Dung lượng Upload, Chính sách Lỗi Redis & Xác định Client IP An Toàn sau Reverse Proxy**
+- [x] **T1.2 — Giới hạn Dung lượng Upload (`413 Content Too Large`), Chính sách Lỗi Redis & Xác định Client IP An Toàn sau Reverse Proxy**
   - **Phụ thuộc:** T1.1.
-  - **Files sửa:** `backend/app/shared/config.py`, `.env.example`, `backend/app/api/routes/documents.py:167-178, 210-217, 305-313`, `backend/app/api/routes/chat.py:72-83`, `backend/app/infrastructure/semantic_cache.py:126-158`.
-  - **Files test:** `backend/tests/integration/test_documents_api.py`, `backend/tests/unit/test_rbac_and_cache.py`.
+  - **Files sửa:** `backend/app/shared/config.py`, `.env.example`, `backend/app/api/schemas/chat_documents.py`, `backend/app/api/dependencies/client_ip.py`, `backend/app/api/routes/documents.py`, `backend/app/api/routes/chat.py`, `backend/app/infrastructure/semantic_cache.py`, `frontend/lib/api/error-ux.ts`.
+  - **Files test:** `backend/tests/integration/test_documents_api.py`, `backend/tests/unit/test_rbac_and_cache.py`, `frontend/tests/error-health.test.mjs`, `frontend/tests/document-upload.test.mjs`.
   - **Nội dung triển khai:**
-    1. **Giới hạn dung lượng upload đa định dạng:** Thêm `max_upload_bytes: int = 25 * 1024 * 1024` (`MAX_UPLOAD_BYTES=26214400`, giữ nguyên ngưỡng chặt hơn `MAX_XLSX_BYTES=10 MiB` cho `.xlsx`). Trong `_read_upload()`, đọc tối đa `limit + 1` bytes cho cả `.pdf`, `.txt`, `.md`, `.markdown`, `.xlsx` và từ chối ngay khi vượt ngưỡng (không đọc hết stream vào RAM).
+    1. **Giới hạn dung lượng upload đa định dạng (HTTP `413 Content Too Large`):** Thêm `max_upload_bytes: int = 25 * 1024 * 1024` (`MAX_UPLOAD_BYTES=26214400`, giữ nguyên ngưỡng chặt hơn `MAX_XLSX_BYTES=10 MiB` cho `.xlsx`). Trong `_read_upload()`, đọc tối đa `limit + 1` bytes cho cả `.pdf`, `.txt`, `.md`, `.markdown`, `.xlsx` và trả thống nhất HTTP **`413 Content Too Large`** khi vượt ngưỡng (khai báo `HTTPErrorResponse` trên OpenAPI `POST /documents/upload` & `PUT /documents/{document_id}`, đồng bộ xử lý mã `413` ở Frontend `safeApiErrorMessage`; giữ nguyên HTTP `400` cho file rỗng, sai định dạng hoặc hỏng cấu trúc workbook).
     2. **Chuẩn hóa Redis Rate Limiter & Failure Policy:**
        - Chuyển thao tác tăng bộ đếm trên Redis sang Lua script atomic (`INCR` + gán `EXPIRE` nếu `count == 1` hoặc `TTL < 0`) để không bao giờ sinh key mồ côi không có TTL.
        - **Redis Failure Policy rõ ràng:**
@@ -144,7 +144,7 @@ flowchart LR
     - Test chứng minh header `X-Forwarded-For` giả mạo bị bỏ qua khi `request.client.host` không thuộc `TRUSTED_PROXY_IPS`, và được trích xuất đúng khi đi qua proxy tin cậy.
     - Test chứng minh khi Redis sập giữa chừng, `RedisRateLimiter` tự động áp dụng fallback in-memory bounded mà không văng exception `500`.
 
-- [ ] **T1.3 — Hardening Timeouts/Retries cho Providers, `SecretStr`, CORS Động, Security Headers & Startup Guard**
+- [x] **T1.3 — Hardening Timeouts/Retries cho Providers, `SecretStr`, CORS Động, Security Headers & Startup Guard**
   - **Phụ thuộc:** T1.1.
   - **Files sửa:** `backend/app/shared/config.py`, `.env.example`, `backend/app/rag/llm.py`, `backend/app/rag/embeddings.py`, `backend/app/main.py:50-63`.
   - **Files test:** `backend/tests/unit/test_llm.py`, `backend/tests/integration/test_cors.py`.
