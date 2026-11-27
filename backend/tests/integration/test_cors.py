@@ -98,6 +98,51 @@ class CorsTests(unittest.TestCase):
         self.sessions.assert_not_called()
         self.documents.assert_not_called()
 
+    def test_security_headers_present_and_dynamic_cors_origins_supported(self):
+        from fastapi import FastAPI
+        from app.main import configure_middlewares
+        from app.shared.config import Settings
+
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(response.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(
+            response.headers.get("Referrer-Policy"),
+            "strict-origin-when-cross-origin",
+        )
+
+        custom_cfg = Settings(
+            _env_file=None,
+            groq_api_key="gsk_placeholder_test",  # pragma: allowlist secret
+            embedding_api_key="AIza_placeholder_test",  # pragma: allowlist secret
+            cors_origins="https://workspace.example.com, https://hr.example.com",
+        )
+        self.assertEqual(
+            custom_cfg.cors_origins,
+            ("https://workspace.example.com", "https://hr.example.com"),
+        )
+        custom_app = FastAPI()
+        configure_middlewares(custom_app, custom_cfg)
+
+        @custom_app.get("/ping")
+        def _ping():
+            return {"ok": True}
+
+        with TestClient(custom_app) as custom_client:
+            allowed = custom_client.get(
+                "/ping", headers={"Origin": "https://workspace.example.com"}
+            )
+            self.assertEqual(
+                allowed.headers.get("Access-Control-Allow-Origin"),
+                "https://workspace.example.com",
+            )
+            self.assertEqual(allowed.headers.get("X-Frame-Options"), "DENY")
+            blocked = custom_client.get(
+                "/ping", headers={"Origin": "http://localhost:3000"}
+            )
+            self.assertNotIn("Access-Control-Allow-Origin", blocked.headers)
+
 
 if __name__ == "__main__":
     unittest.main()

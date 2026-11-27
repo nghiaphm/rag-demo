@@ -21,6 +21,8 @@ def get_llm() -> BaseChatModel:
         model=settings.llm_model,
         api_key=settings.groq_api_key.get_secret_value(),
         base_url=settings.openai_base_url,
+        timeout=settings.llm_request_timeout_seconds,
+        max_retries=settings.llm_max_retries,
     )
 
 
@@ -35,4 +37,6 @@ def get_grader_llm() -> BaseChatModel:
         api_key=settings.groq_api_key.get_secret_value(),
         base_url=settings.openai_base_url,
         temperature=0.0,
+        timeout=settings.llm_request_timeout_seconds,
+        max_retries=settings.llm_max_retries,
     )

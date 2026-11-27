@@ -32,7 +32,8 @@ def get_embeddings() -> Embeddings:
 
         return GoogleGenerativeAIEmbeddings(
             model=settings.embedding_model,
-            google_api_key=settings.embedding_api_key,
+            google_api_key=settings.embedding_api_key.get_secret_value(),
+            request_options={"timeout": settings.embedding_timeout_seconds},
         )
 
     supported = ", ".join(sorted(_GOOGLE_PROVIDER_ALIASES))

@@ -112,9 +112,9 @@ def serve_backend(run_dir):
                      http_client=httpx.Client(event_hooks={"request": [budget.hook("groq")], "response": [budget.response_hook("groq")]}),
                      http_async_client=httpx.AsyncClient(event_hooks={"request": [budget.async_hook("groq")], "response": [budget.async_response_hook("groq")]}))
     embeddings = GoogleGenerativeAIEmbeddings(model=settings.embedding_model,
-                                              google_api_key=settings.embedding_api_key, vertexai=False)
+                                              google_api_key=settings.embedding_api_key.get_secret_value(), vertexai=False)
     embeddings.client.close()
-    embeddings.client = genai.Client(api_key=settings.embedding_api_key,
+    embeddings.client = genai.Client(api_key=settings.embedding_api_key.get_secret_value(),
         http_options=HttpOptions(timeout=45000, retry_options=HttpRetryOptions(attempts=1),
             httpx_client=httpx.Client(event_hooks={"request": [budget.hook("gemini")], "response": [budget.response_hook("gemini")]}),
             httpx_async_client=httpx.AsyncClient(event_hooks={"request": [budget.async_hook("gemini")], "response": [budget.async_response_hook("gemini")]})))
