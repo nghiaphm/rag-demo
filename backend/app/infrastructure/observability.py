@@ -1,4 +1,4 @@
-"""Concrete observability adapters (Langfuse + safe fallback)."""
+"""Concrete observability adapters (Langfuse v2 SDK + safe redaction & fallback)."""
 
 from __future__ import annotations
 
@@ -8,16 +8,87 @@ from types import TracebackType
 from typing import Any
 
 from app.shared.config import Settings, get_settings
-from app.shared.observability import NoOpSpan, NoOpTrace, NoOpTracer, SpanContext, TraceContext, Tracer
+from app.shared.observability import (
+    NoOpSpan,
+    NoOpTrace,
+    NoOpTracer,
+    SpanContext,
+    TraceContext,
+    Tracer,
+    redact_secrets,
+)
 
 logger = logging.getLogger(__name__)
 
+_SENSITIVE_TEXT_KEYS: frozenset[str] = frozenset(
+    {
+        "question",
+        "q",
+        "query",
+        "retrieval_query",
+        "corrected_query",
+        "answer",
+        "prompt",
+        "content",
+        "text",
+        "sql",
+    }
+)
+_SENSITIVE_LIST_KEYS: frozenset[str] = frozenset(
+    {"queries", "tried", "chunks", "documents", "messages"}
+)
+_MAX_CONTENT_CHARS = 1000
+
+
+def _sanitize_trace_payload(payload: Any, *, trace_content_enabled: bool) -> Any:
+    """Sanitize trace/span payloads: mask secrets always; strip raw prompts/answers when disabled."""
+    if payload is None or isinstance(payload, (bool, int, float)):
+        return payload
+
+    if isinstance(payload, str):
+        cleaned = redact_secrets(payload)
+        if not trace_content_enabled:
+            return {"char_length": len(payload)}
+        return cleaned[:_MAX_CONTENT_CHARS]
+
+    if isinstance(payload, (list, tuple)):
+        if not trace_content_enabled:
+            return {"item_count": len(payload)}
+        return [_sanitize_trace_payload(item, trace_content_enabled=True) for item in payload[:20]]
+
+    if isinstance(payload, dict):
+        result: dict[str, Any] = {}
+        for key, value in payload.items():
+            key_str = str(key)
+            key_lower = key_str.lower()
+            if not trace_content_enabled:
+                if key_lower in _SENSITIVE_TEXT_KEYS and isinstance(value, str):
+                    result[f"{key_str}_chars"] = len(value)
+                    continue
+                if key_lower in _SENSITIVE_LIST_KEYS and isinstance(value, (list, tuple)):
+                    singular = "query" if key_lower == "queries" else key_str.rstrip("s")
+                    result[f"{singular}_count"] = len(value)
+                    continue
+            if isinstance(value, str):
+                cleaned_val = redact_secrets(value)
+                result[key_str] = cleaned_val[:_MAX_CONTENT_CHARS] if trace_content_enabled else cleaned_val[:200]
+            elif isinstance(value, (dict, list, tuple)):
+                result[key_str] = _sanitize_trace_payload(
+                    value, trace_content_enabled=trace_content_enabled
+                )
+            else:
+                result[key_str] = value
+        return result
+
+    return redact_secrets(str(payload))[:200]
+
 
 class LangfuseSpan:
-    """Span wrapper forwarding lifecycle and metadata updates to a Langfuse span."""
+    """Span wrapper forwarding lifecycle and sanitized metadata updates to a Langfuse v2 span."""
 
-    def __init__(self, sdk_span: Any) -> None:
+    def __init__(self, sdk_span: Any, *, trace_content_enabled: bool = False) -> None:
         self._sdk_span = sdk_span
+        self._trace_content_enabled = trace_content_enabled
         self._metadata: dict[str, Any] = {}
         self._output: Any = None
         self._usage: dict[str, int] | None = None
@@ -25,10 +96,14 @@ class LangfuseSpan:
         self._started_at = time.perf_counter()
 
     def set_attribute(self, key: str, value: Any) -> None:
-        self._metadata[key] = value
+        self._metadata[key] = _sanitize_trace_payload(
+            value, trace_content_enabled=self._trace_content_enabled
+        )
 
     def set_output(self, output: Any) -> None:
-        self._output = output
+        self._output = _sanitize_trace_payload(
+            output, trace_content_enabled=self._trace_content_enabled
+        )
 
     def record_usage(
         self,
@@ -44,7 +119,7 @@ class LangfuseSpan:
         }
 
     def record_error(self, error: BaseException | str) -> None:
-        self._error = str(error)
+        self._error = redact_secrets(str(error))[:300]
 
     def __enter__(self) -> LangfuseSpan:
         return self
@@ -74,14 +149,15 @@ class LangfuseSpan:
             if hasattr(self._sdk_span, "end"):
                 self._sdk_span.end(**end_kwargs)
         except Exception as exc:
-            logger.debug("Langfuse span end ignored due to error: %s", exc)
+            logger.debug("Langfuse span end ignored due to error: %s", type(exc).__name__)
 
 
 class LangfuseTrace:
     """Trace wrapper creating child Langfuse spans safely."""
 
-    def __init__(self, sdk_trace: Any) -> None:
+    def __init__(self, sdk_trace: Any, *, trace_content_enabled: bool = False) -> None:
         self._sdk_trace = sdk_trace
+        self._trace_content_enabled = trace_content_enabled
         self._metadata: dict[str, Any] = {}
         self._output: Any = None
 
@@ -94,21 +170,33 @@ class LangfuseTrace:
     ) -> SpanContext:
         try:
             if hasattr(self._sdk_trace, "span"):
+                sanitized_input = _sanitize_trace_payload(
+                    input, trace_content_enabled=self._trace_content_enabled
+                )
+                sanitized_meta = _sanitize_trace_payload(
+                    metadata or {}, trace_content_enabled=self._trace_content_enabled
+                )
                 sdk_span = self._sdk_trace.span(
                     name=name,
-                    input=input,
-                    metadata=metadata or {},
+                    input=sanitized_input,
+                    metadata=sanitized_meta,
                 )
-                return LangfuseSpan(sdk_span)
+                return LangfuseSpan(sdk_span, trace_content_enabled=self._trace_content_enabled)
         except Exception as exc:
-            logger.debug("Langfuse span creation failed for %s: %s", name, exc)
+            logger.debug("Langfuse span creation failed for %s: %s", name, type(exc).__name__)
         return NoOpSpan()
 
     def set_output(self, output: Any) -> None:
-        self._output = output
+        self._output = _sanitize_trace_payload(
+            output, trace_content_enabled=self._trace_content_enabled
+        )
 
     def set_metadata(self, metadata: dict[str, Any]) -> None:
-        self._metadata.update(metadata)
+        sanitized = _sanitize_trace_payload(
+            metadata, trace_content_enabled=self._trace_content_enabled
+        )
+        if isinstance(sanitized, dict):
+            self._metadata.update(sanitized)
 
     def __enter__(self) -> LangfuseTrace:
         return self
@@ -128,11 +216,11 @@ class LangfuseTrace:
             if update_kwargs and hasattr(self._sdk_trace, "update"):
                 self._sdk_trace.update(**update_kwargs)
         except Exception as exc:
-            logger.debug("Langfuse trace update ignored due to error: %s", exc)
+            logger.debug("Langfuse trace update ignored due to error: %s", type(exc).__name__)
 
 
 class LangfuseTracer:
-    """Tracer implementation backed by the Langfuse Python SDK."""
+    """Tracer implementation backed by the Langfuse v2 Python SDK (`langfuse>=2.50.0,<3.0.0`)."""
 
     def __init__(
         self,
@@ -141,17 +229,23 @@ class LangfuseTracer:
         secret_key: str,
         host: str = "https://cloud.langfuse.com",
         client: Any = None,
+        trace_content_enabled: bool = False,
+        httpx_client: Any = None,
     ) -> None:
+        self._trace_content_enabled = trace_content_enabled
         if client is not None:
             self._client = client
         else:
             from langfuse import Langfuse
 
-            self._client = Langfuse(
-                public_key=public_key,
-                secret_key=secret_key,
-                host=host,
-            )
+            init_kwargs: dict[str, Any] = {
+                "public_key": public_key,
+                "secret_key": secret_key,
+                "host": host,
+            }
+            if httpx_client is not None:
+                init_kwargs["httpx_client"] = httpx_client
+            self._client = Langfuse(**init_kwargs)
 
     def trace(
         self,
@@ -163,16 +257,25 @@ class LangfuseTracer:
         metadata: dict[str, Any] | None = None,
     ) -> TraceContext:
         try:
+            sanitized_input = _sanitize_trace_payload(
+                input, trace_content_enabled=self._trace_content_enabled
+            )
+            sanitized_meta = _sanitize_trace_payload(
+                metadata or {}, trace_content_enabled=self._trace_content_enabled
+            )
             sdk_trace = self._client.trace(
                 name=name,
                 session_id=session_id,
                 user_id=user_id,
-                input=input,
-                metadata=metadata or {},
+                input=sanitized_input,
+                metadata=sanitized_meta,
             )
-            return LangfuseTrace(sdk_trace)
+            return LangfuseTrace(sdk_trace, trace_content_enabled=self._trace_content_enabled)
         except Exception as exc:
-            logger.warning("Langfuse trace creation failed; falling back to NoOpTrace: %s", exc)
+            logger.warning(
+                "Langfuse trace creation failed (%s); falling back to NoOpTrace.",
+                type(exc).__name__,
+            )
             return NoOpTrace()
 
     def flush(self) -> None:
@@ -180,7 +283,7 @@ class LangfuseTracer:
             if hasattr(self._client, "flush"):
                 self._client.flush()
         except Exception as exc:
-            logger.debug("Langfuse flush ignored due to error: %s", exc)
+            logger.debug("Langfuse flush ignored due to error: %s", type(exc).__name__)
 
 
 def get_tracer(settings: Settings | None = None) -> Tracer:
@@ -200,10 +303,11 @@ def get_tracer(settings: Settings | None = None) -> Tracer:
             public_key=public_key,
             secret_key=secret_key,
             host=cfg.langfuse_host,
+            trace_content_enabled=bool(getattr(cfg, "langfuse_trace_content_enabled", False)),
         )
     except ImportError:
         logger.warning("langfuse package is not installed; using NoOpTracer.")
         return NoOpTracer()
     except Exception as exc:
-        logger.warning("Failed to initialize LangfuseTracer (%s); using NoOpTracer.", exc)
+        logger.warning("Failed to initialize LangfuseTracer (%s); using NoOpTracer.", type(exc).__name__)
         return NoOpTracer()

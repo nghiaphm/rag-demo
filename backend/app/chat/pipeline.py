@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
+import time
 from typing import Any
 
 from langchain_core.documents import Document
@@ -12,7 +14,12 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompt_values import PromptValue
 
 from app.shared.config import settings
-from app.shared.observability import NoOpTracer, TraceContext, Tracer
+from app.shared.observability import (
+    NoOpTracer,
+    TraceContext,
+    Tracer,
+    get_metrics_recorder,
+)
 from app.chat.context_budget import (
     BudgetedContext,
     ContextBudgetBuilder,
@@ -154,138 +161,157 @@ async def prepare_rag_request_from_components(
     ui_context: UiPageContext | None = None,
 ) -> PreparedRagStream:
     """Pure integration seam shared by production and isolated evaluation."""
+    owns_trace = trace is None
     active_trace = trace or (tracer or NoOpTracer()).trace(
         "rag_prepare",
         input={"question": question, "active_version_count": len(active_version_ids)},
     )
-    resolved_budget_builder = budget_builder or ContextBudgetBuilder(
-        ContextBudgetConfig.from_settings(settings)
-    )
-    effective_system_instruction = fit_ui_system_instruction(
-        SYSTEM_INSTRUCTION,
-        ui_context,
-        resolved_budget_builder.counter.system,
-        resolved_budget_builder.config.system_max_tokens,
-    )
-    history_budget = resolved_budget_builder.build(
-        system=effective_system_instruction,
-        history_turns=history_turns,
-        chunks=(),
-        query=question,
-    )
-    with active_trace.span("query_rewrite", input={"question": question}) as span:
-        rewriter = query_rewriter or create_query_rewriter(settings)
-        rewrite = await rewriter.rewrite(
-            question, history_budget.history_turns
+    metrics = get_metrics_recorder()
+    with active_trace if owns_trace else nullcontext():
+        resolved_budget_builder = budget_builder or ContextBudgetBuilder(
+            ContextBudgetConfig.from_settings(settings)
         )
-        span.set_output({"retrieval_query": rewrite.retrieval_query})
-        span.set_attribute("mode", getattr(rewrite.metrics, "mode", "unknown"))
-
-    with active_trace.span("multi_query", input={"query": rewrite.retrieval_query}) as span:
-        expander = multi_query_expander or create_multi_query_expander(settings)
-        queries = await expander.expand(rewrite.retrieval_query)
-        span.set_output({"query_count": len(queries)})
-
-    with active_trace.span("retrieval", input={"queries": list(queries)}) as span:
-        raw_documents = await _retrieve_for_queries(retriever, queries)
-        span.set_output({"raw_count": len(raw_documents)})
-
-    with active_trace.span("rerank", input={"raw_count": len(raw_documents)}) as span:
-        resolved_reranker = reranker if reranker is not None else get_reranker()
-        documents = await asyncio.to_thread(
-            resolved_reranker.rerank,
-            rewrite.retrieval_query,
-            raw_documents,
-            top_k=settings.top_k,
-            relevance_threshold=settings.reranker_relevance_threshold,
+        effective_system_instruction = fit_ui_system_instruction(
+            SYSTEM_INSTRUCTION,
+            ui_context,
+            resolved_budget_builder.counter.system,
+            resolved_budget_builder.config.system_max_tokens,
         )
-        span.set_output({"selected_count": len(documents)})
-
-    final_retrieval_query = rewrite.retrieval_query
-    corrective_outcome: CorrectiveOutcome | None = None
-    if corrective_runner is not None or settings.corrective_rag_enabled:
-        runner = corrective_runner or create_corrective_runner(
-            llm=get_grader_llm(),
-            max_retries=settings.corrective_max_retries,
+        history_budget = resolved_budget_builder.build(
+            system=effective_system_instruction,
+            history_turns=history_turns,
+            chunks=(),
+            query=question,
         )
+        t0 = time.perf_counter()
+        with active_trace.span("query_rewrite", input={"question": question}) as span:
+            rewriter = query_rewriter or create_query_rewriter(settings)
+            rewrite = await rewriter.rewrite(
+                question, history_budget.history_turns
+            )
+            span.set_output({"retrieval_query": rewrite.retrieval_query})
+            span.set_attribute("mode", getattr(rewrite.metrics, "mode", "unknown"))
+        metrics.record_stage_duration(stage="rewrite", duration_seconds=time.perf_counter() - t0)
 
-        async def _retrieve_and_rerank(retry_query: str) -> list[Document]:
-            retry_queries = await expander.expand(retry_query)
-            retry_raw = await _retrieve_for_queries(retriever, retry_queries)
-            return await asyncio.to_thread(
+        t0 = time.perf_counter()
+        with active_trace.span("multi_query", input={"query": rewrite.retrieval_query}) as span:
+            expander = multi_query_expander or create_multi_query_expander(settings)
+            queries = await expander.expand(rewrite.retrieval_query)
+            span.set_output({"query_count": len(queries)})
+        metrics.record_stage_duration(stage="multi_query", duration_seconds=time.perf_counter() - t0)
+
+        t0 = time.perf_counter()
+        with active_trace.span("retrieval", input={"queries": list(queries)}) as span:
+            raw_documents = await _retrieve_for_queries(retriever, queries)
+            span.set_output({"raw_count": len(raw_documents)})
+        metrics.record_stage_duration(stage="retrieval", duration_seconds=time.perf_counter() - t0)
+
+        t0 = time.perf_counter()
+        with active_trace.span("rerank", input={"raw_count": len(raw_documents)}) as span:
+            resolved_reranker = reranker if reranker is not None else get_reranker()
+            documents = await asyncio.to_thread(
                 resolved_reranker.rerank,
-                retry_query,
-                retry_raw,
+                rewrite.retrieval_query,
+                raw_documents,
                 top_k=settings.top_k,
                 relevance_threshold=settings.reranker_relevance_threshold,
             )
+            span.set_output({"selected_count": len(documents)})
+        metrics.record_stage_duration(stage="rerank", duration_seconds=time.perf_counter() - t0)
 
-        corrective_outcome = await runner.run(
-            question=question,
-            initial_query=rewrite.retrieval_query,
-            initial_documents=documents,
-            retrieve_and_rerank=_retrieve_and_rerank,
-            trace=active_trace,
-        )
-        documents = corrective_outcome.documents
-        final_retrieval_query = corrective_outcome.final_query
-
-    dashboard_block = format_dashboard_snapshot_context(ui_context)
-    effective_dashboard_block = ""
-    chunk_budget_builder = resolved_budget_builder
-    if dashboard_block:
-        dashboard_tokens = resolved_budget_builder.counter.human(dashboard_block)
-        if dashboard_tokens < resolved_budget_builder.config.chunks_max_tokens:
-            effective_dashboard_block = dashboard_block
-            chunk_budget_builder = ContextBudgetBuilder(
-                replace(
-                    resolved_budget_builder.config,
-                    chunks_max_tokens=max(
-                        1,
-                        resolved_budget_builder.config.chunks_max_tokens - dashboard_tokens,
-                    ),
-                )
+        final_retrieval_query = rewrite.retrieval_query
+        corrective_outcome: CorrectiveOutcome | None = None
+        if corrective_runner is not None or settings.corrective_rag_enabled:
+            t0 = time.perf_counter()
+            runner = corrective_runner or create_corrective_runner(
+                llm=get_grader_llm(),
+                max_retries=settings.corrective_max_retries,
             )
 
-    with active_trace.span("context_budget", input={"candidate_count": len(documents)}) as span:
-        budget = chunk_budget_builder.build(
-            system=effective_system_instruction,
-            history_turns=history_turns,
-            chunks=format_context_blocks(documents),
-            query=question,
+            async def _retrieve_and_rerank(retry_query: str) -> list[Document]:
+                retry_queries = await expander.expand(retry_query)
+                retry_raw = await _retrieve_for_queries(retriever, retry_queries)
+                return await asyncio.to_thread(
+                    resolved_reranker.rerank,
+                    retry_query,
+                    retry_raw,
+                    top_k=settings.top_k,
+                    relevance_threshold=settings.reranker_relevance_threshold,
+                )
+
+            corrective_outcome = await runner.run(
+                question=question,
+                initial_query=rewrite.retrieval_query,
+                initial_documents=documents,
+                retrieve_and_rerank=_retrieve_and_rerank,
+                trace=active_trace,
+            )
+            documents = corrective_outcome.documents
+            final_retrieval_query = corrective_outcome.final_query
+            metrics.record_stage_duration(stage="corrective", duration_seconds=time.perf_counter() - t0)
+
+        dashboard_block = format_dashboard_snapshot_context(ui_context)
+        effective_dashboard_block = ""
+        chunk_budget_builder = resolved_budget_builder
+        if dashboard_block:
+            dashboard_tokens = resolved_budget_builder.counter.human(dashboard_block)
+            if dashboard_tokens < resolved_budget_builder.config.chunks_max_tokens:
+                effective_dashboard_block = dashboard_block
+                chunk_budget_builder = ContextBudgetBuilder(
+                    replace(
+                        resolved_budget_builder.config,
+                        chunks_max_tokens=max(
+                            1,
+                            resolved_budget_builder.config.chunks_max_tokens - dashboard_tokens,
+                        ),
+                    )
+                )
+
+        with active_trace.span("context_budget", input={"candidate_count": len(documents)}) as span:
+            budget = chunk_budget_builder.build(
+                system=effective_system_instruction,
+                history_turns=history_turns,
+                chunks=format_context_blocks(documents),
+                query=question,
+            )
+            span.set_output({"budgeted_chunks": len(budget.chunks)})
+        selected_documents = documents[: len(budget.chunks)]
+        active_trace.set_output(
+            {
+                "source_count": len(selected_documents),
+                "budgeted_chunks": len(budget.chunks),
+            }
         )
-        span.set_output({"budgeted_chunks": len(budget.chunks)})
-    selected_documents = documents[: len(budget.chunks)]
-    if effective_dashboard_block and budget.chunks:
-        context = effective_dashboard_block + "\n\n" + "\n\n".join(budget.chunks)
-    elif effective_dashboard_block:
-        context = effective_dashboard_block
-    elif budget.chunks:
-        context = "\n\n".join(budget.chunks)
-    else:
-        context = "(không có tài liệu liên quan)"
-    prompt_value = get_history_aware_rag_prompt(
-        system_instruction=effective_system_instruction,
-    ).invoke(
-        {
-            "history": format_history(budget.history_turns),
-            "context": context,
-            # Generation always receives the original (possibly budget-truncated)
-            # query, never the rewritten retrieval query.
-            "question": budget.query,
-        }
-    )
-    return PreparedRagStream(
-        prompt_value=prompt_value,
-        sources=[_to_source(document) for document in selected_documents],
-        original_query=question,
-        retrieval_query=final_retrieval_query,
-        history_turns=budget.history_turns,
-        active_version_ids=active_version_ids,
-        budget=budget,
-        rewrite=rewrite,
-        corrective_outcome=corrective_outcome,
-    )
+        if effective_dashboard_block and budget.chunks:
+            context = effective_dashboard_block + "\n\n" + "\n\n".join(budget.chunks)
+        elif effective_dashboard_block:
+            context = effective_dashboard_block
+        elif budget.chunks:
+            context = "\n\n".join(budget.chunks)
+        else:
+            context = "(không có tài liệu liên quan)"
+        prompt_value = get_history_aware_rag_prompt(
+            system_instruction=effective_system_instruction,
+        ).invoke(
+            {
+                "history": format_history(budget.history_turns),
+                "context": context,
+                # Generation always receives the original (possibly budget-truncated)
+                # query, never the rewritten retrieval query.
+                "question": budget.query,
+            }
+        )
+        return PreparedRagStream(
+            prompt_value=prompt_value,
+            sources=[_to_source(document) for document in selected_documents],
+            original_query=question,
+            retrieval_query=final_retrieval_query,
+            history_turns=budget.history_turns,
+            active_version_ids=active_version_ids,
+            budget=budget,
+            rewrite=rewrite,
+            corrective_outcome=corrective_outcome,
+        )
 
 
 async def answer_question_async(
@@ -295,8 +321,37 @@ async def answer_question_async(
     qdrant_client: Any,
     session_id: str | None = None,
     ui_context: UiPageContext | None = None,
+    tracer: Tracer | None = None,
 ) -> dict:
     """Prepare through the shared builder and generate one non-stream response."""
+    if tracer is not None:
+        with tracer.trace("rag_turn", session_id=session_id, input={"question": question}) as turn_trace:
+            prepared = await prepare_rag_request(
+                question,
+                database=database,
+                qdrant_client=qdrant_client,
+                session_id=session_id,
+                trace=turn_trace,
+                **({"ui_context": ui_context} if ui_context is not None else {}),
+            )
+            with turn_trace.span("generation", input={"source_count": len(prepared.sources)}) as gen_span:
+                result = await generate_prepared_answer(prepared)
+                usage = result.get("usage")
+                if isinstance(usage, dict):
+                    gen_span.record_usage(
+                        prompt_tokens=int(usage.get("input_tokens", 0)),
+                        completion_tokens=int(usage.get("output_tokens", 0)),
+                        total_tokens=int(usage.get("total_tokens", 0)),
+                    )
+                gen_span.set_output({"answer_chars": len(result.get("answer") or "")})
+            turn_trace.set_output(
+                {
+                    "answer_chars": len(result.get("answer") or ""),
+                    "source_count": len(result.get("sources") or ()),
+                }
+            )
+            return result
+
     prepared = await prepare_rag_request(
         question,
         database=database,
@@ -313,14 +368,21 @@ async def generate_prepared_answer(
     llm: BaseChatModel | None = None,
 ) -> dict:
     """Generate a non-stream result from the exact prompt shared with SSE."""
+    metrics = get_metrics_recorder()
+    t0 = time.perf_counter()
     response = await (llm or get_llm()).ainvoke(prepared.prompt_value)
+    metrics.record_stage_duration(stage="generation", duration_seconds=time.perf_counter() - t0)
     answer = _text_delta(response)
     if answer is None or not answer.strip():
         raise ValueError("LLM không trả nội dung")
+    usage = _usage_from_chunk(response)
+    if usage:
+        metrics.record_llm_tokens(direction="input", count=usage["input_tokens"])
+        metrics.record_llm_tokens(direction="output", count=usage["output_tokens"])
     return {
         "answer": answer,
         "sources": prepared.sources,
-        "usage": _usage_from_chunk(response),
+        "usage": usage,
     }
 
 
@@ -331,6 +393,7 @@ def answer_question(
     qdrant_client: Any,
     session_id: str | None = None,
     ui_context: UiPageContext | None = None,
+    tracer: Tracer | None = None,
 ) -> dict:
     """Compatibility wrapper for scripts that still execute the stateless path sync."""
     return asyncio.run(
@@ -340,6 +403,7 @@ def answer_question(
             qdrant_client=qdrant_client,
             session_id=session_id,
             **({"ui_context": ui_context} if ui_context is not None else {}),
+            **({"tracer": tracer} if tracer is not None else {}),
         )
     )
 
@@ -351,6 +415,7 @@ def prepare_rag_stream(
     qdrant_client: Any,
     session_id: str | None = None,
     ui_context: UiPageContext | None = None,
+    tracer: Tracer | None = None,
 ) -> PreparedRagStream:
     """Compatibility wrapper for non-async callers and older smoke tests."""
     return asyncio.run(
@@ -360,6 +425,7 @@ def prepare_rag_stream(
             qdrant_client=qdrant_client,
             session_id=session_id,
             **({"ui_context": ui_context} if ui_context is not None else {}),
+            **({"tracer": tracer} if tracer is not None else {}),
         )
     )
 
@@ -370,12 +436,24 @@ async def astream_rag_answer(
     llm: BaseChatModel | None = None,
 ) -> AsyncIterator[ProviderStreamChunk]:
     """Consume Groq/OpenAI-compatible async chunks and normalize text plus usage."""
+    metrics = get_metrics_recorder()
+    t0 = time.perf_counter()
+    last_usage: dict[str, int] | None = None
     resolved_llm = llm if llm is not None else get_llm()
-    async for chunk in resolved_llm.astream(prepared.prompt_value):
-        yield ProviderStreamChunk(
-            content=_text_delta(chunk),
-            usage=_usage_from_chunk(chunk),
-        )
+    try:
+        async for chunk in resolved_llm.astream(prepared.prompt_value):
+            usage = _usage_from_chunk(chunk)
+            if usage is not None:
+                last_usage = usage
+            yield ProviderStreamChunk(
+                content=_text_delta(chunk),
+                usage=usage,
+            )
+    finally:
+        metrics.record_stage_duration(stage="generation", duration_seconds=time.perf_counter() - t0)
+        if last_usage:
+            metrics.record_llm_tokens(direction="input", count=last_usage["input_tokens"])
+            metrics.record_llm_tokens(direction="output", count=last_usage["output_tokens"])
 
 
 def _resolve_active_version_ids(
