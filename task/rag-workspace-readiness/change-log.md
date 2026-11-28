@@ -316,7 +316,7 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 4 — Deployment & Testing
-> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-28)** trên nhánh `chore/deployment-and-testing` (tách từ `master` `a2e541d`)  
+> **Trạng thái:** **Đã Merge vào `master` (`006c3e9`, 2026-11-28)** từ nhánh `chore/deployment-and-testing` (tách từ `master` `a2e541d`)  
 > **Phạm vi:** `T4.1 Hardened Dockerfiles & .dockerignore` · `T4.2 Unified Local/Demo docker-compose & ARQ Worker` · `T4.3 Classify 16 smoke_*.py & Playwright E2E (/hr, Scope Selector)` · `T4.4 CI Upgrade & Dependency Advisory Review`
 
 ### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
@@ -324,7 +324,8 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 2. `2969aa0` — `chore(compose): add ARQ worker, localhost binds, and local Qdrant HTTP flag`
 3. `eeda989` — `test(e2e): move 16 cloud smoke scripts and add HR Portal and scope E2E`
 4. `9aedf71` — `ci(workflows): add advanced flags, Playwright E2E, Docker, and audits`
-5. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 4 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
+5. `43e540d` — `docs(task): update readiness roadmap and Phase 4 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
+6. `159e8e3` — `fix(e2e): fix Linux CI TMPDIR socket limit and cross-platform Python path`
 
 ### Quyết định thiết kế & Thay đổi thực hiện
 - **T4.1 (Hardening `backend/Dockerfile`, `frontend/Dockerfile`, `next.config.ts` & `.dockerignore`):**
@@ -410,16 +411,48 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 5 — Documentation & Demo
-> **Trạng thái:** Chưa bắt đầu  
-> **Phạm vi:** `T5.1 Verified-Only Documentation Sync` · `T5.2 Safe Demo Seed Script (--dry-run, Isolated Collection, Zero PII) & Demo Runbook`
+> **Trạng thái:** **Hoàn thành & Chờ Duyệt Commit (2026-11-28)** trên nhánh `docs/documentation-and-demo` (tách từ `master` `006c3e9`)  
+> **Phạm vi:** `T5.1 Verified-Only Documentation Sync (với humanizer-skill)` · `T5.2 Safe Demo Seed Script (--dry-run, Isolated Collection, Zero PII) & Demo Runbook`
 
 ### Quyết định thiết kế & Thay đổi thực hiện
-- **T5.1:** *(chờ cập nhật)*
-- **T5.2:** *(chờ cập nhật)*
+- **T5.1 (`README.md`, `backend/README.md`, `frontend/README.md`, `docs/README.md`):**
+  - Đồng bộ tài liệu theo nguyên tắc chỉ ghi nhận năng lực **Verified**, phân tách rõ **Verified** vs **Tested (Offline/Isolated)** vs **Deferred** (loại bỏ các tuyên bố chưa verify như Redis cache runtime chưa chứng minh hay official `ragas` dependency).
+  - Ghi nhận chính xác framework đánh giá là **RAGAS-inspired custom metrics & Custom LLM Judge** (không phải thư viện `ragas` chính thức) và bổ sung hướng dẫn cấu hình reverse proxy cho SSE streaming (`X-Accel-Buffering: no`, `proxy_buffering off`).
+  - Đối chiếu 1-to-1 đủ `93/93` biến môi trường trong `.env.example` vào `backend/README.md`, kèm chỉ mục route API FastAPI và Next.js App Router hiện hành.
+  - Áp dụng `humanizer-skill/SKILL.md` để chỉnh giọng văn khách quan, tự nhiên, không AI tells (`em_dash=0`, `en_dash=0`, `ai_words=[]`) nhưng giữ nguyên tuyệt đối nhãn trạng thái, tên biến, câu lệnh CLI và số liệu kỹ thuật.
+- **T5.2 (`backend/scripts/seed_demo_workspace.py`, `backend/tests/unit/test_seed_demo_workspace.py`, `frontend/scripts/demo-smoke.mjs`, `docs/DEMO-RUNBOOK.md`):**
+  - Tạo script `seed_demo_workspace.py` mặc định chạy `--dry-run` (0 side-effects, chỉ đọc manifest + SHA-256 + kiểm tra cấu trúc XLSX qua `read_workbook()`); hard-block `rag_documents` và `./data/documents` với exit code `2` nếu thiếu cờ `--allow-primary-collection`; chế độ `--apply` chạy idempotent qua `DemoCorpusMigration` với 7 fixture tổng hợp/công khai không chứa PII.
+  - Bổ sung `test_seed_demo_workspace.py` (`3` unit test offline kiểm tra dry-run không gọi cloud, chặn collection chính, và tính idempotent).
+  - Mở rộng `frontend/scripts/demo-smoke.mjs` để verify thêm `/hr` (`HrPortalView`, `.hr-theme`), heading `Live KB`, widget `HrChatbotWidget` gửi SSE turn có `surface === "hr"` và `session_id` tách biệt với workspace `/chat`, kèm kiểm tra cleanup port và tương thích khi port `3000`/`.next/dev/lock` đang có tiến trình dev chạy sẵn.
+  - Viết `docs/DEMO-RUNBOOK.md` cho Mode 1 (Provider-Free Mock + `demo-smoke.mjs`) và Mode 2 (Local/Docker Full-Stack + `seed_demo_workspace.py`), bao gồm kịch bản Excel `hr_employees_mock.xlsx` (`nhansu`: `90` nhân viên active, `234` triệu tổng lương/tháng), kiểm tra `/metrics`, Langfuse, và lưu ý Nginx SSE buffering.
 
 ### Files thêm mới / chỉnh sửa
-- **Thêm mới:** *(chờ cập nhật)*
-- **Chỉnh sửa:** *(chờ cập nhật)*
+- **Thêm mới:**
+  - `backend/scripts/seed_demo_workspace.py`
+  - `backend/tests/unit/test_seed_demo_workspace.py`
+  - `docs/DEMO-RUNBOOK.md`
+- **Chỉnh sửa:**
+  - `README.md`
+  - `backend/README.md`
+  - `frontend/README.md`
+  - `docs/README.md`
+  - `frontend/scripts/demo-smoke.mjs`
+  - `task/rag-workspace-readiness/Task.md`
+  - `task/rag-workspace-readiness/change-log.md`
 
 ### Kết quả kiểm thử & Nghiệm thu Cuối cùng
-- *(chờ cập nhật)*
+- **Seed Script & Humanizer Verification:**
+  - `.\.venv\Scripts\python.exe backend/scripts/seed_demo_workspace.py` → **`PASS`** (`applied: false`, `total_fixtures: 7`, `qdrant_collection: "rag_documents_demo"`).
+  - `$env:PYTHONPATH = "backend"; .\.venv\Scripts\python.exe -m unittest backend/tests/unit/test_seed_demo_workspace.py -v` → **`3/3 PASS` (`0.043s`)**.
+  - Kiểm tra đối chiếu `.env.example` với `backend/README.md` → **`93/93` biến khớp** (`Missing .env.example keys in backend/README.md: []`).
+  - Quét định dạng Humanizer trên 4 tài liệu đã sửa → **`em_dash=0`, `en_dash=0`, `ai_words=[]`**.
+- **Backend Regression Suites (Offline):**
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/architecture -t backend -v` → **`9/9 PASS` (`0.369s`)**.
+  - `Set-Location backend; ..\.venv\Scripts\python.exe -m unittest discover -s tests/unit -v` → **`361/361 PASS` (`9.610s`)** *(+3 test mới cho `seed_demo_workspace.py`)*.
+  - `Set-Location backend; ..\.venv\Scripts\python.exe -m unittest discover -s tests/integration -v` → **`186/186 PASS` (`6.871s`)**.
+  - `.\.venv\Scripts\python.exe -m compileall -q backend/app backend/scripts backend/tests` → **`PASS`** (`exit 0`).
+- **Frontend & Demo Smoke Verification:**
+  - `npm.cmd --prefix frontend run typecheck` & `npm.cmd --prefix frontend run lint` → **`PASS`**.
+  - `npm.cmd --prefix frontend run test:contract` → **`PASS: 64 REST/SSE/health schemas`**.
+  - `Set-Location frontend; npm.cmd test` → **`238/238 PASS`**.
+  - `Set-Location frontend; node scripts/demo-smoke.mjs` → **`Demo smoke: 8/8 PASS; live provider calls=0`** *(đã verify cả `/chat`, `/documents`, `/hr` Dashboard, `HrChatbotWidget` SSE, và teardown sạch)*.

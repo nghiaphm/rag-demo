@@ -337,7 +337,7 @@ flowchart LR
 
 ### Danh sách Task
 
-- [ ] **T5.1 — Cập nhật Tài liệu Trung Thực theo Trạng Thái Thực Tế (`README.md`, `backend/README.md`, `frontend/README.md`, `docs/README.md`)**
+- [x] **T5.1 — Cập nhật Tài liệu Trung Thực theo Trạng Thái Thực Tế (`README.md`, `backend/README.md`, `frontend/README.md`, `docs/README.md`)**
   - **Phụ thuộc:** Phase 1, Phase 2, Phase 3, Phase 4.
   - **Files sửa:** `README.md`, `backend/README.md`, `frontend/README.md`, `docs/README.md`.
   - **Nội dung triển khai:**
@@ -350,7 +350,7 @@ flowchart LR
   - **Acceptance Criteria:**
     - Không còn bất kỳ tuyên bố quá mức (overclaim), số liệu test cũ hay tính năng Deferred bị viết nhầm thành tính năng đang bật; mọi đường dẫn tài liệu và câu lệnh CLI đều chính xác.
 
-- [ ] **T5.2 — Safe Demo Seed Script (`--dry-run`, Tách Collection, Không PII) & Demo Runbook (`docs/DEMO-RUNBOOK.md`)**
+- [x] **T5.2 — Safe Demo Seed Script (`--dry-run`, Tách Collection, Không PII) & Demo Runbook (`docs/DEMO-RUNBOOK.md`)**
   - **Phụ thuộc:** T4.3, T5.1.
   - **Files tạo/sửa:** `backend/scripts/seed_demo_workspace.py` (tạo mới), `frontend/scripts/demo-smoke.mjs`, `docs/DEMO-RUNBOOK.md` (tạo mới).
   - **Nội dung triển khai:**
