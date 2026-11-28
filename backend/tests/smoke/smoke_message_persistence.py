@@ -1,4 +1,6 @@
-"""Live P2-03 success/failure persistence smoke test với exact cleanup."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P2-03 success/failure persistence smoke test với exact cleanup."""
 
 import sys
 from pathlib import Path

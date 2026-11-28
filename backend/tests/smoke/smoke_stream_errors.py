@@ -1,4 +1,6 @@
-"""Live P4-04 Atlas smoke for post-header provider failure and timeout.
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P4-04 Atlas smoke for post-header provider failure and timeout.
 
 The script uses one isolated session, deterministic mocked provider streams and
 exact cleanup. It never sends document content to an external LLM.

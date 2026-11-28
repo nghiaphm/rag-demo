@@ -1,4 +1,6 @@
-"""Read-only P3-02 citation mapping smoke on real active Qdrant candidates."""
+"""[LIVE-PROVIDER SMOKE — Group C: requires live MongoDB Atlas / Qdrant Cloud and live Gemini/Groq API keys. DO NOT RUN IN OFFLINE CI.]
+
+Read-only P3-02 citation mapping smoke on real active Qdrant candidates."""
 
 from __future__ import annotations
 

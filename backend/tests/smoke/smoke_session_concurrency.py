@@ -1,4 +1,6 @@
-"""Live P2-04 atomic same-session generation guard test trên MongoDB Atlas."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P2-04 atomic same-session generation guard test trên MongoDB Atlas."""
 
 import asyncio
 import sys

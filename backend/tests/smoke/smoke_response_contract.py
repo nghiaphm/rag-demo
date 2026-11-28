@@ -1,4 +1,6 @@
-"""Live P3 compatibility contract smoke with isolated MongoDB Atlas cleanup."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P3 compatibility contract smoke with isolated MongoDB Atlas cleanup."""
 
 from __future__ import annotations
 

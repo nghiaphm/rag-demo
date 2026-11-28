@@ -1,4 +1,6 @@
-"""Live P2-02 API smoke test với isolated IDs và exact MongoDB cleanup."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P2-02 API smoke test với isolated IDs và exact MongoDB cleanup."""
 
 import sys
 from pathlib import Path

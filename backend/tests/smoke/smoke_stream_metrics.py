@@ -1,4 +1,6 @@
-"""Live P4-05 metrics/reconstruction smoke with Atlas persistence and exact cleanup."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P4-05 metrics/reconstruction smoke with Atlas persistence and exact cleanup."""
 
 from __future__ import annotations
 
