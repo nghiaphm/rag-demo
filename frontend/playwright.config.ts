@@ -23,6 +23,7 @@ export default defineConfig({
     env: {
       HOSTNAME: "127.0.0.1",
       PORT: "3100",
+      NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:4011/lifecycle",
     },
     url: "http://127.0.0.1:3100/chat",
     reuseExistingServer: false,

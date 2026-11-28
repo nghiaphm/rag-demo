@@ -79,6 +79,8 @@ jobs:
 
       - name: Install Playwright Chromium & Run E2E Suite
         working-directory: frontend
+        env:
+          PYTHON: python
         run: |
           npx playwright install --with-deps chromium
           npm run build:e2e
