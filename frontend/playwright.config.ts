@@ -19,7 +19,11 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3100",
+    command: "node .next/standalone/server.js",
+    env: {
+      HOSTNAME: "127.0.0.1",
+      PORT: "3100",
+    },
     url: "http://127.0.0.1:3100/chat",
     reuseExistingServer: false,
     timeout: 30_000,
