@@ -4,19 +4,9 @@ on:
   push:
     branches:
       - master
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-ci.yml"
-      - "backend/app/**"
-      - ".env.example"
   pull_request:
     branches:
       - master
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-ci.yml"
-      - "backend/app/**"
-      - ".env.example"
 
 concurrency:
   group: frontend-ci-${{ github.ref }}

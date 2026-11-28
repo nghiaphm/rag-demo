@@ -227,7 +227,7 @@ flowchart LR
 
 ### Danh sách Task
 
-- [ ] **T3.1 — Xây dựng Golden Datasets Mở Rộng với Ground Truth Kiểm chứng được**
+- [x] **T3.1 — Xây dựng Golden Datasets Mở Rộng với Ground Truth Kiểm chứng được**
   - **Phụ thuộc:** Phase 0.
   - **Files tạo:** `backend/evaluation/datasets/golden_set_v2.json` (giữ nguyên `golden_set.json` cũ cho regression test), `backend/evaluation/datasets/agent_sql_golden_set.json`, và các tài liệu mẫu tổng hợp (synthetic) trong `backend/evaluation/datasets/corpus/`.
   - **Nội dung triển khai:**
@@ -236,7 +236,7 @@ flowchart LR
   - **Acceptance Criteria:**
     - Unit test xác thực toàn bộ câu hỏi có ground truth rõ ràng, mọi file nguồn tồn tại và mọi đáp án số học trong `agent_sql_golden_set.json` khớp 100% kết quả chạy truy vấn chuẩn trên file mẫu.
 
-- [ ] **T3.2 — Chuẩn hóa Custom RAG Metrics: Tách Correct Refusal, Đổi tên `CustomLlmJudge` & Cấm Trộn Phương Pháp Chấm**
+- [x] **T3.2 — Chuẩn hóa Custom RAG Metrics: Tách Correct Refusal, Đổi tên `CustomLlmJudge` & Cấm Trộn Phương Pháp Chấm**
   - **Phụ thuộc:** T3.1, T1.3.
   - **Files sửa/tạo:** `backend/evaluation/scoring/ragas_metrics.py` (cập nhật docstring & logic tách refusal, giữ tên hàm cũ nếu test cũ đang import nhưng làm rõ thuật ngữ *RAGAS-inspired custom metrics*), `backend/evaluation/scoring/llm_judge.py` (tạo mới `CustomLlmJudge`), tích hợp thử nghiệm `EvidenceEvaluator` (`chat/corrective.py`) như một chỉ số groundedness bổ trợ trong báo cáo eval.
   - **Files test:** `backend/tests/unit/test_ragas_metrics.py`.
@@ -250,7 +250,7 @@ flowchart LR
   - **Acceptance Criteria:**
     - Unit tests chứng minh: (1) mẫu `expect_refusal=True` được tổng hợp riêng vào `correct_refusal_rate`, không nằm trong mẫu số của `faithfulness`; (2) khi `CustomLlmJudge` lỗi ở 1 mẫu, báo cáo tăng `judge_error_count` và giữ nguyên tính thuần nhất của trung bình LLM Judge trên các mẫu hợp lệ.
 
-- [ ] **T3.3 — Agent & Excel SQL Trajectory Evaluator (Phân tách Rõ Offline Fake vs Live LLM)**
+- [x] **T3.3 — Agent & Excel SQL Trajectory Evaluator (Phân tách Rõ Offline Fake vs Live LLM)**
   - **Phụ thuộc:** T0.3, T3.1.
   - **Files tạo:** `backend/evaluation/scoring/agent_eval.py`, `backend/evaluation/runner/eval_agent_cli.py`, `backend/tests/unit/test_agent_evaluation.py`.
   - **Nội dung triển khai:**
@@ -261,7 +261,7 @@ flowchart LR
   - **Acceptance Criteria:**
     - Unit test & `--mode offline_smoke` chạy PASS 100% không gọi mạng; `--mode live_eval` có kiểm tra chặn an toàn không cho phép trỏ nhầm vào `QDRANT_COLLECTION=rag_documents` của ứng dụng chính.
 
-- [ ] **T3.4 — Chạy Benchmark Matrix (Config A vs B vs C) trên Tập Dữ liệu Phù hợp**
+- [x] **T3.4 — Chạy Benchmark Matrix (Config A vs B vs C) trên Tập Dữ liệu Phù hợp** *(Đã chốt Phương án A: hoàn tất code runner & `--offline-check` PASS; lượt gọi `--live` trên `rag_documents_eval` thực thi on-demand khi cần)*
   - **Phụ thuộc:** T2.2, T3.2, T3.3.
   - **Files tạo/sửa:** `backend/evaluation/runner/benchmark_matrix.py`, cập nhật chú thích rõ tại `backend/evaluation/runner/baseline_eval.py`, xuất báo cáo tại `docs/evaluation/FINAL-EVALUATION-REPORT.md` (sau khi được duyệt chạy live).
   - **Nội dung triển khai:**

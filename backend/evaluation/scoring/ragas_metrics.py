@@ -1,10 +1,22 @@
-"""RAGAS-aligned evaluation metrics with offline deterministic and LLM-judge support.
+"""RAGAS-inspired custom evaluation metrics (deterministic heuristic & CustomLlmJudge).
 
-Computes the four core RAGAS dimensions:
-- Context Precision: fraction of retrieved contexts that are relevant to expected sources/facts.
-- Context Recall: fraction of expected ground-truth facts/sources covered by retrieved contexts.
-- Faithfulness: fraction of answer sentences grounded in the retrieved contexts.
-- Answer Relevancy: alignment between the generated answer and the user question / ground truth.
+TRANSPARENCY & METHODOLOGY NOTES:
+1. These are **RAGAS-inspired custom metrics** implemented directly in this codebase
+   (NOT the official `ragas` PyPI library). Function and class names (`RagasSample`,
+   `RagasScore`, `evaluate_ragas_sample`, `aggregate_ragas_scores`) are preserved for
+   backward compatibility with Phase 1 regression tests.
+2. **In-scope vs. Out-of-scope separation (`expect_refusal`)**:
+   - `context_precision`, `context_recall`, `faithfulness`, and `answer_relevancy` are
+     averaged strictly over **in-scope** questions (`expect_refusal=False`).
+   - **Out-of-scope** questions (`expect_refusal=True`) are evaluated separately via
+     `correct_refusal` (`bool`) and aggregated into `correct_refusal_rate`, preventing
+     legitimate empty-context refusals from distorting `faithfulness`.
+3. **Strict non-mixing of scoring methods**:
+   - Dataset reports explicitly declare `scoring_method`: `"deterministic_heuristic"`
+     or `"custom_llm_judge"`.
+   - When `scoring_method="custom_llm_judge"` fails on a sample, that sample is recorded
+     with `scores=None` inside `judge_errors` (`judge_error_count`) and NEVER backfilled
+     with deterministic heuristic numbers.
 """
 
 from __future__ import annotations
@@ -13,17 +25,45 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
+from langchain_core.documents import Document
+
+from app.chat.corrective import EvidenceEvaluator
 from evaluation.scoring.metrics import _content_tokens, fact_present
 
 
+ScoringMethod = Literal["deterministic_heuristic", "custom_llm_judge"]
+
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+
+_REFUSAL_MARKERS: tuple[str, ...] = (
+    "không tìm thấy thông tin",
+    "không tìm thấy dữ liệu",
+    "không có thông tin",
+    "không có dữ liệu",
+    "không chứa thông tin",
+    "tài liệu không đề cập",
+    "không đề cập",
+    "ngoài phạm vi",
+    "chưa có thông tin",
+    "không đủ thông tin",
+    "thư viện không có",
+    "kho tài liệu không chứa",
+    "từ chối trả lời",
+    "cannot find",
+    "do not contain",
+    "does not contain",
+    "no supporting evidence",
+    "no information",
+    "not mentioned in the",
+    "out of scope",
+)
 
 
 @dataclass(frozen=True)
 class RagasSample:
-    """Single evaluated RAG turn for RAGAS + latency/cost aggregation."""
+    """Single evaluated RAG turn for RAGAS-inspired + latency/cost aggregation."""
 
     question: str
     answer: str
@@ -36,11 +76,12 @@ class RagasSample:
     ttft_ms: float | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    expect_refusal: bool = False
 
 
 @dataclass(frozen=True)
 class RagasScore:
-    """Normalized [0.0, 1.0] scores for a single RAGAS sample."""
+    """Normalized [0.0, 1.0] scores for a single in-scope RAGAS-inspired sample."""
 
     context_precision: float
     context_recall: float
@@ -70,6 +111,48 @@ class RagasScore:
         }
 
 
+@dataclass(frozen=True)
+class DatasetEvaluationReport:
+    """Method-pure RAG evaluation report separating in-scope RAG metrics from refusal rate."""
+
+    scoring_method: ScoringMethod
+    metric_family: str
+    total_samples: int
+    in_scope_count: int
+    valid_in_scope_count: int
+    out_of_scope_count: int
+    valid_out_of_scope_count: int
+    correct_refusal_count: int
+    correct_refusal_rate: float | None
+    judge_error_count: int
+    in_scope_summary: dict[str, float]
+    groundedness_supplement: dict[str, float]
+    latency_summary: dict[str, float]
+    token_usage_summary: dict[str, int]
+    sample_results: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    judge_errors: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scoring_method": self.scoring_method,
+            "metric_family": self.metric_family,
+            "total_samples": self.total_samples,
+            "in_scope_count": self.in_scope_count,
+            "valid_in_scope_count": self.valid_in_scope_count,
+            "out_of_scope_count": self.out_of_scope_count,
+            "valid_out_of_scope_count": self.valid_out_of_scope_count,
+            "correct_refusal_count": self.correct_refusal_count,
+            "correct_refusal_rate": self.correct_refusal_rate,
+            "judge_error_count": self.judge_error_count,
+            "in_scope_summary": dict(self.in_scope_summary),
+            "groundedness_supplement": dict(self.groundedness_supplement),
+            "latency_summary": dict(self.latency_summary),
+            "token_usage_summary": dict(self.token_usage_summary),
+            "sample_results": list(self.sample_results),
+            "judge_errors": list(self.judge_errors),
+        }
+
+
 def _jaccard_overlap(tokens_a: set[str], tokens_b: set[str]) -> float:
     if not tokens_a or not tokens_b:
         return 0.0
@@ -80,6 +163,26 @@ def _jaccard_overlap(tokens_a: set[str], tokens_b: set[str]) -> float:
 
 def _split_claims(text: str) -> list[str]:
     return [part.strip() for part in _SENTENCE_SPLIT_RE.split(text or "") if part.strip()]
+
+
+def is_correct_refusal(answer: str, *, contexts: Sequence[str] = ()) -> bool:
+    """Check whether an answer clearly declines an out-of-scope question."""
+    normalized = " ".join((answer or "").lower().split())
+    if not normalized:
+        return False
+    return any(marker in normalized for marker in _REFUSAL_MARKERS)
+
+
+def evaluate_groundedness_supplement(sample: RagasSample) -> dict[str, Any]:
+    """Run Corrective RAG's deterministic EvidenceEvaluator as an auxiliary groundedness signal."""
+    evaluator = EvidenceEvaluator(llm=None)
+    docs = [Document(page_content=ctx) for ctx in sample.contexts if ctx]
+    result = evaluator._heuristic_evaluate(sample.answer, docs)
+    return {
+        "grounded": result.grounded,
+        "support_ratio": result.support_ratio,
+        "reason": result.reason,
+    }
 
 
 def score_context_precision(sample: RagasSample) -> float:
@@ -135,7 +238,6 @@ def score_faithfulness(sample: RagasSample) -> float:
     if not claims:
         return 0.0
     if not sample.contexts:
-        # Refusal/fallback answers with no context are considered faithful only if no factual claims.
         return 0.0
 
     ctx_tokens = _content_tokens(" ".join(sample.contexts))
@@ -181,14 +283,14 @@ def evaluate_ragas_sample(
     *,
     llm_judge: Callable[[RagasSample], dict[str, float]] | None = None,
 ) -> RagasScore:
-    """Score a single sample using deterministic metrics or an optional LLM judge."""
+    """Score a single in-scope sample using deterministic metrics or an explicit judge hook."""
     if llm_judge is not None:
         judged = llm_judge(sample)
         return RagasScore(
-            context_precision=float(judged.get("context_precision", score_context_precision(sample))),
-            context_recall=float(judged.get("context_recall", score_context_recall(sample))),
-            faithfulness=float(judged.get("faithfulness", score_faithfulness(sample))),
-            answer_relevancy=float(judged.get("answer_relevancy", score_answer_relevancy(sample))),
+            context_precision=float(judged["context_precision"]),
+            context_recall=float(judged["context_recall"]),
+            faithfulness=float(judged["faithfulness"]),
+            answer_relevancy=float(judged["answer_relevancy"]),
         )
 
     return RagasScore(
@@ -233,7 +335,7 @@ def compute_latency_percentiles(
 
 
 def aggregate_ragas_scores(scores: Sequence[RagasScore]) -> dict[str, float]:
-    """Average RAGAS scores across a collection of evaluated samples."""
+    """Average RAGAS-inspired scores across a collection of valid in-scope samples."""
     if not scores:
         return {
             "context_precision": 0.0,
@@ -250,3 +352,191 @@ def aggregate_ragas_scores(scores: Sequence[RagasScore]) -> dict[str, float]:
         "answer_relevancy": round(sum(s.answer_relevancy for s in scores) / n, 4),
         "overall_score": round(sum(s.overall_score for s in scores) / n, 4),
     }
+
+
+def evaluate_dataset_samples(
+    samples: Sequence[RagasSample],
+    *,
+    scoring_method: ScoringMethod = "deterministic_heuristic",
+    custom_judge: Any = None,
+) -> DatasetEvaluationReport:
+    """Evaluate a dataset cleanly: separate refusal rate from faithfulness and never mix judge methods."""
+    if scoring_method not in ("deterministic_heuristic", "custom_llm_judge"):
+        raise ValueError(f"Unsupported scoring_method: {scoring_method!r}")
+    if scoring_method == "custom_llm_judge" and custom_judge is None:
+        raise ValueError("custom_judge is required when scoring_method='custom_llm_judge'.")
+
+    in_scope_count = 0
+    out_of_scope_count = 0
+    valid_in_scope_scores: list[RagasScore] = []
+    valid_out_of_scope_count = 0
+    correct_refusal_count = 0
+    grounded_flags: list[bool] = []
+    support_ratios: list[float] = []
+    latencies_ms: list[float] = []
+    ttft_values_ms: list[float] = []
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    sample_results: list[dict[str, Any]] = []
+    judge_errors: list[dict[str, Any]] = []
+
+    for idx, sample in enumerate(samples):
+        latencies_ms.append(float(sample.latency_ms))
+        if sample.ttft_ms is not None:
+            ttft_values_ms.append(float(sample.ttft_ms))
+        total_prompt_tokens += int(sample.prompt_tokens)
+        total_completion_tokens += int(sample.completion_tokens)
+
+        if sample.expect_refusal:
+            out_of_scope_count += 1
+            if scoring_method == "deterministic_heuristic":
+                refused = is_correct_refusal(sample.answer, contexts=sample.contexts)
+                valid_out_of_scope_count += 1
+                if refused:
+                    correct_refusal_count += 1
+                sample_results.append(
+                    {
+                        "index": idx,
+                        "question": sample.question,
+                        "expect_refusal": True,
+                        "scores": None,
+                        "correct_refusal": refused,
+                        "judge_error": None,
+                    }
+                )
+            else:
+                try:
+                    refused = bool(custom_judge.score_refusal(sample))
+                    valid_out_of_scope_count += 1
+                    if refused:
+                        correct_refusal_count += 1
+                    sample_results.append(
+                        {
+                            "index": idx,
+                            "question": sample.question,
+                            "expect_refusal": True,
+                            "scores": None,
+                            "correct_refusal": refused,
+                            "judge_error": None,
+                        }
+                    )
+                except Exception as exc:
+                    err_msg = str(exc)
+                    judge_errors.append(
+                        {
+                            "index": idx,
+                            "question": sample.question,
+                            "expect_refusal": True,
+                            "error": err_msg,
+                        }
+                    )
+                    sample_results.append(
+                        {
+                            "index": idx,
+                            "question": sample.question,
+                            "expect_refusal": True,
+                            "scores": None,
+                            "correct_refusal": None,
+                            "judge_error": err_msg,
+                        }
+                    )
+            continue
+
+        # In-scope sample (`expect_refusal == False`)
+        in_scope_count += 1
+        supplement = evaluate_groundedness_supplement(sample)
+        grounded_flags.append(bool(supplement["grounded"]))
+        support_ratios.append(float(supplement["support_ratio"]))
+
+        if scoring_method == "deterministic_heuristic":
+            score = evaluate_ragas_sample(sample)
+            valid_in_scope_scores.append(score)
+            sample_results.append(
+                {
+                    "index": idx,
+                    "question": sample.question,
+                    "expect_refusal": False,
+                    "scores": score.to_dict(),
+                    "groundedness_supplement": supplement,
+                    "correct_refusal": None,
+                    "judge_error": None,
+                }
+            )
+        else:
+            try:
+                score = custom_judge.score_sample(sample)
+                valid_in_scope_scores.append(score)
+                sample_results.append(
+                    {
+                        "index": idx,
+                        "question": sample.question,
+                        "expect_refusal": False,
+                        "scores": score.to_dict(),
+                        "groundedness_supplement": supplement,
+                        "correct_refusal": None,
+                        "judge_error": None,
+                    }
+                )
+            except Exception as exc:
+                err_msg = str(exc)
+                judge_errors.append(
+                    {
+                        "index": idx,
+                        "question": sample.question,
+                        "expect_refusal": False,
+                        "error": err_msg,
+                    }
+                )
+                # CRITICAL: Never backfill deterministic heuristic scores when CustomLlmJudge fails!
+                sample_results.append(
+                    {
+                        "index": idx,
+                        "question": sample.question,
+                        "expect_refusal": False,
+                        "scores": None,
+                        "groundedness_supplement": supplement,
+                        "correct_refusal": None,
+                        "judge_error": err_msg,
+                    }
+                )
+
+    refusal_rate = (
+        round(correct_refusal_count / valid_out_of_scope_count, 4)
+        if valid_out_of_scope_count > 0
+        else None
+    )
+    groundedness_summary = {
+        "grounded_rate": (
+            round(sum(1 for g in grounded_flags if g) / len(grounded_flags), 4)
+            if grounded_flags
+            else 0.0
+        ),
+        "mean_support_ratio": (
+            round(sum(support_ratios) / len(support_ratios), 4)
+            if support_ratios
+            else 0.0
+        ),
+    }
+
+    return DatasetEvaluationReport(
+        scoring_method=scoring_method,
+        metric_family="ragas_inspired_custom_metrics",
+        total_samples=len(samples),
+        in_scope_count=in_scope_count,
+        valid_in_scope_count=len(valid_in_scope_scores),
+        out_of_scope_count=out_of_scope_count,
+        valid_out_of_scope_count=valid_out_of_scope_count,
+        correct_refusal_count=correct_refusal_count,
+        correct_refusal_rate=refusal_rate,
+        judge_error_count=len(judge_errors),
+        in_scope_summary=aggregate_ragas_scores(valid_in_scope_scores),
+        groundedness_supplement=groundedness_summary,
+        latency_summary=compute_latency_percentiles(latencies_ms, ttft_values_ms),
+        token_usage_summary={
+            "total_prompt_tokens": total_prompt_tokens,
+            "total_completion_tokens": total_completion_tokens,
+            "total_tokens": total_prompt_tokens + total_completion_tokens,
+        },
+        sample_results=tuple(sample_results),
+        judge_errors=tuple(judge_errors),
+    )

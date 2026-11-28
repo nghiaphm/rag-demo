@@ -1,0 +1,163 @@
+{
+  "name": "rag-demo-golden-v2",
+  "version": "2.0",
+  "description": "Bộ Golden Dataset v2 mở rộng cho Text RAG đơn lượt, hội thoại đa lượt và kiểm tra từ chối câu hỏi ngoài phạm vi tài liệu (100% synthetic corpus, không chứa PII).",
+  "corpus_dir": "backend/evaluation/datasets/corpus",
+  "cases": [
+    {
+      "id": "v2-qdrant-default-collection",
+      "category": "single_turn_technical",
+      "question": "Collection ứng dụng mặc định trong Qdrant Cloud có tên là gì và dùng độ đo khoảng cách nào?",
+      "history": [],
+      "ground_truth": "Collection ứng dụng mặc định trong Qdrant Cloud có tên là rag_documents và sử dụng độ đo khoảng cách cosine.",
+      "expected_sources": ["qdrant.md"],
+      "expected_facts": ["rag_documents", "cosine"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-qdrant-eval-isolation",
+      "category": "multi_turn_technical",
+      "question": "Thế còn khi chạy đánh giá tự động thì dùng collection nào để tách biệt dữ liệu?",
+      "history": [
+        {
+          "user": "Collection ứng dụng mặc định trong Qdrant Cloud có tên là gì?",
+          "assistant": "Collection ứng dụng mặc định trong Qdrant Cloud có tên là rag_documents."
+        }
+      ],
+      "ground_truth": "Khi chạy đánh giá tự động, hệ thống sử dụng collection riêng có tên là rag_documents_eval để không làm bẩn dữ liệu ứng dụng.",
+      "expected_sources": ["qdrant.md"],
+      "expected_facts": ["rag_documents_eval"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-chunking-parameters",
+      "category": "single_turn_technical",
+      "question": "Bộ chia văn bản sử dụng thuật toán gì và cấu hình chunk_size, chunk_overlap mặc định là bao nhiêu ký tự?",
+      "history": [],
+      "ground_truth": "Hệ thống dùng RecursiveCharacterTextSplitter của LangChain với chunk_size mặc định là 500 ký tự và chunk_overlap mặc định là 50 ký tự.",
+      "expected_sources": ["chunking.md"],
+      "expected_facts": ["RecursiveCharacterTextSplitter", "500", "50"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-embedding-dimensions",
+      "category": "single_turn_technical",
+      "question": "Mô hình tạo vector nhúng hiện tại tên là gì và sinh ra vector bao nhiêu chiều?",
+      "history": [],
+      "ground_truth": "Mô hình nhúng hiện tại là gemini-embedding-001 của Google Gemini và sinh ra vector có 3072 chiều.",
+      "expected_sources": ["llm-embedding.md"],
+      "expected_facts": ["gemini-embedding-001", "3072"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-embedding-reindex-followup",
+      "category": "multi_turn_technical",
+      "question": "Nếu sau này đổi nó sang một mô hình nhúng khác thì cần lưu ý thao tác bắt buộc gì?",
+      "history": [
+        {
+          "user": "Mô hình tạo vector nhúng hiện tại tên là gì?",
+          "assistant": "Hệ thống sử dụng mô hình gemini-embedding-001 tạo vector 3072 chiều."
+        }
+      ],
+      "ground_truth": "Khi thay đổi mô hình embedding, bắt buộc phải thực hiện re-index lại toàn bộ tài liệu để tránh sai lệch kích thước chiều vector.",
+      "expected_sources": ["llm-embedding.md"],
+      "expected_facts": ["re-index"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-hr-annual-leave-and-carryover",
+      "category": "single_turn_policy",
+      "question": "Nhân viên chính thức làm đủ 12 tháng có bao nhiêu ngày phép năm và được chuyển tối đa mấy ngày sang năm sau?",
+      "history": [],
+      "ground_truth": "Nhân viên chính thức làm đủ 12 tháng có 12 ngày phép năm hưởng nguyên lương và được chuyển tối đa 5 ngày phép tồn sang quý I năm kế tiếp (sử dụng trước 31/03).",
+      "expected_sources": ["hr-leave-policy.md"],
+      "expected_facts": ["12", "5", "31/03"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-hr-probation-followup",
+      "category": "multi_turn_policy",
+      "question": "Còn trong giai đoạn thử việc vị trí đại học thì kéo dài tối đa bao lâu và hưởng bao nhiêu phần trăm lương cơ bản?",
+      "history": [
+        {
+          "user": "Nhân viên chính thức làm đủ 12 tháng có bao nhiêu ngày phép năm?",
+          "assistant": "Nhân viên chính thức làm đủ 12 tháng được hưởng 12 ngày phép năm nguyên lương."
+        }
+      ],
+      "ground_truth": "Vị trí chuyên môn trình độ cao đẳng, đại học có thời gian thử việc tối đa 60 ngày và hưởng 85% mức lương cơ bản chính thức.",
+      "expected_sources": ["hr-leave-policy.md"],
+      "expected_facts": ["60", "85%"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-sec-p1-incident-sla",
+      "category": "single_turn_sop",
+      "question": "Sự cố an toàn thông tin mức P1 yêu cầu phản hồi ban đầu trong bao nhiêu phút và leo thang sau bao lâu?",
+      "history": [],
+      "ground_truth": "Sự cố mức P1 bắt buộc phản hồi ban đầu trong vòng 15 phút kể từ lúc kích hoạt cảnh báo và phải leo thang lên SOC Lead nếu chưa cô lập trong 30 phút.",
+      "expected_sources": ["security-incident-sop.txt"],
+      "expected_facts": ["15", "30"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-sec-password-and-mfa",
+      "category": "single_turn_sop",
+      "question": "Chính sách mật khẩu nội bộ yêu cầu tối thiểu bao nhiêu ký tự và bắt buộc bật cơ chế xác thực nào cho VPN?",
+      "history": [],
+      "ground_truth": "Mật khẩu nội bộ yêu cầu tối thiểu 12 ký tự (gồm chữ hoa, chữ thường, số, ký tự đặc biệt) và bắt buộc bật xác thực đa yếu tố MFA cho tài khoản quản trị và VPN.",
+      "expected_sources": ["security-incident-sop.txt"],
+      "expected_facts": ["12", "MFA"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-sec-api-key-rotation",
+      "category": "single_turn_sop",
+      "question": "Khóa API tích hợp phải xoay vòng định kỳ tối đa bao nhiêu ngày một lần và thu hồi trong mấy phút nếu lộ lọt?",
+      "history": [],
+      "ground_truth": "Khóa API dịch vụ phải xoay vòng định kỳ tối đa mỗi 90 ngày một lần; nếu bị lộ lọt phải thu hồi khẩn cấp trong vòng 5 phút.",
+      "expected_sources": ["security-incident-sop.txt"],
+      "expected_facts": ["90", "5"],
+      "expect_refusal": false
+    },
+    {
+      "id": "v2-oos-gold-price",
+      "category": "out_of_scope",
+      "question": "Giá vàng SJC và tỷ giá USD tại ngân hàng hôm nay là bao nhiêu?",
+      "history": [],
+      "ground_truth": "Từ chối trả lời vì kho tài liệu không chứa thông tin về giá vàng SJC hay tỷ giá USD.",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_refusal": true
+    },
+    {
+      "id": "v2-oos-maternity-allowance",
+      "category": "out_of_scope",
+      "question": "Mức trợ cấp ăn trưa và phụ cấp gửi xe hàng tháng của nhân viên là bao nhiêu tiền?",
+      "history": [],
+      "ground_truth": "Từ chối trả lời vì quy chế nhân sự tải lên chỉ quy định nghỉ phép và thử việc, không có số liệu trợ cấp ăn trưa hay phụ cấp gửi xe.",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_refusal": true
+    },
+    {
+      "id": "v2-oos-kubernetes-cluster",
+      "category": "out_of_scope",
+      "question": "Cấu hình số lượng worker node của cụm Kubernetes production trên AWS EKS là bao nhiêu?",
+      "history": [],
+      "ground_truth": "Từ chối trả lời vì tài liệu kỹ thuật hiện có không mô tả cụm Kubernetes trên AWS EKS.",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_refusal": true
+    },
+    {
+      "id": "v2-oos-ceo-biography",
+      "category": "out_of_scope",
+      "question": "Tổng giám đốc của công ty sinh năm nào và tốt nghiệp trường đại học nào?",
+      "history": [],
+      "ground_truth": "Từ chối trả lời vì kho tài liệu không chứa thông tin tiểu sử cá nhân của Tổng giám đốc.",
+      "expected_sources": [],
+      "expected_facts": [],
+      "expect_refusal": true
+    }
+  ]
+}

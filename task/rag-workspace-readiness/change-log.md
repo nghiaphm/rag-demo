@@ -195,14 +195,14 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 2 — Observability
-> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-27)** trên nhánh `feat/observability-hardening` (tách từ `master` `6c3a512`)  
+> **Trạng thái:** **Hoàn thành, Đã Push & Đã Merge vào `master` (`1984d65`, 2026-11-27)** từ nhánh `feat/observability-hardening` (tách từ `master` `6c3a512`)  
 > **Phạm vi:** `T2.1 JSON Logging & Validated X-Request-ID` · `T2.2 Langfuse SDK v2 Compatibility & Redaction` · `T2.3 prometheus-client Low-Cardinality /metrics` · `T2.4 Conditional SSE Status Events Gate (Deferred)`
 
 ### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
 1. `f32243e` — `feat(logging): add JSON formatter, secret redaction, and request ID`
 2. `e0ea92f` — `feat(tracing): pin Langfuse v2 SDK, redact payloads, and wire chat`
 3. `01a874a` — `feat(metrics): add Prometheus low-cardinality metrics and HTTP wiring`
-4. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 2 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
+4. `0a09bf0` — `docs(task): update readiness roadmap and Phase 2 changelog` *(giữ `BASELINE_AUDIT.md` ở local; merged vào `master` tại `1984d65`)*
 
 ### Quyết định thiết kế & Thay đổi thực hiện
 - **T2.1 (Structured JSON Logging, Validate `X-Request-ID` & Secret Redaction):**
@@ -259,21 +259,59 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 3 — RAG & Agent Evaluation
-> **Trạng thái:** Chưa bắt đầu  
+> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-28)** trên nhánh `feat/rag-agent-evaluation` (tách từ `master` `1984d65`) — *Đã duyệt Phương án A: Offline Plumbing Verified 100%, giữ `--live` chạy on-demand*  
 > **Phạm vi:** `T3.1 Verifiable Golden Datasets` · `T3.2 Separate Correct Refusal & CustomLlmJudge` · `T3.3 Agent/SQL Evaluator (Offline vs Live)` · `T3.4 Benchmark Matrix (Config A / B / C)`
 
+### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
+1. `197e019` — `feat(eval): add verifiable v2 RAG and Excel SQL golden datasets`
+2. `c32c77f` — `feat(eval): separate refusal rate and add strict CustomLlmJudge`
+3. `b812063` — `feat(eval): add agent SQL trajectory evaluator and benchmark matrix`
+4. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 3 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
+
 ### Quyết định thiết kế & Thay đổi thực hiện
-- **T3.1:** *(chờ cập nhật)*
-- **T3.2:** *(chờ cập nhật)*
-- **T3.3:** *(chờ cập nhật)*
-- **T3.4:** *(chờ cập nhật)*
+- **T3.1 (Golden Datasets Mở Rộng & Synthetic Corpus Kiểm chứng được bằng DuckDB):**
+  - Tạo 2 tài liệu mẫu giả lập 100% (không chứa dữ liệu cá nhân thật) trong `backend/evaluation/datasets/corpus/`: `hr-leave-policy.md` (12 ngày phép năm, chuyển tối đa 5 ngày trước `31/03`, thử việc 60 ngày hưởng `85%` lương) và `security-incident-sop.txt` (SLA P1 `15` phút, leo thang `30` phút, mật khẩu `12` ký tự + `MFA`, xoay vòng khóa API `90` ngày / thu hồi `5` phút).
+  - Tạo `backend/evaluation/datasets/golden_set_v2.json` (**14 cases**: 10 `in_scope` đơn lượt & đa lượt `history`, 4 `out_of_scope` `expect_refusal: true`) và giữ nguyên 100% `golden_set.json` cũ cho regression test.
+  - Tạo `backend/evaluation/datasets/agent_sql_golden_set.json` (**9 cases**: 2 kiểm kê kho `count_documents`/`list_documents`, 5 câu thống kê/lọc SQL trên `data/hr_employees_mock.xlsx` (`nhansu`) & `data/prompt/enterprise_it_knowledge_base.xlsx` (`knowledge_base`), và 2 câu hybrid kết hợp `run_sql` + `rag_search`), mọi đáp án số học (`10`, `234`, `23.4`, `90`, `7`, `50`, `5`) được unit test đối chiếu trực tiếp qua `extract_workbook_tables` + DuckDB `:memory:`.
+- **T3.2 (Tách `correct_refusal_rate` khỏi `faithfulness`, `CustomLlmJudge` & Cấm Trộn Phương Pháp Chấm):**
+  - Cập nhật `backend/evaluation/scoring/ragas_metrics.py` làm rõ thuật ngữ **RAGAS-inspired custom metrics** (không mạo nhận thư viện `ragas` PyPI chính thức), giữ nguyên tên hàm/lớp cũ cho Phase 1 tests, bổ sung `is_correct_refusal`, chỉ số bổ trợ `evaluate_groundedness_supplement` (tích hợp `EvidenceEvaluator` từ `app.chat.corrective`), và hàm `evaluate_dataset_samples` tách rạch ròi tập `in_scope` (`expect_refusal=False`) khỏi `out_of_scope` (`expect_refusal=True` → `correct_refusal_rate`).
+  - Tạo `backend/evaluation/scoring/llm_judge.py` (`CustomLlmJudge`, `LlmJudgeError`): khi một mẫu bị lỗi API/timeout/JSON sau `max_retries`, `evaluate_dataset_samples(..., scoring_method="custom_llm_judge")` ghi nhận `scores=None` vào `judge_errors` (`judge_error_count`), tuyệt đối không lấy điểm heuristic điền thế vào bảng điểm LLM Judge.
+- **T3.3 (Agent & Excel SQL Trajectory Evaluator — Phân tách Rõ `offline_smoke` vs `live_eval`):**
+  - Tạo `backend/evaluation/scoring/agent_eval.py` (`AgentEvalCase`, `AgentTurnObservation`, `AgentTrajectoryReport`, `evaluate_agent_trajectory`) đo đủ `route_accuracy`, `tool_selection_precision`/`recall`, `sql_guard_pass_rate` (`validate_and_rewrite_sql`), `sql_execution_accuracy`, `citation_validity_rate`, `avg_agent_steps`, `p50_ms`/`p95_ms`/`ttft_p50_ms` và `total_tokens`.
+  - Tạo `backend/evaluation/runner/eval_agent_cli.py`: chế độ `--mode offline_smoke` chạy luồng thật `ChatOrchestrator` + `ExcelSqlService` + `sql_guard` + `DuckDBSqlExecutor` + `DocumentQueries` trên Parquet tạm với scripted model (không mở socket mạng, đóng dấu rõ `OFFLINE_PLUMBING_CHECK — NOT VALID FOR MODEL QUALITY CLAIMS` và `valid_for_model_quality=False`); chế độ `--mode live_eval` có `validate_live_eval_collection()` chặn cứng `rag_documents` của ứng dụng chính.
+- **T3.4 (Benchmark Matrix Config A / B / C & Ước tính Lượt Gọi Provider trước Live):**
+  - Cập nhật docstring & tiêu đề báo cáo tại `backend/evaluation/runner/baseline_eval.py` làm rõ bản chất *Offline Deterministic Baseline (RAGAS-Inspired Custom Heuristic Metrics)*.
+  - Tạo `backend/evaluation/runner/benchmark_matrix.py` định nghĩa đúng 3 cấu hình (`Config A` Advanced RAG, `Config B` + Corrective RAG, `Config C` Agentic + Excel SQL; khóa `semantic_cache_enabled=False` trên cả 3), phân bổ bảng ngang (`A`, `B`, `C`) trên `golden_set_v2.json` và bảng chuyên biệt (`C`) trên `agent_sql_golden_set.json`, kèm hàm `estimate_live_provider_calls()` (**138 lượt gọi Groq** có `CustomLlmJudge` / **96 lượt** không Judge, và **83 lượt gọi Gemini Embedding** trên `rag_documents_eval`) cùng renderer `render_final_evaluation_markdown()` từ chối xuất `FINAL-EVALUATION-REPORT.md` từ dữ liệu offline giả lập.
 
 ### Files thêm mới / chỉnh sửa
-- **Thêm mới:** *(chờ cập nhật)*
-- **Chỉnh sửa:** *(chờ cập nhật)*
+- **Thêm mới:**
+  - `backend/evaluation/datasets/corpus/hr-leave-policy.md`
+  - `backend/evaluation/datasets/corpus/security-incident-sop.txt`
+  - `backend/evaluation/datasets/golden_set_v2.json`
+  - `backend/evaluation/datasets/agent_sql_golden_set.json`
+  - `backend/evaluation/scoring/llm_judge.py`
+  - `backend/evaluation/scoring/agent_eval.py`
+  - `backend/evaluation/runner/eval_agent_cli.py`
+  - `backend/evaluation/runner/benchmark_matrix.py`
+  - `backend/tests/unit/test_agent_evaluation.py`
+- **Chỉnh sửa:**
+  - `backend/evaluation/scoring/ragas_metrics.py`
+  - `backend/evaluation/runner/baseline_eval.py`
+  - `backend/tests/unit/test_ragas_metrics.py`
 
 ### Kết quả kiểm thử & Phân loại trạng thái
-- *(Ghi rõ kết quả Offline Plumbing Check tách biệt với Live Evaluation sau khi được duyệt chạy)*
+- **`Verified` (Kiểm chứng đường ống kỹ thuật Offline Plumbing Check — Không thay thế Live LLM Quality):**
+  - `$env:PYTHONPATH = "backend"; .\.venv\Scripts\python.exe -m evaluation.runner.eval_agent_cli --mode offline_smoke` → **`PASS`** (`[OFFLINE_PLUMBING_CHECK — NOT VALID FOR MODEL QUALITY CLAIMS]`, `9/9 cases`, `route_accuracy=1.0`, `tool_selection_precision=1.0`, `tool_selection_recall=1.0`, `sql_guard_pass_rate=1.0`, `sql_execution_accuracy=1.0`, `citation_validity_rate=1.0`).
+  - `$env:PYTHONPATH = "backend"; .\.venv\Scripts\python.exe -m evaluation.runner.benchmark_matrix --offline-check` → **`PASS`** (`valid_for_model_quality=false`, `text_rag_correct_refusal_rate=1.0`, `horizontal_dataset_configs=["A","B","C"]`, `specialized_sql_configs=["C"]`).
+  - `.\.venv\Scripts\python.exe -m pip check` → **`No broken requirements found.`**
+  - `.\.venv\Scripts\python.exe -m compileall -q backend/app backend/evaluation backend/tests` → **`PASS` (0 lỗi cú pháp)**.
+  - `.\.venv\Scripts\python.exe -m unittest backend/tests/architecture/test_dependency_rules.py -v` → **`9/9 PASS`**.
+  - `npm.cmd --prefix frontend run test:contract` → **`PASS: 64 REST/SSE/health schemas`**.
+- **`Tested` (Toàn bộ bộ kiểm thử Backend Unit & Integration không gọi mạng):**
+  - `Set-Location backend; ..\.venv\Scripts\python.exe -m unittest discover -s tests/unit -v` → **`357/357 PASS` (`7.184s`)** *(tăng +7 unit tests mới cho Phase 3 so với 350 ở Phase 2)*.
+  - `Set-Location backend; ..\.venv\Scripts\python.exe -m unittest discover -s tests/integration -v` → **`186/186 PASS` (`6.409s`)**.
+- **`On-Demand Live Gate` (Phương án A đã phê duyệt cho `T3.4`):**
+  - Người dùng đã chốt không gọi live Groq/Gemini ở giai đoạn này để tiết kiệm quota. Khi cần xuất báo cáo thực chứng tại `docs/evaluation/FINAL-EVALUATION-REPORT.md`, chạy `python -m evaluation.runner.benchmark_matrix --live --approve-live --qdrant-collection rag_documents_eval` (ước tính **138 lượt gọi Groq** có `CustomLlmJudge` / **96 lượt** không Judge, và **83 lượt gọi Gemini Embedding**).
 
 ---
 

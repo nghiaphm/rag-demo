@@ -1,0 +1,15 @@
+QUY TRÌNH CHUẨN ỨNG PHÓ SỰ CỐ AN TOÀN THÔNG TIN (SOP-SEC-01 — GIẢ LẬP)
+Lưu ý: Tài liệu vận hành giả lập 100% phục vụ đánh giá hệ thống RAG, không chứa thông tin hạ tầng hay danh tính thật.
+
+1. Phân loại mức độ và SLA phản hồi sự cố
+- Sự cố mức P1 (Nghiêm trọng / Ngừng dịch vụ diện rộng hoặc nghi ngờ rò rỉ dữ liệu): Đội ngũ trực vận hành an ninh mạng phải phản hồi ban đầu trong vòng 15 phút kể từ thời điểm cảnh báo được kích hoạt.
+- Nếu sự cố mức P1 chưa được cô lập trong vòng 30 phút, ca trực bắt buộc phải leo thang ngay lập tức lên Trưởng bộ phận An toàn thông tin (SOC Lead).
+- Sự cố mức P2 (Ảnh hưởng cục bộ): Thời gian phản hồi ban đầu tối đa 60 phút.
+
+2. Chính sách mật khẩu và xác thực đa yếu tố (MFA)
+- Mật khẩu tài khoản nội bộ bắt buộc có độ dài tối thiểu 12 ký tự, bao gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt.
+- Toàn bộ tài khoản quản trị hệ thống, tài khoản truy cập từ xa qua VPN và kho mã nguồn bắt buộc kích hoạt xác thực đa yếu tố MFA.
+
+3. Quản lý và xoay vòng khóa API (API Key Rotation)
+- Mọi khóa API dịch vụ tích hợp (API Key / Service Token) bắt buộc phải xoay vòng định kỳ tối đa mỗi 90 ngày một lần.
+- Khi phát hiện khóa API xuất hiện trong nhật ký hoặc kho mã nguồn công khai, khóa đó phải được thu hồi (revoke) khẩn cấp trong vòng 5 phút.
