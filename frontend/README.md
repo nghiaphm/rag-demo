@@ -1,112 +1,75 @@
 # RAG Workspace Frontend
 
-The **RAG Workspace Frontend** is a **Next.js 16 (App Router)** and **React 19** user interface that communicates directly from the browser to the FastAPI Backend (without a Next.js API proxy). It provides real-time AI chat via Server-Sent Events (SSE), interactive source citations, persistent session management, and document lifecycle management.
-
-> **MVP Scope**: This application implements a **Functional Single-user RAG MVP**. Authentication/RBAC and multi-tenancy are deferred.
+The RAG Workspace Frontend is a Next.js 16 (App Router, `output: "standalone"`) and React 19 web application that connects directly from the browser to the FastAPI Backend. It provides SSE chat streaming, interactive source citations, session retrieval scoping, document management and preview, and an isolated HR Demo Portal.
 
 ---
 
-## 1. Technology Stack
+## Implementation status
 
-- **Runtime**: Node.js `>= 20.9` (Node.js 20 verified on CI).
-- **Framework**: Next.js `16.4.0` (App Router), React `19.3.0`, TypeScript `^5`.
-- **Styling & UI**: Tailwind CSS `^4`, `@tailwindcss/turbopack`, Base UI (`@base-ui/react`), Lucide React icons, `shadcn` components.
-- **Markdown & Code Rendering**: `react-markdown`, `remark-gfm` (GFM tables), `rehype-highlight`.
-- **Testing**: Node.js built-in test runner (`node --test`), Playwright (`^1.64.1`).
+| Status | Area | Notes |
+| :--- | :--- | :--- |
+| **Verified** | Primary workspace (`/chat`, `/chat/[sessionId]`, `/documents`) | Session creation/rename/deletion, paginated message history, `POST /chat/stream` incremental UTF-8 SSE rendering, stop/cancel handling, citation `[n]` ordinal mapping, upload/version/re-index/delete lifecycle, HTTP `413` size-limit UX, TXT/MD/XLSX preview, and `DocumentScopeSelector` (`ALL_ACTIVE` / `SELECTED_DOCUMENTS`). |
+| **Verified** | HR Demo Portal (`/hr`, `/hr/documents`, `/hr/guide`) | Isolated styling scope under `app/hr/hr-theme.css`, mock workforce charts/KPIs (`HR_ANALYTICS_FIXTURE`), live `GET /documents` strip, client-side document category tabs, guided tour, and multi-turn `HrChatbotWidget` (`surface="hr"`). |
+| **Verified** | Build, contract parity, and E2E | `output: "standalone"` serving both workspace and `/hr/*` routes, strict 1-to-1 DTO parity against FastAPI OpenAPI (`64` schemas), `238` Node unit tests, `71` Playwright Chromium E2E scenarios running against `.next/standalone/server.js`, and `0` runtime npm vulnerabilities (`npm audit --omit=dev`). |
+| **Deferred** | Login UI and inline PDF viewer | Authentication UI is deferred (`AUTH_ENABLED=false` on Backend). PDF files can be ingested, attached, and cited with 1-based page numbers, while inline PDF rendering is not built yet. |
 
 ---
 
-## 2. Architecture & Directory Structure
+## Technology stack
 
-Presentation components (React) are decoupled from business controllers and API clients (`lib/` and `hooks/`):
+- **Runtime**: Node.js `>= 20.9` (Node.js `20` verified on CI)
+- **Framework**: Next.js `^16.4.6` (App Router, standalone output), React `19.3.0`, TypeScript `^5`
+- **Styling and UI**: Tailwind CSS `^4`, `@tailwindcss/turbopack`, Base UI (`@base-ui/react`), Lucide React, `shadcn`
+- **Markdown**: `react-markdown`, `remark-gfm`, `rehype-highlight`
+- **Testing**: Node built-in test runner (`node --test`), Playwright (`^1.64.1`)
+
+Note on local vs lockfile Next.js version: `package-lock.json` pins `next@16.4.6` with `0` audit vulnerabilities; run `npm.cmd ci` if your local `node_modules` contains an older patch release.
+
+---
+
+## Directory structure
 
 ```text
 frontend/
 ├── app/                         # Next.js App Router
-│   ├── layout.tsx               # Root layout, Geist fonts & skip link
+│   ├── layout.tsx               # Root layout and workspace font setup
 │   ├── page.tsx                 # Server redirect "/" -> "/chat"
-│   ├── (workspace)/             # Primary RAG Workspace routes (preserves URLs)
-│   │   ├── layout.tsx           # AppShell wrapper for Workspace
-│   │   ├── chat/
-│   │   │   ├── page.tsx         # New Chat workspace
-│   │   │   └── [sessionId]/page.tsx # Restores an existing persistent session
-│   │   └── documents/page.tsx   # Document library management workspace
-│   └── hr/                      # Additive HR Demo Portal (/hr, /hr/documents, /hr/guide)
+│   ├── (workspace)/             # RAG Workspace (/chat, /chat/[sessionId], /documents)
+│   └── hr/                      # Isolated HR Demo Portal (/hr, /hr/documents, /hr/guide)
 ├── components/
-│   ├── chat/                    # ChatPreview, SessionChat, ChatComposer, CitationContent, DocumentPreview
+│   ├── chat/                    # ChatPreview, SessionChat, ChatComposer, DocumentScopeSelector, DocumentPreview
 │   ├── documents/               # DocumentsPreview, DocumentUpload, DocumentActions, DocumentStatusBadge
 │   ├── hr/                      # HrShell, HrDashboardView, HrDocumentsView, HrChatbotWidget, HrGuideView
-│   ├── layout/                  # AppShell (session sidebar, navigation)
-│   └── ui/                      # UI primitives (Button, Dialog, Sheet, Badge...)
-├── hooks/                       # React lifecycle hooks (useChatAttachments, useSessions, useDocuments...)
-├── lib/
-│   ├── api/                     # HTTP clients (chat.ts, documents.ts, sessions.ts, health.ts, client.ts)
-│   ├── chat/                    # ChatController, composer-service, source-mapper, citation-panel
-│   ├── documents/               # UploadController, validation, actions-controller, text-preview
-│   ├── hr/                      # HR analytics fixtures helpers & client-side document categorization
-│   ├── sessions/                # HistoryController, session actions-controller
-│   └── sse/                     # Incremental UTF-8 SSE stream parser
-├── fixtures/                    # Offline mock datasets (chat, documents, hr-analytics, hr-guide)
-├── types/                       # TypeScript DTOs matching Backend Pydantic schemas (+ separate hr.ts)
-├── scripts/                     # Mock API server (qa-mock-api.mjs) & Playwright smoke scripts
-├── tests/                       # Node unit tests & API contract parity checks
-└── e2e/                         # Playwright E2E specs (*.spec.mts)
+│   ├── layout/                  # AppShell, ServiceHealth, LoadingSkeleton
+│   └── ui/                      # Base UI / shadcn primitives
+├── hooks/                       # React state hooks for chat, documents, sessions, attachments
+├── lib/                         # API clients (error-ux, health, chat, documents, sessions), SSE parser, HR helpers
+├── fixtures/                    # Offline mock datasets for tests and QA mock server
+├── types/                       # TypeScript DTOs aligned with FastAPI OpenAPI (plus hr.ts)
+├── scripts/                     # qa-mock-api.mjs, build-e2e.mjs, run-e2e.mjs, demo-smoke.mjs
+├── tests/                       # Node unit tests (*.test.mjs) and verify-api-contract.mjs
+├── e2e/                         # Playwright E2E specs (*.spec.mts)
+├── Dockerfile                   # Multi-stage non-root Alpine standalone image
+└── next.config.ts               # output: "standalone" and Turbopack config
 ```
 
 ---
 
-## 3. Core Features & Workflows
+## Environment configuration
 
-### 3.1 Chat, Sessions & SSE Streaming
-- **Routing**: `/chat` opens a fresh workspace and creates a session upon the first valid submit; `/chat/[sessionId]` loads paginated message history from MongoDB.
-- **SSE Streaming**: [`lib/api/chat.ts`](lib/api/chat.ts) and [`lib/sse/parser.ts`](lib/sse/parser.ts) consume typed frames from `POST /chat/stream`:
-  - `start`: Attaches durable `session_id`, `request_id`, and `message_id`.
-  - `metadata`: Supplies ordered `sources` matching context ordinals.
-  - `delta`: Streams incremental response text tokens.
-  - `done` / `error`: Finalizes status (`PARTIAL` / `FAILED` / `COMPLETED`) and token usage.
-- **Reconciliation & Stop**:
-  - Upon terminal event, the client fetches session history to verify consistency; any mismatch triggers a warning banner without auto-retrying generation.
-  - Clicking **Stop** or navigating away aborts the local browser request (reload to verify durable server state if needed).
-- **Session Management**: Supports renaming (`PATCH`) and deletion (`DELETE`). Sessions default to `ALL_ACTIVE` retrieval scope (custom scope selection UI is not implemented).
-
-### 3.2 Citations & Source Drawer
-- Citation markers `[n]` in Markdown responses are matched by [`lib/chat/source-mapper.ts`](lib/chat/source-mapper.ts) strictly against the assistant message's ordered `sources` metadata (markers inside code blocks/links or out-of-range ordinals are ignored).
-- Clicking a `[n]` badge opens a source drawer displaying filename, page number, `document_id`, `version_id`, and `chunk_id`. Direct inline PDF page viewing is not yet implemented.
-
-### 3.3 Document Management, Attachments & Previews
-- `/documents` supports uploading (`.pdf`, `.txt`, `.md`, `.markdown`, `.xlsx`), uploading new immutable versions (`PUT`), re-indexing (`POST`), and deleting (`DELETE`).
-- **Draft Attachments**: Selecting a file in the chat composer triggers immediate upload/indexing. Up to 20 attachments can be submitted once they reach `INDEXED` and `activated=true`. Attachments are message-level references and **do not restrict session retrieval scope**.
-- **Document Preview** ([`components/chat/document-preview.tsx`](components/chat/document-preview.tsx)):
-
-| Format | Current Preview Behavior |
-| :--- | :--- |
-| **Local TXT** | Reads up to 256 KiB locally before upload (uploaded file remains intact) |
-| **Remote TXT / MD** | Fetches immutable version (`kind=text`); capped at 256 KiB, supports UTF-8 / UTF-16 BOM |
-| **Remote XLSX** | Waits for indexing; `kind=excel` renders bounded sheets/columns/rows with literal formulas |
-| **PDF** | Ingestion and attachment supported; inline PDF content viewer not implemented |
-
-### 3.4 HR Demo Portal (`/hr/*`)
-- An additive HR Portal showcase runs alongside the primary RAG Workspace under `/hr` (HR Dashboard & Analytics using offline mock workforce fixtures plus live `GET /documents` summary), `/hr/documents` (client-side filename classification into Policies, Regulations, and Procedures + document preview + shared RAG Knowledge Base upload), and `/hr/guide` (interactive User Guide with clickable sample prompts).
-- All `/hr/*` pages mount an embedded `HrChatbotWidget` drawer backed by `ChatController` and `createChatServices`, persisting multi-turn conversations across `/hr/*` client navigation while keeping RAG Workspace (`/chat`, `/documents`) intact.
-
----
-
-## 4. Environment Configuration
-
-The sole Frontend environment variable is `NEXT_PUBLIC_API_BASE_URL`, configured in `frontend/.env.local` (copied from [`.env.example`](.env.example)):
+Only one public environment variable is exposed to the browser, configured in `frontend/.env.local` (copied from [`frontend/.env.example`](.env.example)):
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-> **Security & Build Note**: Never place API keys or database URIs in `frontend/.env.local`. `NEXT_PUBLIC_*` variables are baked into the bundle at `npm run build` time — changing the URL for production requires rebuilding.
+Never place API keys or database URIs in `frontend/.env.local`. Next.js bakes `NEXT_PUBLIC_*` values at build time (`npm run build`), so changing the backend URL for a standalone build requires rebuilding.
 
 ---
 
-## 5. Installation & Local Development
+## Running locally
 
-### 5.1 Install Dependencies
-Run from the repository root and navigate to `frontend/`:
+### Install dependencies
 
 ```powershell
 Set-Location frontend
@@ -114,79 +77,50 @@ npm.cmd ci
 if (!(Test-Path .env.local)) { Copy-Item .env.example .env.local }
 ```
 
-### 5.2 Provider-Free Demo Mock Mode
-Runs an in-memory mock API server on port `4011` without requiring Backend services or LLM costs:
+### Provider-free mock mode
+
+Runs `qa-mock-api.mjs` on `http://127.0.0.1:4011` with an in-memory dataset (no Backend or LLM API keys needed):
 
 ```powershell
 # Terminal A (inside frontend/)
 node scripts/qa-mock-api.mjs
 
 # Terminal B (inside frontend/)
-$env:NEXT_PUBLIC_API_BASE_URL = 'http://127.0.0.1:4011/lifecycle'
+$env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:4011/lifecycle"
 npm.cmd run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-Open `http://127.0.0.1:3000`. All mutations are stored in memory and reset when the mock server restarts.
+### Real FastAPI Backend mode
 
-### 5.3 Connecting to the Real FastAPI Backend
-Ensure the FastAPI Backend is running at `http://127.0.0.1:8000` (see [`backend/README.md`](../backend/README.md)):
-
-```powershell
-# Inside frontend/
-$env:NEXT_PUBLIC_API_BASE_URL = 'http://127.0.0.1:8000'
-npm.cmd run dev -- --hostname 127.0.0.1 --port 3000
-```
-
-#### Verifying CORS
-FastAPI allows only `http://localhost:3000` and `http://127.0.0.1:3000` (`credentials=false`). Verify preflight/headers with `curl`:
-
-```powershell
-curl.exe -i -H "Origin: http://localhost:3000" http://127.0.0.1:8000/sessions
-curl.exe -i -X OPTIONS http://127.0.0.1:8000/chat/stream `
-  -H "Origin: http://localhost:3000" `
-  -H "Access-Control-Request-Method: POST" `
-  -H "Access-Control-Request-Headers: content-type"
-```
-
----
-
-## 6. Production Build & Execution
+Start the Backend on `http://127.0.0.1:8000`, then run:
 
 ```powershell
 Set-Location frontend
-$env:NEXT_PUBLIC_API_BASE_URL = 'http://127.0.0.1:8000'
-npm.cmd run typecheck
-npm.cmd run lint
-npm.cmd run build
-npm.cmd run start -- --hostname 127.0.0.1 --port 3000
+$env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:8000"
+npm.cmd run dev -- --hostname 127.0.0.1 --port 3000
 ```
-
-> Deployment note: Any reverse proxy placed in front of the Backend must disable response buffering on `/chat/stream` for real-time SSE token delivery.
 
 ---
 
-## 7. Testing & Quality Assurance
+## Testing and quality checks
 
-Run all checks from `frontend/` (offline fixtures; zero live provider calls):
+All checks below run offline against mocks and OpenAPI schema exports:
 
 ```powershell
-# Linting & TypeScript verification
+Set-Location frontend
+
 npm.cmd run lint
 npm.cmd run typecheck
+npm.cmd test                   # 238 Node tests across 10 files
+npm.cmd run test:contract      # Verifies 64 OpenAPI REST/SSE/health schemas
+npm.cmd audit --omit=dev       # Runtime dependency vulnerability check
 
-# Run all 210 Node.js unit tests
-npm.cmd test
-
-# Verify Frontend DTO parity with Backend Pydantic schemas
-npm.cmd run test:contract
-
-# Run Playwright Chromium E2E tests (spawns mock server automatically)
+# Playwright Chromium E2E against standalone build (71 scenarios across 10 specs)
 npm.cmd run build:e2e
 npm.cmd run test:e2e
 
-# Or run the automated demo smoke script
-node node_modules/playwright/cli.js install chromium --no-shell
+# Automated demo smoke script (workspace + /documents + /hr)
 node scripts/demo-smoke.mjs
 ```
 
-> Note: `npm run test:contract` invokes the root Python `.venv` interpreter to export schemas offline. Detailed QA runbooks are located in [`docs/frontend-demo-readiness.md`](../docs/frontend-demo-readiness.md) and [`docs/frontend-automated-tests.md`](../docs/frontend-automated-tests.md).
+Note on `.next/standalone`: `npm run build` produces `.next/standalone/server.js`. As documented in Next.js `output: "standalone"`, standalone execution requires copying `public/` and `.next/static/` into `.next/standalone/`; both `frontend/Dockerfile` and `frontend/scripts/build-e2e.mjs` handle this automatically.
