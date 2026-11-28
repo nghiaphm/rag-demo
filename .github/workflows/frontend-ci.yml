@@ -49,6 +49,11 @@ jobs:
         run: |
           npm ci
 
+      - name: Run Runtime Dependency Security Audit
+        working-directory: frontend
+        run: |
+          npm audit --omit=dev
+
       - name: Run ESLint
         working-directory: frontend
         run: |
@@ -67,7 +72,21 @@ jobs:
           npm test
           npm run test:contract
 
-      - name: Run Next.js Production Build
+      - name: Run Next.js Standalone Production Build
         working-directory: frontend
         run: |
           npm run build
+
+      - name: Install Playwright Chromium & Run E2E Suite
+        working-directory: frontend
+        env:
+          PYTHON: python
+        run: |
+          npx playwright install --with-deps chromium
+          npm run build:e2e
+          npm run test:e2e
+
+      - name: Build Hardened Frontend Docker Image & Verify Non-Root
+        run: |
+          docker build -f frontend/Dockerfile -t rag-workspace-frontend:ci .
+          docker run --rm --entrypoint sh rag-workspace-frontend:ci -c 'test "$(id -u)" -ne 0'

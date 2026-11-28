@@ -263,6 +263,24 @@ class NonDestructiveHealthTests(unittest.TestCase):
         self.assertEqual(body_s3["status"], "degraded")
         self.assertFalse(body_s3["dependencies"]["s3"]["ok"])
 
+    def test_qdrant_url_validator_blocks_http_unless_insecure_flag_enabled(self):
+        from pydantic import ValidationError
+
+        # Default (qdrant_allow_insecure_http=False): http:// MUST be rejected
+        with self.assertRaises(ValidationError):
+            make_settings(qdrant_url="http://qdrant:6333")
+
+        with self.assertRaises(ValidationError):
+            make_settings(qdrant_url="http://qdrant:6333", qdrant_allow_insecure_http=False)
+
+        # Explicit opt-in for local-infra: http://qdrant:6333 is allowed
+        cfg_local = make_settings(qdrant_url="http://qdrant:6333/", qdrant_allow_insecure_http=True)
+        self.assertEqual(cfg_local.qdrant_url.get_secret_value(), "http://qdrant:6333")
+
+        # Invalid non-http(s) schemes remain rejected even when flag is True
+        with self.assertRaises(ValidationError):
+            make_settings(qdrant_url="ftp://qdrant:6333", qdrant_allow_insecure_http=True)
+
 
 if __name__ == "__main__":
     unittest.main()

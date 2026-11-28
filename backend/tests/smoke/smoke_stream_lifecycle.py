@@ -1,4 +1,6 @@
-"""Live P4-03 Atlas lifecycle smoke with a deterministic provider stream.
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P4-03 Atlas lifecycle smoke with a deterministic provider stream.
 
 This test writes only one isolated session and its two messages, then removes both
 by exact ID. Retrieval/provider are mocked so no document data or provider quota

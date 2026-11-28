@@ -1,0 +1,44 @@
+# Git & IDE metadata
+.git
+.gitignore
+.gitattributes
+.githooks
+.agent
+.vscode
+.idea
+
+# Python local environments & caches
+.venv
+venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Node / Next.js / Playwright build & test artifacts
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/.playwright-tmp
+frontend/test-results
+frontend/playwright-report
+frontend/out
+
+# Secrets & local environment files
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Local raw document uploads & audit notes
+data/documents/*
+!data/documents/.gitkeep
+BASELINE_AUDIT.md
+docs/
+task/
+*.log

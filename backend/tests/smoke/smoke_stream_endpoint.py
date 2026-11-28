@@ -1,4 +1,6 @@
-"""Live P4-02 SSE provider-stream transport smoke with read-only cloud readiness."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live P4-02 SSE provider-stream transport smoke with read-only cloud readiness."""
 
 from __future__ import annotations
 

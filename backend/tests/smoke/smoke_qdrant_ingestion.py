@@ -1,4 +1,6 @@
-"""Live smoke riêng cho embedding -> Qdrant adapter upsert/verify/cleanup."""
+"""[LIVE-PROVIDER SMOKE — Group C: requires live MongoDB Atlas / Qdrant Cloud and live Gemini/Groq API keys. DO NOT RUN IN OFFLINE CI.]
+
+Live smoke riêng cho embedding -> Qdrant adapter upsert/verify/cleanup."""
 
 import sys
 from pathlib import Path

@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process"
+import { existsSync, mkdirSync } from "node:fs"
+import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test, expect } from "./fixtures.mjs"
 import type { Page } from "@playwright/test"
@@ -9,8 +11,22 @@ const chips = (page: Page) => page.getByRole("list", { name: "Tệp đính kèm"
 const user = (page: Page) => page.getByRole("article", { name: "Tin nhắn của bạn", exact: true }).last()
 const workbookPath = fileURLToPath(new URL("../.playwright-tmp/vehicles.xlsx", import.meta.url))
 
+function resolvePythonExecutable(): string {
+  const configured = process.env.PYTHON?.trim()
+  if (configured) return configured
+  const venvCandidate = fileURLToPath(
+    new URL(
+      process.platform === "win32" ? "../../.venv/Scripts/python.exe" : "../../.venv/bin/python",
+      import.meta.url,
+    ),
+  )
+  if (existsSync(venvCandidate)) return venvCandidate
+  return process.platform === "win32" ? "python" : "python3"
+}
+
 test.beforeAll(() => {
-  const result = spawnSync(fileURLToPath(new URL("../../.venv/Scripts/python.exe", import.meta.url)), ["-c", String.raw`
+  mkdirSync(dirname(workbookPath), { recursive: true })
+  const result = spawnSync(resolvePythonExecutable(), ["-c", String.raw`
 import sys
 from openpyxl import Workbook
 w = Workbook()

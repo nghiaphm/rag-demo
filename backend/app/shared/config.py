@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     qdrant_api_key: SecretStr | None = None
     qdrant_collection: str = "rag_documents"
     qdrant_timeout_seconds: float = 5.0
+    qdrant_allow_insecure_http: bool = False
 
     # ----- Observability (Logging, Langfuse & Prometheus Metrics) -----
     log_level: str = "INFO"
@@ -365,8 +366,8 @@ class Settings(BaseSettings):
             return None
         url = value.get_secret_value().strip().rstrip("/")
         parsed = urlparse(url)
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise ValueError("QDRANT_URL cloud phải là URL HTTPS hợp lệ")
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("QDRANT_URL phải là URL http/https hợp lệ")
         return SecretStr(url)
 
     @field_validator("qdrant_collection")
@@ -538,6 +539,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Tổng system/history/chunks/query/output reserve vượt context window"
             )
+        if self.qdrant_url is not None:
+            parsed_qdrant = urlparse(self.qdrant_url.get_secret_value())
+            if parsed_qdrant.scheme == "http" and not self.qdrant_allow_insecure_http:
+                raise ValueError(
+                    "QDRANT_URL cloud phải là URL HTTPS hợp lệ "
+                    "(chỉ cho phép http:// khi bật QDRANT_ALLOW_INSECURE_HTTP=true)"
+                )
         if self.storage_backend == "s3" and not self.s3_bucket:
             raise ValueError("Cần cấu hình S3_BUCKET khi STORAGE_BACKEND='s3'")
         if self.excel_sql_enabled:

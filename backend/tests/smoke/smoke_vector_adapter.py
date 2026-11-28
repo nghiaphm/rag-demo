@@ -1,4 +1,6 @@
-"""Live M-03 smoke cho add/upsert/query/filter/delete trên Qdrant Cloud."""
+"""[LIVE-PROVIDER SMOKE — Group C: requires live MongoDB Atlas / Qdrant Cloud and live Gemini/Groq API keys. DO NOT RUN IN OFFLINE CI.]
+
+Live M-03 smoke cho add/upsert/query/filter/delete trên Qdrant Cloud."""
 
 import sys
 from pathlib import Path

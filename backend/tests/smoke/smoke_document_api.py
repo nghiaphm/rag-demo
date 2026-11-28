@@ -1,4 +1,6 @@
-"""Live P1-06 API smoke với namespace riêng và cleanup chính xác."""
+"""[LIVE-PROVIDER SMOKE — Group C: requires live MongoDB Atlas / Qdrant Cloud and live Gemini/Groq API keys. DO NOT RUN IN OFFLINE CI.]
+
+Live P1-06 API smoke với namespace riêng và cleanup chính xác."""
 
 import sys
 from pathlib import Path

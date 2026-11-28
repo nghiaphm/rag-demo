@@ -1,4 +1,6 @@
-"""Live Atlas smoke for P5-01 using an isolated session and exact cleanup."""
+"""[CLOUD-DEPENDENT SMOKE — Group B: requires live MongoDB Atlas / Qdrant Cloud connectivity. DO NOT RUN IN OFFLINE CI.]
+
+Live Atlas smoke for P5-01 using an isolated session and exact cleanup."""
 
 import sys
 from pathlib import Path

@@ -1,4 +1,6 @@
-"""Live P5-04 Mongo/Qdrant scope, budget and citation smoke with exact cleanup."""
+"""[LIVE-PROVIDER SMOKE — Group C: requires live MongoDB Atlas / Qdrant Cloud and live Gemini/Groq API keys. DO NOT RUN IN OFFLINE CI.]
+
+Live P5-04 Mongo/Qdrant scope, budget and citation smoke with exact cleanup."""
 
 from __future__ import annotations
 
