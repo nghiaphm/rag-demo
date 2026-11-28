@@ -1,7 +1,10 @@
-"""Phase 1 Baseline Evaluation Runner (RAGAS + Latency + Token Usage).
+"""Phase 1 Offline Baseline Evaluation Runner (RAGAS-inspired Custom Deterministic Metrics).
 
-Supports deterministic offline evaluation over the golden dataset and local corpus
-as well as structured JSON and Markdown baseline report export.
+TRANSPARENCY NOTE:
+- Runs deterministic lexical retrieval + extractive baseline answers over the local corpus
+  without calling any external LLM or Embedding API.
+- Computes **RAGAS-inspired custom deterministic heuristic metrics** (NOT the official
+  `ragas` PyPI library, and NOT a live LLM capability benchmark).
 """
 
 from __future__ import annotations
@@ -32,8 +35,9 @@ def _load_corpus(corpus_dir: Path) -> dict[str, str]:
     docs: dict[str, str] = {}
     if not corpus_dir.exists():
         return docs
-    for path in sorted(corpus_dir.glob("*.md")):
-        docs[path.name] = path.read_text(encoding="utf-8")
+    for pattern in ("*.md", "*.txt"):
+        for path in sorted(corpus_dir.glob(pattern)):
+            docs[path.name] = path.read_text(encoding="utf-8")
     return docs
 
 
@@ -144,13 +148,15 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     tokens = report["token_usage_summary"]
 
     lines = [
-        "# Phase 1 — Advanced RAG Baseline Evaluation Report",
+        "# Offline Deterministic Baseline Report (RAGAS-Inspired Custom Heuristic Metrics)",
+        "",
+        "> **Methodological Note:** Offline plumbing/heuristic baseline (`scoring_method=deterministic_heuristic`). Not valid for live LLM quality claims.",
         "",
         f"- **Generated At**: `{report['generated_at']}`",
         f"- **Mode**: `{report['mode']}`",
         f"- **Dataset**: `{report['dataset']}` ({report['total_cases']} cases)",
         "",
-        "## RAGAS Summary",
+        "## RAGAS-Inspired Custom Heuristic Summary",
         "",
         "| Metric | Score |",
         "| --- | ---: |",
