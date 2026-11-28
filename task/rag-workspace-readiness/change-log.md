@@ -259,14 +259,14 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 3 — RAG & Agent Evaluation
-> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-28)** trên nhánh `feat/rag-agent-evaluation` (tách từ `master` `1984d65`) — *Đã duyệt Phương án A: Offline Plumbing Verified 100%, giữ `--live` chạy on-demand*  
+> **Trạng thái:** **Hoàn thành, Đã Push & Đã Merge vào `master` (`a2e541d`, 2026-11-28)** từ nhánh `feat/rag-agent-evaluation` (tách từ `master` `1984d65`) — *Đã duyệt Phương án A: Offline Plumbing Verified 100%, giữ `--live` chạy on-demand*  
 > **Phạm vi:** `T3.1 Verifiable Golden Datasets` · `T3.2 Separate Correct Refusal & CustomLlmJudge` · `T3.3 Agent/SQL Evaluator (Offline vs Live)` · `T3.4 Benchmark Matrix (Config A / B / C)`
 
 ### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
 1. `197e019` — `feat(eval): add verifiable v2 RAG and Excel SQL golden datasets`
 2. `c32c77f` — `feat(eval): separate refusal rate and add strict CustomLlmJudge`
 3. `b812063` — `feat(eval): add agent SQL trajectory evaluator and benchmark matrix`
-4. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 3 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
+4. `dc8abdd` — `docs(task): update readiness roadmap and Phase 3 changelog` *(giữ `BASELINE_AUDIT.md` ở local; merged vào `master` tại `a2e541d`)*
 
 ### Quyết định thiết kế & Thay đổi thực hiện
 - **T3.1 (Golden Datasets Mở Rộng & Synthetic Corpus Kiểm chứng được bằng DuckDB):**
@@ -316,21 +316,96 @@ Tài liệu này lưu lại toàn bộ lịch sử thực thi, quyết định t
 ---
 
 ## Phase 4 — Deployment & Testing
-> **Trạng thái:** Chưa bắt đầu  
+> **Trạng thái:** **Hoàn thành & Đã Commit (2026-11-28)** trên nhánh `chore/deployment-and-testing` (tách từ `master` `a2e541d`)  
 > **Phạm vi:** `T4.1 Hardened Dockerfiles & .dockerignore` · `T4.2 Unified Local/Demo docker-compose & ARQ Worker` · `T4.3 Classify 16 smoke_*.py & Playwright E2E (/hr, Scope Selector)` · `T4.4 CI Upgrade & Dependency Advisory Review`
 
+### Truy vết Chuỗi Commit (Theo `GEMINI.md` §6)
+1. `512bd7b` — `build(docker): harden multi-stage Dockerfiles and enable Next.js standalone`
+2. `2969aa0` — `chore(compose): add ARQ worker, localhost binds, and local Qdrant HTTP flag`
+3. `eeda989` — `test(e2e): move 16 cloud smoke scripts and add HR Portal and scope E2E`
+4. `9aedf71` — `ci(workflows): add advanced flags, Playwright E2E, Docker, and audits`
+5. *(Commit hiện tại)* — `docs(task): update readiness roadmap and Phase 4 changelog` *(giữ `BASELINE_AUDIT.md` ở local)*
+
 ### Quyết định thiết kế & Thay đổi thực hiện
-- **T4.1:** *(chờ cập nhật)*
-- **T4.2:** *(chờ cập nhật)*
-- **T4.3:** *(Đính kèm bảng phân loại 16 file `smoke_*.py` vào Offline / Cloud-dependent / Live-provider và kết quả E2E)*
-- **T4.4:** *(Đính kèm tóm tắt review `pip-audit` & `npm audit --omit=dev`)*
+- **T4.1 (Hardening `backend/Dockerfile`, `frontend/Dockerfile`, `next.config.ts` & `.dockerignore`):**
+  - **`backend/Dockerfile`:** Chuyển sang multi-stage build (`builder` trên `python:3.12-slim` cài `build-essential`, tạo `/opt/venv` và tải sẵn extension DuckDB `httpfs` vào `/opt/duckdb-home/.duckdb`; `runner` trên `python:3.12-slim` sạch không còn `build-essential`, chạy dưới user non-root `appuser`, copy `.duckdb` sang `/home/appuser/.duckdb`, xác thực ngay lúc build `SET autoinstall_known_extensions=false; LOAD httpfs;` dưới quyền `appuser`, kèm `HEALTHCHECK` gọi `/health`).
+  - **`frontend/next.config.ts` & `frontend/Dockerfile`:** Bật `output: "standalone"` theo tài liệu đi kèm của Next.js 16 (`output.md`); stage `runner` trên `node:20-alpine` chỉ copy `public`, `.next/standalone`, `.next/static`, chạy dưới non-root `nextjs` (`uid=1001`), loại bỏ toàn bộ `devDependencies` (Playwright, ESLint, TypeScript), kèm `HEALTHCHECK` kiểm tra `http://127.0.0.1:3000/chat` và khởi chạy `node server.js`. Cập nhật `frontend/scripts/build-e2e.mjs` (tự động copy `.next/static` & `public` vào `.next/standalone/`) và `frontend/playwright.config.ts` chạy `node .next/standalone/server.js` để kiểm chứng trực tiếp Next.js standalone trên cả `/chat` và `/hr/*`.
+  - Tạo `.dockerignore` ở root và `frontend/.dockerignore` loại trừ `.git`, `.venv`, `node_modules`, `.next`, `.env*`, `data/documents/*`, `BASELINE_AUDIT.md`, `docs/`, `task/`.
+- **T4.2 (Một Bộ `docker-compose.yml` Duy Nhất cho Local & Demo + `QDRANT_ALLOW_INSECURE_HTTP`):**
+  - Hoàn thiện `docker-compose.yml` (không tạo `docker-compose.prod.yml`): bổ sung service `worker` (`python -m arq app.workers.ingestion_worker.WorkerSettings`, dùng chung image `backend`), ghim tag cố định `qdrant/qdrant:v1.13.6` (thay cho `:latest`), bind toàn bộ cổng hạ tầng nội bộ (`6379`, `6333`, `27017`) vào `127.0.0.1`, bổ sung `restart: unless-stopped` và `healthcheck` cho cả 6 services (`backend`, `worker`, `frontend`, `redis`, `qdrant`, `mongo`).
+  - Bổ sung `qdrant_allow_insecure_http: bool = False` trong `backend/app/shared/config.py` và `.env.example`, giữ mặc định bắt buộc `https://` cho Qdrant Cloud và chỉ cho phép `http://qdrant:6333` khi bật tường minh cho `local-infra`; thêm unit test `test_qdrant_url_validator_blocks_http_unless_insecure_flag_enabled` tại `backend/tests/unit/test_cloud_connections.py`.
+- **T4.3 (Kiểm toán & Phân loại 16 Legacy `smoke_*.py` + Bổ sung 2 Playwright E2E Specs):**
+  - Toàn bộ **16/16** file `smoke_*.py` trong `backend/tests/integration/` đã được kiểm toán AST/import thực tế và phân loại minh bạch: **0/16** là Offline thuần túy (mọi kịch bản offline tương đương đã nằm trong 20 file `test_*.py`), **10/16** thuộc **Nhóm (B) Cloud-dependent** (cần MongoDB Atlas / Qdrant Cloud thật, mock LLM) và **6/16** thuộc **Nhóm (C) Live-provider** (gọi thật Google Gemini Embedding / Groq LLM + Cloud DB). Toàn bộ 16 file đã được `git mv` sang `backend/tests/smoke/` kèm docstring cảnh báo rõ điều kiện chạy (`DO NOT RUN IN OFFLINE CI`), đưa `backend/tests/integration/` về 100% test offline chuẩn cho `unittest discover`:
+
+| File | Nhóm | Phụ thuộc thực tế | Hành động |
+| :--- | :---: | :--- | :--- |
+| `smoke_conversation_models.py` | **(B) Cloud-dependent** | MongoDB Atlas (`MongoDBConnection`) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_history_loader.py` | **(B) Cloud-dependent** | MongoDB Atlas (`MongoDBConnection`) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_message_persistence.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas lifespan (mock LLM) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_response_contract.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas lifespan (mock LLM) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_session_api.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas lifespan (mock LLM) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_session_concurrency.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas concurrency guard | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_stream_endpoint.py` | **(B) Cloud-dependent** | `TestClient(app)` + Cloud readiness (mock stream) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_stream_errors.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas lifespan (mock stream) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_stream_lifecycle.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas lifespan (mock stream) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_stream_metrics.py` | **(B) Cloud-dependent** | `TestClient(app)` + Atlas lifespan (mock stream) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_citation_mapping.py` | **(C) Live-provider** | MongoDB Atlas + Qdrant Cloud + Gemini Embedding | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_document_api.py` | **(C) Live-provider** | `TestClient(app)` + Atlas + Qdrant + Gemini Embedding | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_ingestion.py` | **(C) Live-provider** | `create_ingestion_service` + Atlas + Qdrant + Gemini | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_qdrant_ingestion.py` | **(C) Live-provider** | Qdrant Cloud + `get_embeddings().embed_documents()` | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_rag_integration.py` | **(C) Live-provider** | Atlas + Qdrant + `prepare_rag_stream` (Gemini/Groq) | Chuyển → `backend/tests/smoke/` + warning docstring |
+| `smoke_vector_adapter.py` | **(C) Live-provider** | Qdrant Cloud + `get_embeddings()` (`embed_documents`/`query`) | Chuyển → `backend/tests/smoke/` + warning docstring |
+
+  - Bổ sung 2 Playwright E2E specs mới chạy trên Next.js standalone `server.js`:
+    - `frontend/e2e/hr-portal.spec.mts`: kiểm thử `/hr` (theme `.hr-theme` + Live KB), mở `HrChatbotWidget` hội thoại đa lượt xuyên trang `/hr` → `/hr/documents` (lọc tab danh mục, tìm kiếm, xem trước preview) → `/hr/guide` trên cùng 1 `surface: "hr"` session, và xác nhận tách biệt hoàn toàn khi chuyển về `/chat`.
+    - `frontend/e2e/document-scope.spec.mts`: kiểm thử chuyển đổi `ALL_ACTIVE` → `SELECTED_DOCUMENTS` (`PATCH /sessions/:id/scope`), reload giữ nguyên scope, và đặt lại về `ALL_ACTIVE`.
+- **T4.4 (Nâng cấp GitHub Actions CI & Biên bản Review Dependency Security Audit):**
+  - **`.github/workflows/backend-ci.yml`:** Bổ sung bước chạy kiểm thử dưới tổ hợp feature flags nâng cao (`TOOL_USE_ENABLED=true`, `AGENTIC_MODE_ENABLED=true`, `CORRECTIVE_RAG_ENABLED=true`, `EXCEL_PARQUET_INGESTION_ENABLED=true`, `EXCEL_SQL_ENABLED=true`, `HYBRID_SEARCH_ENABLED=true`, `RERANKER_ENABLED=true`) cùng `eval_agent_cli --mode offline_smoke` và `benchmark_matrix --offline-check`, bước `docker compose config` (`default` & `local-infra`), bước `docker build` Backend + kiểm tra `id -u != 0`, và bước `pip-audit` xuất báo cáo advisory vào `$GITHUB_STEP_SUMMARY`.
+  - **`.github/workflows/frontend-ci.yml`:** Bổ sung `npm audit --omit=dev`, Playwright Chromium E2E (`npm run build:e2e && npm run test:e2e`), và `docker build` Frontend + kiểm tra `id -u != 0` (giữ nguyên tên job để khớp Branch Protection).
+  - **Biên bản Review Dependency Security Audit (Không tự ý chạy `npm audit fix --force` hay ép nâng cấp phá vỡ ràng buộc):**
+    - **Frontend (`npm.cmd --prefix frontend audit --omit=dev`):** **`0 vulnerabilities`** (`package-lock.json` đã khóa `next@16.4.6`; lưu ý `node_modules/next` cục bộ trên máy phát triển cũ hơn `16.4.0`, chạy `npm.cmd ci` sẽ đồng bộ lên `16.4.6`).
+    - **Backend (Quét toàn bộ `165` gói Python đang cài qua OSV.dev):** Phát hiện **2 gói** có cảnh báo:
+      1. `unstructured==0.21.5`: `GHSA-4mvj-m6j5-pmf7` / `PYSEC-2026-3930` (**CRITICAL**, SSRF ở hàm `partition(url=...)`, bản vá `0.24.0`) và `GHSA-v5mq-3xhg-98m9` (**MODERATE**, Stored XSS trong xuất HTML, bản vá `0.24.1`). *Đánh giá rủi ro thực tế:* Mã nguồn `backend/app/rag/loaders/` chỉ đọc file cục bộ đã tải lên (không bao giờ truyền URL từ người dùng vào `unstructured`, không render HTML xuất từ `unstructured`). Bản vá `0.24.1` hiện đòi `wrapt>=2.1.1`, xung đột với `langfuse<3.0.0` (`wrapt<2.0.0`) đang dùng; giữ nguyên có kiểm soát và đề xuất theo dõi để nâng cấp khi chuyển `langfuse>=3` hoặc thay thế `unstructured`.
+      2. `filelock==3.32.7` (transitive, **LOW**, `GHSA-567q-5qvw-pf92` và nhóm cảnh báo SoftFileLock Windows oplock, bản vá `4.2.1`): Không nằm trên hot-path request; có thể nâng cấp ở đợt làm mới dependency riêng.
 
 ### Files thêm mới / chỉnh sửa / di chuyển
-- **Thêm mới:** *(chờ cập nhật)*
-- **Chỉnh sửa / Di chuyển:** *(chờ cập nhật)*
+- **Thêm mới:**
+  - `.dockerignore`
+  - `frontend/.dockerignore`
+  - `frontend/e2e/hr-portal.spec.mts`
+  - `frontend/e2e/document-scope.spec.mts`
+- **Chỉnh sửa:**
+  - `backend/Dockerfile`
+  - `frontend/Dockerfile`
+  - `frontend/next.config.ts`
+  - `frontend/scripts/build-e2e.mjs`
+  - `frontend/playwright.config.ts`
+  - `docker-compose.yml`
+  - `.env.example`
+  - `backend/app/shared/config.py`
+  - `backend/tests/unit/test_cloud_connections.py`
+  - `.github/workflows/backend-ci.yml`
+  - `.github/workflows/frontend-ci.yml`
+- **Di chuyển (16 legacy cloud/live smoke scripts):**
+  - `backend/tests/integration/smoke_*.py` (16 files) → `backend/tests/smoke/smoke_*.py` (kèm docstring phân loại & cảnh báo)
 
 ### Kết quả kiểm thử & Phân loại trạng thái
-- *(chờ cập nhật)*
+- **`Verified` (Chạy thực tế không gọi cloud/provider):**
+  - `docker compose config --quiet` & `docker compose --profile local-infra config --quiet` → **`PASS`** (`6 services`: `backend`, `worker`, `frontend`, `redis`, `qdrant`, `mongo`). *(Lưu ý: Docker Desktop daemon không bật trên máy local nên `docker build` thực thi trong GitHub Actions CI).*
+  - `.\.venv\Scripts\python.exe -m unittest discover -s backend/tests/architecture -t backend -v` → **`9/9 PASS` (`0.234s`)**.
+  - `.\.venv\Scripts\python.exe -m compileall -q backend/app backend/tests backend/evaluation backend/scripts` & `pip check` → **`PASS`** (`No broken requirements found.`).
+  - 3 Offline Smoke Scripts (`smoke_sse_schema.py`, `smoke_context_budget.py`, `smoke_query_rewriting.py`) → **`3/3 PASS`**.
+  - Advanced Feature Flags CI Matrix (`TOOL_USE_ENABLED`, `AGENTIC_MODE_ENABLED`, `CORRECTIVE_RAG_ENABLED`, `EXCEL_PARQUET_INGESTION_ENABLED`, `EXCEL_SQL_ENABLED`, `HYBRID_SEARCH_ENABLED`, `RERANKER_ENABLED` = `true`) → **`55/55 PASS` (`4.259s`)**.
+  - YAML syntax validation cho `.github/workflows/{backend-ci,frontend-ci}.yml` → **`PASS`**.
+  - `npm.cmd --prefix frontend audit --omit=dev` → **`found 0 vulnerabilities`**.
+  - `npm.cmd --prefix frontend run typecheck` & `npm.cmd --prefix frontend run lint` → **`PASS`**.
+  - `npm.cmd --prefix frontend run test:contract` → **`PASS: 64 REST/SSE/health schemas`**.
+  - `npm.cmd --prefix frontend test` → **`238/238 PASS` (`11.09s`)**.
+  - `npm.cmd --prefix frontend run build:e2e` → **`PASS`** (`output: "standalone"` sinh `.next/standalone/server.js`, prerender `10/10` routes bao gồm `/chat`, `/hr`, `/hr/documents`, `/hr/guide`).
+  - Playwright Chromium E2E trên **Next.js standalone `server.js`** (`npm.cmd --prefix frontend run test:e2e`): **`71/71 PASS`** trên đủ 10 specs (`69/69` tests cũ + `document-scope.spec.mts` + `hr-portal.spec.mts`).
+- **`Tested` (Toàn bộ bộ kiểm thử Backend Unit & Integration):**
+  - `Set-Location backend; ..\.venv\Scripts\python.exe -m unittest discover -s tests/unit -v` → **`358/358 PASS` (`9.778s`)** *(tăng +1 unit test mới cho `QDRANT_ALLOW_INSECURE_HTTP` so với 357 ở Phase 3)*.
+  - `Set-Location backend; ..\.venv\Scripts\python.exe -m unittest discover -s tests/integration -v` → **`186/186 PASS` (`8.280s`)** *(100% 20 file offline `test_*.py`, không còn `smoke_*.py` lẫn trong `integration/`)*.
 
 ---
 

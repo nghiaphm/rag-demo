@@ -283,7 +283,7 @@ flowchart LR
 
 ### Danh sách Task
 
-- [ ] **T4.1 — Hardening `backend/Dockerfile`, `frontend/Dockerfile` & `.dockerignore`**
+- [x] **T4.1 — Hardening `backend/Dockerfile`, `frontend/Dockerfile` & `.dockerignore`**
   - **Phụ thuộc:** Phase 1, Phase 2.
   - **Files sửa/tạo:** `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/next.config.ts`, `.dockerignore`, `frontend/.dockerignore`.
   - **Nội dung triển khai:**
@@ -293,7 +293,7 @@ flowchart LR
   - **Acceptance Criteria:**
     - Build thành công cả 2 images, chạy non-root (`uid != 0`), DuckDB `LOAD httpfs` hoạt động không cần mạng lúc runtime, và Next.js standalone phục vụ đúng cả `/chat` và `/hr`.
 
-- [ ] **T4.2 — Hoàn thiện Một Bộ `docker-compose.yml` Duy Nhất cho Local & Demo (Kèm ARQ Worker)**
+- [x] **T4.2 — Hoàn thiện Một Bộ `docker-compose.yml` Duy Nhất cho Local & Demo (Kèm ARQ Worker)**
   - **Phụ thuộc:** T4.1.
   - **Files sửa:** `docker-compose.yml`, `backend/app/shared/config.py` (thêm `qdrant_allow_insecure_http: bool = False`), `.env.example`.
   - **Files test:** `backend/tests/unit/test_cloud_connections.py`.
@@ -306,7 +306,7 @@ flowchart LR
     - `docker compose config` và `docker compose --profile local-infra config` hợp lệ 100%.
     - Unit test xác nhận validator `QDRANT_URL` chặn `http://` khi cờ `false` và cho phép khi `QDRANT_ALLOW_INSECURE_HTTP=true`.
 
-- [ ] **T4.3 — Phân loại 16 Legacy Smoke Scripts & Bổ sung Playwright E2E cho HR Portal / Scope Selector**
+- [x] **T4.3 — Phân loại 16 Legacy Smoke Scripts & Bổ sung Playwright E2E cho HR Portal / Scope Selector**
   - **Phụ thuộc:** Phase 1 (và T2.4 nếu có thay đổi SSE).
   - **Files kiểm tra/tạo/sửa:** 16 file `backend/tests/integration/smoke_*.py`, `frontend/e2e/hr-portal.spec.mts` (tạo mới), `frontend/e2e/document-scope.spec.mts` (tạo mới), `frontend/scripts/qa-mock-api.mjs`.
   - **Nội dung triển khai:**
@@ -320,7 +320,7 @@ flowchart LR
     - Thư mục `backend/tests/integration/` chỉ còn chứa các bài test offline chuẩn được `unittest discover` chạy 100%; có bảng ghi nhận rõ số phận từng file trong 16 file `smoke_*.py`.
     - `npm.cmd run build:e2e` & `npm.cmd run test:e2e` PASS toàn bộ (8 spec cũ + 2 spec mới).
 
-- [ ] **T4.4 — Nâng cấp GitHub Actions CI & Quy trình Dependency Security Audit**
+- [x] **T4.4 — Nâng cấp GitHub Actions CI & Quy trình Dependency Security Audit**
   - **Phụ thuộc:** T0.2, T4.1, T4.2, T4.3.
   - **Files sửa:** `.github/workflows/backend-ci.yml`, `.github/workflows/frontend-ci.yml`.
   - **Nội dung triển khai:**
